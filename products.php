@@ -55,6 +55,14 @@ function parse_xlsx($file) {
     return $rows;
 }
 
+// ── Duplicate check: same name + category (exclude_id for edits) ──────────────
+function product_exists($conn, $name, $category, $exclude_id = 0) {
+    $n = mysqli_real_escape_string($conn, $name);
+    $c = mysqli_real_escape_string($conn, $category);
+    $r = mysqli_query($conn, "SELECT id FROM products WHERE name='$n' AND category='$c' AND deleted=0 AND id != $exclude_id LIMIT 1");
+    return $r && mysqli_num_rows($r) > 0;
+}
+
 // ── Template download ──────────────────────────────────────────────────────────
 if (isset($_GET['template'])) {
     header('Content-Type: text/csv');
@@ -87,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
     }
 
     array_shift($rows); // remove header row
-    $added = $skipped = 0;
+    $added = $skipped = $duplicates = 0;
 
     foreach ($rows as $row) {
         while (count($row) < 5) $row[] = '';
@@ -98,6 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
         $price   = max(0, (float)trim($row[4]));
 
         if ($name === '') { $skipped++; continue; }
+
+        if (product_exists($conn, $name, $cat)) { $duplicates++; continue; }
 
         $n = mysqli_real_escape_string($conn, $name);
         $c = mysqli_real_escape_string($conn, $cat);
@@ -111,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
         }
     }
 
-    echo json_encode(['success' => true, 'added' => $added, 'skipped' => $skipped]);
+    echo json_encode(['success' => true, 'added' => $added, 'skipped' => $skipped, 'duplicates' => $duplicates]);
     exit;
 }
 
@@ -123,7 +133,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
     $unit_measure  = mysqli_real_escape_string($conn, $_POST['unit_measure']);
     $unit_price    = mysqli_real_escape_string($conn, $_POST['unit_price']);
 
-    if (mysqli_query($conn, "INSERT INTO products (name, category, reorder_level, unit_measure, unit_price)
+    if (product_exists($conn, $name, $category)) {
+        $_SESSION['flash_error'] = "A product named \"$name\" already exists in the \"$category\" category.";
+    } elseif (mysqli_query($conn, "INSERT INTO products (name, category, reorder_level, unit_measure, unit_price)
                               VALUES ('$name','$category','$reorder_level','$unit_measure','$unit_price')")) {
         $_SESSION['flash_success'] = "Product added successfully";
     } else {
@@ -145,7 +157,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $unit_measure  = mysqli_real_escape_string($conn, $_POST['edit_unit_measure']);
     $unit_price    = mysqli_real_escape_string($conn, $_POST['edit_unit_price']);
 
-    if (mysqli_query($conn, "UPDATE products SET name='$name', category='$category', reorder_level='$reorder_level',
+    if (product_exists($conn, $name, $category, $id)) {
+        $_SESSION['flash_error'] = "Another product named \"$name\" already exists in the \"$category\" category.";
+    } elseif (mysqli_query($conn, "UPDATE products SET name='$name', category='$category', reorder_level='$reorder_level',
                               unit_measure='$unit_measure', unit_price='$unit_price' WHERE id=$id")) {
         $_SESSION['flash_success'] = "Product updated successfully";
     } else {
@@ -465,8 +479,11 @@ document.getElementById('importForm').addEventListener('submit', async function(
         const data = await res.json();
 
         if (data.success) {
-            result.className   = 'alert alert-success';
-            result.textContent = `${data.added} product(s) imported, ${data.skipped} skipped.`;
+            result.className = 'alert alert-success';
+            let msg = `${data.added} product(s) imported.`;
+            if (data.duplicates > 0) msg += ` ${data.duplicates} duplicate(s) skipped.`;
+            if (data.skipped    > 0) msg += ` ${data.skipped} empty row(s) skipped.`;
+            result.textContent = msg;
             if (data.added > 0) fetchProducts(1, currentSearch);
         } else {
             result.className   = 'alert alert-danger';
