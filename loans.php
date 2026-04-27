@@ -410,6 +410,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                     <thead>
                         <tr>
                             <th>Date</th>
+                            <th>Created At</th>
                             <th>Product</th>
                             <th>Qty</th>
                             <th>Amount</th>
@@ -427,6 +428,12 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                     ?>
                     <tr>
                         <td><?php echo date('M d, Y', strtotime($loan['loan_date'])); ?></td>
+                        <td style="color:var(--secondary);font-size:12px;"><?php
+                            if (!empty($loan['created_at'])) {
+                                $sameDay = date('Y-m-d', strtotime($loan['created_at'])) === date('Y-m-d', strtotime($loan['loan_date']));
+                                echo $sameDay ? date('H:i', strtotime($loan['created_at'])) : date('M d, Y H:i', strtotime($loan['created_at']));
+                            } else { echo '—'; }
+                        ?></td>
                         <td><?php echo htmlspecialchars($loan['product_category'] . '-' . $loan['product_name']); ?></td>
                         <td><?php echo $loan['qty']; ?></td>
                         <td>RWF <?php echo number_format($loan['amount'], 0); ?></td>
