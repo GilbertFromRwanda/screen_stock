@@ -182,6 +182,7 @@ $records = mysqli_query($conn, "
     LEFT JOIN loan_payments lp ON lp.loan_id = l.id
     $where
     GROUP BY l.id
+    HAVING l.amount > COALESCE(SUM(lp.amount_paid), 0)
     ORDER BY l.loan_date DESC, l.id DESC $limit
 ");
 
