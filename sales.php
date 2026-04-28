@@ -4,119 +4,133 @@ require_once 'config.php';
 if (!isLoggedIn()) {
     redirect('login.php');
 }
+// Handle External Sale (product not from stock — tracking only)
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
+    $product_name  = mysqli_real_escape_string($conn, trim($_POST['ext_product_name'] ?? ''));
+    $quantity      = max(1, (int)($_POST['ext_quantity'] ?? 1));
+    $unit_price    = max(0, (float)($_POST['ext_unit_price'] ?? 0));
+    $customer_name = mysqli_real_escape_string($conn, trim($_POST['ext_customer_name'] ?? ''));
+    $cash_amount   = max(0, (float)($_POST['ext_cash_amount'] ?? 0));
+    $momo_amount   = max(0, (float)($_POST['ext_momo_amount'] ?? 0));
+    $loan_amount   = max(0, (float)($_POST['ext_loan_amount'] ?? 0));
+    $phone         = mysqli_real_escape_string($conn, trim($_POST['ext_phone'] ?? ''));
+    $total_amount  = $quantity * $unit_price;
 
-// Handle Bulk Sale (Full Package) - PRG pattern to prevent duplicates
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
-    $product_id = mysqli_real_escape_string($conn, $_POST['product_id']);
-    $quantity = mysqli_real_escape_string($conn, $_POST['quantity']);
-    $customer_name = mysqli_real_escape_string($conn, $_POST['customer_name']);
-    $selling_price = mysqli_real_escape_string($conn, $_POST['selling_price']);
-
-    $stock_query = mysqli_query($conn, "SELECT * FROM stock WHERE product_id = $product_id");
-    $stock = mysqli_fetch_assoc($stock_query);
-
-    if ($stock && $stock['quantity'] >= $quantity) {
-        $total_amount = $quantity * $selling_price;
-
-        $sale_query = "INSERT INTO sales_bulk (product_id, quantity, package_price, total_amount, sale_date, customer_name)
-                       VALUES ($product_id, $quantity, $selling_price, $total_amount, CURDATE(), '$customer_name')";
-
-        if (mysqli_query($conn, $sale_query)) {
-            mysqli_query($conn, "UPDATE stock SET quantity = quantity - $quantity WHERE product_id = $product_id");
-            $_SESSION['flash_success'] = "Bulk sale recorded successfully with price: RWF " . number_format($selling_price, 0);
-            $_SESSION['flash_sale_type'] = 'bulk';
-        }
-    } else {
-        $_SESSION['flash_error'] = "Insufficient stock available";
-    }
-    header("Location: sales.php");
-    exit;
-}
-
-// Handle Retail Sale (Piece by piece) - PRG pattern to prevent duplicates
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
-    $product_id = mysqli_real_escape_string($conn, $_POST['product_id']);
-    $pieces_sold = mysqli_real_escape_string($conn, $_POST['pieces_sold']);
-    $customer_name = mysqli_real_escape_string($conn, $_POST['customer_name']);
-    $selling_price = mysqli_real_escape_string($conn, $_POST['selling_price']);
-
-    $retail_query = mysqli_query($conn, "SELECT * FROM retail_stock WHERE product_id = $product_id");
-    $retail = mysqli_fetch_assoc($retail_query);
-
-    if ($retail && $retail['pieces_quantity'] >= $pieces_sold) {
-        $total_amount = $pieces_sold * $selling_price;
-
-        $sale_query = "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name)
-                       VALUES ($product_id, $pieces_sold, $selling_price, $total_amount, CURDATE(), '$customer_name')";
-
-        if (mysqli_query($conn, $sale_query)) {
-            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_sold WHERE product_id = $product_id");
-            $_SESSION['flash_success'] = "Retail sale recorded successfully with price: RWF " . number_format($selling_price, 0) . " per piece";
-            $_SESSION['flash_sale_type'] = 'retail';
-        }
-    } else {
-        $_SESSION['flash_error'] = "Insufficient retail stock available";
-    }
-    header("Location: sales.php");
-    exit;
-}
-
-// Handle Retail Sale as Loan
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_loan'])) {
-    $product_id = (int)$_POST['product_id'];
-    $qty        = (int)$_POST['pieces_sold'];
-    $full_total = (float)$_POST['selling_price'] * $qty;
-    $amount     = isset($_POST['loan_amount']) && (float)$_POST['loan_amount'] > 0 ? (float)$_POST['loan_amount'] : $full_total;
-    $client     = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
-    $phone      = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
-    $loan_date  = date('Y-m-d');
-
-    if ($product_id <= 0 || $qty <= 0 || empty($client)) {
-        $_SESSION['flash_error'] = "Product, quantity and client name are required.";
+    if (empty($product_name)) {
+        $_SESSION['flash_error'] = "Product name is required for external sale.";
         header("Location: sales.php"); exit;
     }
-    $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $product_id"));
-    if (!$retail || $retail['pieces_quantity'] < $qty) {
-        $_SESSION['flash_error'] = "Insufficient retail stock available.";
+    if ($unit_price < 1) {
+        $_SESSION['flash_error'] = "Unit price must be greater than 0.";
         header("Location: sales.php"); exit;
     }
-    $ins = mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES ('$product_id','$qty','$amount','$client','$phone','$loan_date')");
+    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
+        $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
+        header("Location: sales.php"); exit;
+    }
+    if ($loan_amount > 0 && empty($phone)) {
+        $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
+        header("Location: sales.php"); exit;
+    }
+    $ins = mysqli_query($conn, "INSERT INTO sales_external (product_name, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, customer_name, phone, sale_date)
+                   VALUES ('$product_name', $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, '$customer_name', '$phone', CURDATE())");
     if ($ins) {
-        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id");
-        $_SESSION['flash_success'] = "Loan registered for $client — RWF " . number_format($amount, 0);
-        $_SESSION['flash_sale_type'] = 'retail';
-    } else {
-        $_SESSION['flash_error'] = "Failed to register loan.";
+        if ($loan_amount > 0) {
+            $loan_date = date('Y-m-d');
+            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES (0, $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date')");
+        }
+        $parts = [];
+        if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
+        if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
+        if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
+        $_SESSION['flash_success'] = "External sale recorded — " . implode(", ", $parts);
+        $_SESSION['flash_sale_type'] = 'external';
     }
     header("Location: sales.php"); exit;
 }
 
-// Handle Bulk Sale as Loan
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_loan'])) {
-    $product_id = (int)$_POST['product_id'];
-    $qty        = (int)$_POST['quantity'];
-    $full_total = (float)$_POST['selling_price'] * $qty;
-    $amount     = isset($_POST['loan_amount']) && (float)$_POST['loan_amount'] > 0 ? (float)$_POST['loan_amount'] : $full_total;
-    $client     = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
-    $phone      = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
-    $loan_date  = date('Y-m-d');
+// Handle Bulk Sale (with split payment: Cash + Momo + Loan)
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
+    $product_id    = (int)$_POST['product_id'];
+    $quantity      = (int)$_POST['quantity'];
+    $selling_price = (float)$_POST['selling_price'];
+    $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
+    $cash_amount   = max(0, (float)($_POST['cash_amount'] ?? 0));
+    $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
+    $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
+    $phone         = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
+    $total_amount  = $quantity * $selling_price;
 
-    if ($product_id <= 0 || $qty <= 0 || empty($client)) {
-        $_SESSION['flash_error'] = "Product, quantity and client name are required.";
+    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
+        $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
+        header("Location: sales.php"); exit;
+    }
+    if ($loan_amount > 0 && empty($phone)) {
+        $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
         header("Location: sales.php"); exit;
     }
     $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id"));
-    if (!$stock || $stock['quantity'] < $qty) {
-        $_SESSION['flash_error'] = "Insufficient stock available.";
+    if (!$stock || $stock['quantity'] < $quantity) {
+        $_SESSION['flash_error'] = "Insufficient stock available";
         header("Location: sales.php"); exit;
     }
-    $ins = mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES ('$product_id','$qty','$amount','$client','$phone','$loan_date')");
+    $ins = mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount)
+                   VALUES ($product_id, $quantity, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount)");
     if ($ins) {
-        mysqli_query($conn, "UPDATE stock SET quantity = quantity - $qty WHERE product_id = $product_id");
-        $_SESSION['flash_success'] = "Loan registered for $client — RWF " . number_format($amount, 0);
+        mysqli_query($conn, "UPDATE stock SET quantity = quantity - $quantity WHERE product_id = $product_id");
+        if ($loan_amount > 0) {
+            $loan_date = date('Y-m-d');
+            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date')");
+        }
+        $parts = [];
+        if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
+        if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
+        if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
+        $_SESSION['flash_success'] = "Bulk sale recorded — " . implode(", ", $parts);
         $_SESSION['flash_sale_type'] = 'bulk';
-    } else {
-        $_SESSION['flash_error'] = "Failed to register loan.";
+    }
+    header("Location: sales.php"); exit;
+}
+
+// Handle Retail Sale (with split payment: Cash + Momo + Loan)
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
+    $product_id    = (int)$_POST['product_id'];
+    $pieces_sold   = (int)$_POST['pieces_sold'];
+    $selling_price = (float)$_POST['selling_price'];
+    $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
+    $cash_amount   = max(0, (float)($_POST['cash_amount'] ?? 0));
+    $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
+    $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
+    $phone         = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
+    $total_amount  = $pieces_sold * $selling_price;
+
+    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
+        $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
+        header("Location: sales.php"); exit;
+    }
+    if ($loan_amount > 0 && empty($phone)) {
+        $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
+        header("Location: sales.php"); exit;
+    }
+    $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $product_id"));
+    if (!$retail || $retail['pieces_quantity'] < $pieces_sold) {
+        $_SESSION['flash_error'] = "Insufficient retail stock available";
+        header("Location: sales.php"); exit;
+    }
+    $ins = mysqli_query($conn, "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount)
+                   VALUES ($product_id, $pieces_sold, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount)");
+    if ($ins) {
+        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_sold WHERE product_id = $product_id");
+        if ($loan_amount > 0) {
+            $loan_date = date('Y-m-d');
+            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES ('$product_id','$pieces_sold','$loan_amount','$customer_name','$phone','$loan_date')");
+        }
+        $parts = [];
+        if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
+        if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
+        if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
+        $_SESSION['flash_success'] = "Retail sale recorded — " . implode(", ", $parts);
+        $_SESSION['flash_sale_type'] = 'retail';
     }
     header("Location: sales.php"); exit;
 }
@@ -171,6 +185,25 @@ $recent_retail_sales = mysqli_query($conn, "
     WHERE sr.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
     ORDER BY sr.created_at DESC
 ");
+
+$recent_external_sales = mysqli_query($conn, "
+    SELECT * FROM sales_external
+    WHERE sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
+    ORDER BY created_at DESC
+");
+
+// All products for external sale picker (with price hints)
+$all_products_query = mysqli_query($conn, "
+    SELECT p.id, p.name, p.category, p.unit_measure,
+           COALESCE(s.package_price, 0) as bulk_price,
+           COALESCE(r.retail_price, 0)  as retail_price
+    FROM products p
+    LEFT JOIN stock s        ON s.product_id = p.id
+    LEFT JOIN retail_stock r ON r.product_id = p.id
+    ORDER BY p.category, p.name
+");
+$all_products_arr = [];
+while ($ap = mysqli_fetch_assoc($all_products_query)) $all_products_arr[] = $ap;
 
 // Existing loan clients for picker
 $loan_clients_query = mysqli_query($conn, "
@@ -238,6 +271,64 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         .searchable-select-option.hidden {
             display: none;
         }
+        .split-payment-box {
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        .split-row {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            gap: 10px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+        .split-row:last-child { border-bottom: none; }
+        .split-label {
+            width: 70px;
+            font-size: 13px;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+        .split-row input[type="text"] {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius);
+            font-size: 14px;
+        }
+        .split-remaining-row {
+            justify-content: space-between;
+            background: var(--gray-50);
+            font-weight: 600;
+        }
+        .split-remaining-row.valid  { background: #ecfdf5; color: #059669; }
+        .split-remaining-row.invalid { background: #fef2f2; color: #dc2626; }
+        .sales-tab-nav {
+            display: flex;
+            gap: 4px;
+            border-bottom: 2px solid var(--gray-200);
+            margin-bottom: 16px;
+        }
+        .sales-tab-btn {
+            padding: 8px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--secondary);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            border-radius: var(--radius) var(--radius) 0 0;
+            transition: color .15s, border-color .15s;
+        }
+        .sales-tab-btn:hover { color: var(--primary); }
+        .sales-tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            background: var(--white);
+        }
     </style>
 </head>
 <body>
@@ -258,6 +349,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             <div class="sale-action-buttons">
                 <button class="btn btn-primary btn-lg" onclick="openModal('bulkSaleModal')">+ Kuranguza</button>
                 <button class="btn btn-success btn-lg" onclick="openModal('retailSaleModal')">+ Gucuruza Detaye</button>
+                <button class="btn btn-lg" style="background:var(--warning,#f59e0b);color:#fff;" onclick="openModal('externalSaleModal')">+ External Sale</button>
             </div>
             
             <div class="recent-sales">
@@ -271,121 +363,130 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <label for="date_to">To</label>
                         <input type="date" id="date_to" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>">
                     </div>
+                    <input type="hidden" id="filter_tab" name="tab" value="<?php echo htmlspecialchars($active_tab); ?>">
                     <button type="submit" class="btn btn-primary btn-sm">Filter</button>
                     <a href="sales.php" class="btn btn-sm" style="background:var(--gray-200);color:var(--dark);">Today</a>
                 </form>
-                <div class="sales-tables">
-                    <div class="sales-table-section">
-                        <h3 class="collapsible-header<?php echo ($last_sale_type === 'retail') ? ' collapsed' : ''; ?>" onclick="toggleSection(this)">
-                            Ibyaranguwe
-                            <span class="collapse-icon">&#9660;</span>
-                        </h3>
-                        <div class="collapsible-body<?php echo ($last_sale_type === 'retail') ? ' collapsed' : ''; ?>">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Product</th>
-                                    <th>Qty</th>
-                                    <th>Unit Price</th>
-                                    <th>Default Price</th>
-                                    <th>Difference</th>
-                                    <th>Total</th>
-                                    <th>Customer</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php $bulk_grand_total = 0; while($row = mysqli_fetch_assoc($recent_bulk_sales)):
-                                    $bulk_grand_total += $row['total_amount'];
-                                    $default_price_query = mysqli_query($conn, "SELECT package_price FROM stock WHERE product_id = {$row['product_id']}");
-                                    $default_price = mysqli_fetch_assoc($default_price_query)['package_price'];
-                                    $price_diff = $row['package_price'] - $default_price;
-                                    $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
-                                ?>
-                                <tr>
-                                    <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
-                                    <td><?php echo htmlspecialchars($row['name']); ?></td>
-                                    <td><?php echo $row['quantity']; ?></td>
-                                    <td><strong>RWF <?php echo number_format($row['package_price'], 0); ?></strong></td>
-                                    <td>RWF <?php echo number_format($default_price, 0); ?></td>
-                                    <td class="<?php echo $diff_class; ?>">
-                                        <?php if($price_diff != 0): ?>
-                                            <?php echo ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0); ?>
-                                        <?php else: ?>
-                                            -
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
-                                    <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
-                                </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                            <tfoot>
-                                <tr class="table-total-row">
-                                    <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
-                                    <td><strong>RWF <?php echo number_format($bulk_grand_total, 0); ?></strong></td>
-                                    <td></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                        </div>
-                    </div>
+                <?php
+                $active_tab = in_array($last_sale_type, ['bulk','retail','external'])
+                    ? $last_sale_type
+                    : (in_array($_GET['tab'] ?? '', ['bulk','retail','external']) ? $_GET['tab'] : 'bulk');
+                ?>
+                <div class="sales-tab-nav">
+                    <button class="sales-tab-btn<?php echo $active_tab==='bulk'     ? ' active' : ''; ?>" onclick="switchSalesTab('bulk')"    >Ibyaranguwe</button>
+                    <button class="sales-tab-btn<?php echo $active_tab==='retail'   ? ' active' : ''; ?>" onclick="switchSalesTab('retail')"  >Ibyacurujwe detaye</button>
+                    <button class="sales-tab-btn<?php echo $active_tab==='external' ? ' active' : ''; ?>" onclick="switchSalesTab('external')" >External</button>
+                </div>
 
-                    <div class="sales-table-section">
-                        <h3 class="collapsible-header<?php echo ($last_sale_type !== 'retail') ? ' collapsed' : ''; ?>" onclick="toggleSection(this)">
-                            Ibyacurujwe detaye
-                            <span class="collapse-icon">&#9660;</span>
-                        </h3>
-                        <div class="collapsible-body<?php echo ($last_sale_type !== 'retail') ? ' collapsed' : ''; ?>">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Product</th>
-                                    <th>Pieces</th>
-                                    <th>Price/Piece</th>
-                                    <th>Default Price</th>
-                                    <th>Difference</th>
-                                    <th>Total</th>
-                                    <th>Customer</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php $retail_grand_total = 0; while($row = mysqli_fetch_assoc($recent_retail_sales)):
-                                    $retail_grand_total += $row['total_amount'];
-                                    $default_price_query = mysqli_query($conn, "SELECT retail_price FROM retail_stock WHERE product_id = {$row['product_id']}");
-                                    $default_price = mysqli_fetch_assoc($default_price_query)['retail_price'];
-                                    $price_diff = $row['retail_price'] - $default_price;
-                                    $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
-                                ?>
-                                <tr>
-                                    <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
-                                    <td><?php echo htmlspecialchars($row['name']); ?></td>
-                                    <td><?php echo $row['pieces_sold']; ?></td>
-                                    <td><strong>RWF <?php echo number_format($row['retail_price'], 0); ?></strong></td>
-                                    <td>RWF <?php echo number_format($default_price, 0); ?></td>
-                                    <td class="<?php echo $diff_class; ?>">
-                                        <?php if($price_diff != 0): ?>
-                                            <?php echo ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0); ?>
-                                        <?php else: ?>
-                                            -
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
-                                    <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
-                                </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                            <tfoot>
-                                <tr class="table-total-row">
-                                    <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
-                                    <td><strong>RWF <?php echo number_format($retail_grand_total, 0); ?></strong></td>
-                                    <td></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                        </div>
-                    </div>
+                <!-- Bulk tab -->
+                <div class="sales-tab-panel" id="stab-bulk" <?php echo $active_tab!=='bulk'     ? 'style="display:none"' : ''; ?>>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php $bulk_grand_total = 0; while($row = mysqli_fetch_assoc($recent_bulk_sales)):
+                            $bulk_grand_total += $row['total_amount'];
+                            $default_price_query = mysqli_query($conn, "SELECT package_price FROM stock WHERE product_id = {$row['product_id']}");
+                            $default_price = mysqli_fetch_assoc($default_price_query)['package_price'];
+                            $price_diff = $row['package_price'] - $default_price;
+                            $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
+                        ?>
+                        <tr>
+                            <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
+                            <td><?php echo htmlspecialchars($row['name']); ?></td>
+                            <td><?php echo $row['quantity']; ?></td>
+                            <td><strong>RWF <?php echo number_format($row['package_price'], 0); ?></strong></td>
+                            <td>RWF <?php echo number_format($default_price, 0); ?></td>
+                            <td class="<?php echo $diff_class; ?>"><?php echo $price_diff != 0 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
+                            <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
+                            <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-total-row">
+                            <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
+                            <td><strong>RWF <?php echo number_format($bulk_grand_total, 0); ?></strong></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                </div>
+
+                <!-- Retail tab -->
+                <div class="sales-tab-panel" id="stab-retail" <?php echo $active_tab!=='retail'   ? 'style="display:none"' : ''; ?>>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php $retail_grand_total = 0; while($row = mysqli_fetch_assoc($recent_retail_sales)):
+                            $retail_grand_total += $row['total_amount'];
+                            $default_price_query = mysqli_query($conn, "SELECT retail_price FROM retail_stock WHERE product_id = {$row['product_id']}");
+                            $default_price = mysqli_fetch_assoc($default_price_query)['retail_price'];
+                            $price_diff = $row['retail_price'] - $default_price;
+                            $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
+                        ?>
+                        <tr>
+                            <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
+                            <td><?php echo htmlspecialchars($row['name']); ?></td>
+                            <td><?php echo $row['pieces_sold']; ?></td>
+                            <td><strong>RWF <?php echo number_format($row['retail_price'], 0); ?></strong></td>
+                            <td>RWF <?php echo number_format($default_price, 0); ?></td>
+                            <td class="<?php echo $diff_class; ?>"><?php echo $price_diff != 0 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
+                            <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
+                            <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-total-row">
+                            <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
+                            <td><strong>RWF <?php echo number_format($retail_grand_total, 0); ?></strong></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                </div>
+
+                <!-- External tab -->
+                <div class="sales-tab-panel" id="stab-external" <?php echo $active_tab!=='external' ? 'style="display:none"' : ''; ?>>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php $ext_grand_total = 0; while($row = mysqli_fetch_assoc($recent_external_sales)):
+                            $ext_grand_total += $row['total_amount'];
+                        ?>
+                        <tr>
+                            <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
+                            <td><?php echo htmlspecialchars($row['product_name']); ?></td>
+                            <td><?php echo $row['quantity']; ?></td>
+                            <td>RWF <?php echo number_format($row['unit_price'], 0); ?></td>
+                            <td><strong>RWF <?php echo number_format($row['total_amount'], 0); ?></strong></td>
+                            <td><?php echo $row['cash_amount'] > 0 ? 'RWF '.number_format($row['cash_amount'],0) : '—'; ?></td>
+                            <td><?php echo $row['momo_amount'] > 0 ? 'RWF '.number_format($row['momo_amount'],0) : '—'; ?></td>
+                            <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
+                            <td><?php echo htmlspecialchars($row['customer_name'] ?: 'N/A'); ?></td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-total-row">
+                            <td colspan="4" style="text-align:right;"><strong>Total:</strong></td>
+                            <td><strong>RWF <?php echo number_format($ext_grand_total, 0); ?></strong></td>
+                            <td colspan="4"></td>
+                        </tr>
+                    </tfoot>
+                </table>
                 </div>
             </div>
         </div>
@@ -396,7 +497,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         <div class="modal-content">
             <span class="close" onclick="closeModal('bulkSaleModal')">&times;</span>
             <h2>New Bulk Sale (Full Package)</h2>
-            <form method="POST" action="" id="bulkSaleForm" onsubmit="return handleBulkSubmit()">
+            <form method="POST" action="" id="bulkSaleForm">
                 <div class="form-group">
                     <label for="bulk_product_id">Select Product*</label>
                     <select id="bulk_product_id" name="product_id" required onchange="updateBulkProductDetails()" style="display:none">
@@ -463,41 +564,55 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                            placeholder="Enter customer name">
                 </div>
 
-                <div class="form-group" style="margin-bottom:8px;">
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                        <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkLoan()" style="width:16px;height:16px;cursor:pointer;">
-                        <span>Register as Loan <small style="color:var(--secondary);font-weight:400;">(deferred payment)</small></span>
-                    </label>
-                </div>
-                <?php if ($loan_clients_arr): ?>
-                <div class="form-group" id="bulk_client_picker_group" style="display:none;">
-                    <label>Existing Client</label>
-                    <div class="searchable-select" id="bulkClientPickerWrap">
-                        <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
-                            placeholder="Search registered client..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown">
-                            <?php foreach ($loan_clients_arr as $c): ?>
-                                <div class="searchable-select-option"
-                                    data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                    data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                    <?php echo htmlspecialchars($c['client']); ?>
-                                    <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                    <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                </div>
-                            <?php endforeach; ?>
+                <div id="bulk_payment_section" style="display:none;">
+                    <div class="form-group">
+                        <label>Payment Breakdown</label>
+                        <div class="split-payment-box">
+                            <div class="split-row">
+                                <span class="split-label">Cash</span>
+                                <input type="number" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
+                            </div>
+                            <div class="split-row">
+                                <span class="split-label">Momo</span>
+                                <input type="number" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
+                            </div>
+                            <div class="split-row">
+                                <span class="split-label">Loan</span>
+                                <input type="number" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
+                            </div>
+                            <div class="split-row split-remaining-row" id="bulk_remaining_row">
+                                <span class="split-label">Remaining</span>
+                                <span id="bulk_remaining">—</span>
+                            </div>
                         </div>
                     </div>
-                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
-                </div>
-                <?php endif; ?>
-                <div class="form-group" id="bulk_phone_group" style="display:none;">
-                    <label for="bulk_phone">Client Phone</label>
-                    <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
-                </div>
-                <div class="form-group" id="bulk_loan_amount_group" style="display:none;">
-                    <label for="bulk_loan_amount">Loan Amount (RWF)*</label>
-                    <input type="text" id="bulk_loan_amount" name="loan_amount" min="1" step="1">
-                    <small style="color:var(--secondary);">Auto-filled with full total. Reduce if client pays part upfront.</small>
+                    <div id="bulk_loan_fields" style="display:none;">
+                        <?php if ($loan_clients_arr): ?>
+                        <div class="form-group">
+                            <label>Existing Client</label>
+                            <div class="searchable-select" id="bulkClientPickerWrap">
+                                <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
+                                    placeholder="Search registered client..." autocomplete="off">
+                                <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown">
+                                    <?php foreach ($loan_clients_arr as $c): ?>
+                                        <div class="searchable-select-option"
+                                            data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
+                                            data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
+                                            <?php echo htmlspecialchars($c['client']); ?>
+                                            <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
+                                            <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                        </div>
+                        <?php endif; ?>
+                        <div class="form-group">
+                            <label for="bulk_phone">Client Phone*</label>
+                            <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcBulkSplit()">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="sale-summary" id="bulk_summary" style="display:none;">
@@ -507,7 +622,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                     <div class="summary-row summary-total"><span>Total Amount</span><strong id="bulk_sum_total"></strong></div>
                 </div>
 
-                <button type="submit" name="bulk_sale" id="bulk_submit_btn" class="btn btn-primary" disabled>Save Bulk Sale</button>
+                <button type="button" name="bulk_sale" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()">Save Bulk Sale</button>
             </form>
         </div>
     </div>
@@ -517,7 +632,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         <div class="modal-content">
             <span class="close" onclick="closeModal('retailSaleModal')">&times;</span>
             <h2>New Retail Sale (Piece by Piece)</h2>
-            <form method="POST" action="" id="retailSaleForm" onsubmit="return handleRetailSubmit()">
+            <form method="POST" action="" id="retailSaleForm">
                 <div class="form-group">
                     <label for="retail_product_id">Select Product*</label>
                     <select id="retail_product_id" name="product_id" required onchange="updateRetailProductDetails()" style="display:none">
@@ -584,41 +699,55 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                            placeholder="Enter customer name">
                 </div>
 
-                <div class="form-group" style="margin-bottom:8px;">
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                        <input type="checkbox" id="retail_is_loan" onchange="toggleRetailLoan()" style="width:16px;height:16px;cursor:pointer;">
-                        <span>Register as Loan <small style="color:var(--secondary);font-weight:400;">(deferred payment)</small></span>
-                    </label>
-                </div>
-                <?php if ($loan_clients_arr): ?>
-                <div class="form-group" id="retail_client_picker_group" style="display:none;">
-                    <label>Existing Client</label>
-                    <div class="searchable-select" id="retailClientPickerWrap">
-                        <input type="text" class="searchable-select-input" id="retail_client_picker_search"
-                            placeholder="Search registered client..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="retail_client_picker_dropdown">
-                            <?php foreach ($loan_clients_arr as $c): ?>
-                                <div class="searchable-select-option"
-                                    data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                    data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                    <?php echo htmlspecialchars($c['client']); ?>
-                                    <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                    <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                </div>
-                            <?php endforeach; ?>
+                <div id="retail_payment_section" style="display:none;">
+                    <div class="form-group">
+                        <label>Payment Breakdown</label>
+                        <div class="split-payment-box">
+                            <div class="split-row">
+                                <span class="split-label">Cash</span>
+                                <input type="number" id="retail_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcRetailSplit('cash')">
+                            </div>
+                            <div class="split-row">
+                                <span class="split-label">Momo</span>
+                                <input type="number" id="retail_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcRetailSplit('momo')">
+                            </div>
+                            <div class="split-row">
+                                <span class="split-label">Loan</span>
+                                <input type="number" id="retail_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcRetailSplit('loan')">
+                            </div>
+                            <div class="split-row split-remaining-row" id="retail_remaining_row">
+                                <span class="split-label">Remaining</span>
+                                <span id="retail_remaining">—</span>
+                            </div>
                         </div>
                     </div>
-                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
-                </div>
-                <?php endif; ?>
-                <div class="form-group" id="retail_phone_group" style="display:none;">
-                    <label for="retail_phone">Client Phone</label>
-                    <input type="text" id="retail_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
-                </div>
-                <div class="form-group" id="retail_loan_amount_group" style="display:none;">
-                    <label for="retail_loan_amount">Loan Amount (RWF)*</label>
-                    <input type="text" id="retail_loan_amount" name="loan_amount" min="1" step="1">
-                    <small style="color:var(--secondary);">Auto-filled with full total. Reduce if client pays part upfront.</small>
+                    <div id="retail_loan_fields" style="display:none;">
+                        <?php if ($loan_clients_arr): ?>
+                        <div class="form-group">
+                            <label>Existing Client</label>
+                            <div class="searchable-select" id="retailClientPickerWrap">
+                                <input type="text" class="searchable-select-input" id="retail_client_picker_search"
+                                    placeholder="Search registered client..." autocomplete="off">
+                                <div class="searchable-select-dropdown" id="retail_client_picker_dropdown">
+                                    <?php foreach ($loan_clients_arr as $c): ?>
+                                        <div class="searchable-select-option"
+                                            data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
+                                            data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
+                                            <?php echo htmlspecialchars($c['client']); ?>
+                                            <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
+                                            <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                        </div>
+                        <?php endif; ?>
+                        <div class="form-group">
+                            <label for="retail_phone">Client Phone*</label>
+                            <input type="text" id="retail_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcRetailSplit()">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="sale-summary" id="retail_summary" style="display:none;">
@@ -628,7 +757,128 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                     <div class="summary-row summary-total"><span>Total Amount</span><strong id="retail_sum_total"></strong></div>
                 </div>
 
-                <button type="submit" name="retail_sale" id="retail_submit_btn" class="btn btn-primary" disabled>Save Retail Sale</button>
+                <button type="button" name="retail_sale" id="retail_submit_btn" class="btn btn-primary" disabled onclick="handleRetailSubmit()">Save Retail Sale</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- External Sale Modal -->
+    <div id="externalSaleModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('externalSaleModal')">&times;</span>
+            <h2>External Sale (Track Only)</h2>
+            <p style="color:var(--secondary);font-size:13px;margin-top:-8px;margin-bottom:16px;">Product is not from your stock — transaction is recorded for collection tracking only.</p>
+            <form method="POST" action="" id="externalSaleForm">
+                <!-- hidden field that actually gets submitted -->
+                <input type="hidden" id="ext_product_name" name="ext_product_name">
+
+                <div class="form-group" id="ext_picker_mode">
+                    <label>Product*</label>
+                    <div class="searchable-select" id="extProductSearchable">
+                        <input type="text" class="searchable-select-input" id="ext_product_search"
+                               placeholder="Search product..." autocomplete="off">
+                        <div class="searchable-select-dropdown" id="ext_product_dropdown">
+                            <?php foreach ($all_products_arr as $ap): ?>
+                                <div class="searchable-select-option"
+                                     data-name="<?php echo htmlspecialchars($ap['category'].'-'.$ap['name'], ENT_QUOTES); ?>"
+                                     data-bulk="<?php echo $ap['bulk_price']; ?>"
+                                     data-retail="<?php echo $ap['retail_price']; ?>">
+                                    <?php echo htmlspecialchars($ap['category'].'-'.$ap['name']); ?>
+                                    <?php if ($ap['bulk_price'] > 0 || $ap['retail_price'] > 0): ?>
+                                        <small style="color:var(--secondary);">
+                                            <?php if ($ap['bulk_price'] > 0): ?> bulk:<?php echo number_format($ap['bulk_price'],0); ?><?php endif; ?>
+                                            <?php if ($ap['retail_price'] > 0): ?> retail:<?php echo number_format($ap['retail_price'],0); ?><?php endif; ?>
+                                        </small>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm" style="margin-top:6px;background:var(--gray-200);color:var(--dark);"
+                            onclick="extSwitchToManual()">+ Not in list? Type manually</button>
+                </div>
+
+                <div class="form-group" id="ext_manual_mode" style="display:none;">
+                    <label for="ext_manual_name">Product Name*</label>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="ext_manual_name" placeholder="Type product name..." style="flex:1;" oninput="extSetManualName(this.value)">
+                        <button type="button" class="btn btn-sm" style="background:var(--gray-200);color:var(--dark);white-space:nowrap;"
+                                onclick="extSwitchToPicker()">Back to list</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ext_quantity">Quantity*</label>
+                    <input type="number" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtTotal()">
+                </div>
+                <div class="form-group">
+                    <label for="ext_unit_price">Unit Price (RWF)*</label>
+                    <input type="number" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtTotal()">
+                </div>
+                <div class="form-group">
+                    <label for="ext_customer_name">Customer Name</label>
+                    <input type="text" id="ext_customer_name" name="ext_customer_name" value="client" placeholder="Enter customer name">
+                </div>
+
+                <div id="ext_payment_section">
+                    <div class="form-group">
+                        <label>Payment Breakdown</label>
+                        <div class="split-payment-box">
+                            <div class="split-row">
+                                <span class="split-label">Cash</span>
+                                <input type="number" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
+                            </div>
+                            <div class="split-row">
+                                <span class="split-label">Momo</span>
+                                <input type="number" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
+                            </div>
+                            <div class="split-row">
+                                <span class="split-label">Loan</span>
+                                <input type="number" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
+                            </div>
+                            <div class="split-row split-remaining-row" id="ext_remaining_row">
+                                <span class="split-label">Remaining</span>
+                                <span id="ext_remaining">—</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="ext_loan_fields" style="display:none;">
+                        <?php if ($loan_clients_arr): ?>
+                        <div class="form-group">
+                            <label>Existing Client</label>
+                            <div class="searchable-select" id="extClientPickerWrap">
+                                <input type="text" class="searchable-select-input" id="ext_client_picker_search"
+                                    placeholder="Search registered client..." autocomplete="off">
+                                <div class="searchable-select-dropdown" id="ext_client_picker_dropdown">
+                                    <?php foreach ($loan_clients_arr as $c): ?>
+                                        <div class="searchable-select-option"
+                                            data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
+                                            data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
+                                            <?php echo htmlspecialchars($c['client']); ?>
+                                            <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
+                                            <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                        </div>
+                        <?php endif; ?>
+                        <div class="form-group">
+                            <label for="ext_phone">Client Phone*</label>
+                            <input type="text" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX" oninput="calcExtSplit()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sale-summary" id="ext_summary" style="display:none;">
+                    <div class="summary-row"><span>Product</span><strong id="ext_sum_product"></strong></div>
+                    <div class="summary-row"><span>Quantity</span><strong id="ext_sum_qty"></strong></div>
+                    <div class="summary-row"><span>Unit Price</span><strong id="ext_sum_price"></strong></div>
+                    <div class="summary-row summary-total"><span>Total Amount</span><strong id="ext_sum_total"></strong></div>
+                </div>
+
+                <button type="button" id="ext_submit_btn" class="btn btn-primary" disabled onclick="handleExtSubmit()" style="background:var(--warning,#f59e0b);border-color:var(--warning,#f59e0b);">Save External Sale</button>
             </form>
         </div>
     </div>
@@ -723,6 +973,8 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         initSearchableSelect('retailProductSearchable', 'retail_product_search', 'retail_product_dropdown', 'retail_product_id');
 
         // --- Bulk Sale ---
+        var bulkCoreValid = false;
+
         function updateBulkProductDetails() {
             const select = document.getElementById('bulk_product_id');
             const opt = select.options[select.selectedIndex];
@@ -732,6 +984,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 document.getElementById('bulk_selling_price').value = '';
                 document.getElementById('bulk_quantity').value = '';
                 document.getElementById('bulk_summary').style.display = 'none';
+                document.getElementById('bulk_payment_section').style.display = 'none';
                 document.getElementById('bulk_submit_btn').disabled = true;
                 return;
             }
@@ -745,6 +998,11 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             document.getElementById('bulk_stock_info').innerHTML = 'Available: ' + stock + ' packages';
             document.getElementById('bulk_product_details').style.display = 'block';
             document.getElementById('bulk_product_info').innerHTML = name + ' &mdash; Default price: RWF ' + parseFloat(price).toLocaleString();
+            // Reset split fields on product change
+            document.getElementById('bulk_cash').value = 0;
+            document.getElementById('bulk_momo').value = 0;
+            document.getElementById('bulk_loan_split').value = 0;
+            document.getElementById('bulk_payment_section').style.display = 'none';
             calculateBulkTotal();
         }
 
@@ -769,10 +1027,8 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             const qtyError = document.getElementById('bulk_qty_error');
             const priceWarning = document.getElementById('bulk_price_warning');
             const summary = document.getElementById('bulk_summary');
-            const submitBtn = document.getElementById('bulk_submit_btn');
             let valid = true;
 
-            // Quantity check
             if (qty > stock) {
                 qtyError.innerHTML = 'Exceeds available stock (' + stock + ')!';
                 qtyError.style.display = 'block';
@@ -781,7 +1037,6 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 qtyError.style.display = 'none';
             }
 
-            // Price warning
             if (price > 0 && defaultPrice > 0 && price !== defaultPrice) {
                 const diff = ((price - defaultPrice) / defaultPrice * 100).toFixed(1);
                 priceWarning.innerHTML = 'Price is ' + (price > defaultPrice ? '+' : '') + diff + '% from default (RWF ' + defaultPrice.toLocaleString() + ')';
@@ -792,37 +1047,97 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
             if (qty < 1 || price < 1) valid = false;
 
-            // Update summary
+            bulkCoreValid = valid;
+
             if (valid) {
                 document.getElementById('bulk_sum_product').textContent = opt.dataset.productName;
                 document.getElementById('bulk_sum_qty').textContent = qty;
                 document.getElementById('bulk_sum_price').textContent = 'RWF ' + price.toLocaleString();
                 document.getElementById('bulk_sum_total').textContent = 'RWF ' + total.toLocaleString();
                 summary.style.display = 'block';
+                // Show payment section; default Cash = total if all splits are 0
+                var paySection = document.getElementById('bulk_payment_section');
+                var cash = parseFloat(document.getElementById('bulk_cash').value) || 0;
+                var momo = parseFloat(document.getElementById('bulk_momo').value) || 0;
+                var loan = parseFloat(document.getElementById('bulk_loan_split').value) || 0;
+                if (cash === 0 && momo === 0 && loan === 0) {
+                    document.getElementById('bulk_momo').value = total;
+                }
+                paySection.style.display = 'block';
+                calcBulkSplit();
             } else {
                 summary.style.display = 'none';
+                document.getElementById('bulk_payment_section').style.display = 'none';
+                document.getElementById('bulk_submit_btn').disabled = true;
             }
-            submitBtn.disabled = !valid;
+        }
+
+        function calcBulkSplit(changed) {
+            var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
+            var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
+            var total = qty * price;
+            var cashEl = document.getElementById('bulk_cash');
+            var momoEl = document.getElementById('bulk_momo');
+            var loanEl = document.getElementById('bulk_loan_split');
+            var cash = parseFloat(cashEl.value) || 0;
+            var momo = parseFloat(momoEl.value) || 0;
+            var loan = parseFloat(loanEl.value) || 0;
+
+            // Cascade: auto-fill the next field with the remaining
+            if (changed === 'cash') {
+                momo = Math.max(0, total - cash - loan);
+                momoEl.value = momo;
+            } else if (changed === 'momo') {
+                loan = Math.max(0, total - cash - momo);
+                loanEl.value = loan;
+            } else if (changed === 'loan') {
+                momo = Math.max(0, total - cash - loan);
+                momoEl.value = momo;
+            }
+
+            var remaining = Math.round(total - cash - momo - loan);
+            var splitOk = remaining === 0;
+
+            var remEl = document.getElementById('bulk_remaining');
+            var remRow = document.getElementById('bulk_remaining_row');
+            remEl.textContent = 'RWF ' + remaining.toLocaleString();
+            remRow.className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
+
+            document.getElementById('bulk_loan_fields').style.display = loan > 0 ? 'block' : 'none';
+
+            var clientOk = loan <= 0 || (
+                document.getElementById('bulk_customer').value.trim().length > 0 &&
+                document.getElementById('bulk_phone').value.trim().length > 0
+            );
+            document.getElementById('bulk_submit_btn').disabled = !(bulkCoreValid && splitOk && clientOk);
         }
 
         function confirmBulkSale() {
-            const opt = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
-            const qty = document.getElementById('bulk_quantity').value;
-            const price = parseFloat(document.getElementById('bulk_selling_price').value);
-            const total = qty * price;
-            const name = opt.dataset.productName;
-
+            var opt = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
+            var qty = document.getElementById('bulk_quantity').value;
+            var price = parseFloat(document.getElementById('bulk_selling_price').value);
+            var total = qty * price;
+            var cash = parseFloat(document.getElementById('bulk_cash').value) || 0;
+            var momo = parseFloat(document.getElementById('bulk_momo').value) || 0;
+            var loan = parseFloat(document.getElementById('bulk_loan_split').value) || 0;
+            var parts = [];
+            if (cash > 0) parts.push('Cash: RWF ' + cash.toLocaleString());
+            if (momo > 0) parts.push('Momo: RWF ' + momo.toLocaleString());
+            if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
             return confirm(
                 'Confirm Bulk Sale?\n\n' +
-                'Product: ' + name + '\n' +
+                'Product: ' + opt.dataset.productName + '\n' +
                 'Packages: ' + qty + '\n' +
                 'Price/Package: RWF ' + price.toLocaleString() + '\n' +
-                'Total: RWF ' + total.toLocaleString() + '\n\n' +
+                'Total: RWF ' + total.toLocaleString() + '\n' +
+                'Payment: ' + parts.join(' | ') + '\n\n' +
                 'This will deduct ' + qty + ' package(s) from warehouse stock.'
             );
         }
 
         // --- Retail Sale ---
+        var retailCoreValid = false;
+
         function updateRetailProductDetails() {
             const select = document.getElementById('retail_product_id');
             const opt = select.options[select.selectedIndex];
@@ -832,6 +1147,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 document.getElementById('retail_selling_price').value = '';
                 document.getElementById('pieces_sold').value = '';
                 document.getElementById('retail_summary').style.display = 'none';
+                document.getElementById('retail_payment_section').style.display = 'none';
                 document.getElementById('retail_submit_btn').disabled = true;
                 return;
             }
@@ -845,6 +1161,11 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             document.getElementById('retail_stock_info').innerHTML = 'Available: ' + stock + ' pieces';
             document.getElementById('retail_product_details').style.display = 'block';
             document.getElementById('retail_product_info').innerHTML = name + ' &mdash; Default price: RWF ' + parseFloat(price).toLocaleString() + '/piece';
+            // Reset split fields on product change
+            document.getElementById('retail_cash').value = 0;
+            document.getElementById('retail_momo').value = 0;
+            document.getElementById('retail_loan_split').value = 0;
+            document.getElementById('retail_payment_section').style.display = 'none';
             calculateRetailTotal();
         }
 
@@ -869,10 +1190,8 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             const qtyError = document.getElementById('retail_qty_error');
             const priceWarning = document.getElementById('retail_price_warning');
             const summary = document.getElementById('retail_summary');
-            const submitBtn = document.getElementById('retail_submit_btn');
             let valid = true;
 
-            // Quantity check
             if (qty > stock) {
                 qtyError.innerHTML = 'Exceeds available stock (' + stock + ' pieces)!';
                 qtyError.style.display = 'block';
@@ -881,7 +1200,6 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 qtyError.style.display = 'none';
             }
 
-            // Price warning
             if (price > 0 && defaultPrice > 0 && price !== defaultPrice) {
                 const diff = ((price - defaultPrice) / defaultPrice * 100).toFixed(1);
                 priceWarning.innerHTML = 'Price is ' + (price > defaultPrice ? '+' : '') + diff + '% from default (RWF ' + defaultPrice.toLocaleString() + ')';
@@ -892,69 +1210,90 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
             if (qty < 1 || price < 1) valid = false;
 
-            // Update summary
+            retailCoreValid = valid;
+
             if (valid) {
                 document.getElementById('retail_sum_product').textContent = opt.dataset.productName;
                 document.getElementById('retail_sum_qty').textContent = qty;
                 document.getElementById('retail_sum_price').textContent = 'RWF ' + price.toLocaleString();
                 document.getElementById('retail_sum_total').textContent = 'RWF ' + total.toLocaleString();
                 summary.style.display = 'block';
+                var cash = parseFloat(document.getElementById('retail_cash').value) || 0;
+                var momo = parseFloat(document.getElementById('retail_momo').value) || 0;
+                var loan = parseFloat(document.getElementById('retail_loan_split').value) || 0;
+                if (cash === 0 && momo === 0 && loan === 0) {
+                    document.getElementById('retail_momo').value = total;
+                }
+                document.getElementById('retail_payment_section').style.display = 'block';
+                calcRetailSplit();
             } else {
                 summary.style.display = 'none';
+                document.getElementById('retail_payment_section').style.display = 'none';
+                document.getElementById('retail_submit_btn').disabled = true;
             }
-            submitBtn.disabled = !valid;
+        }
+
+        function calcRetailSplit(changed) {
+            var qty   = parseInt(document.getElementById('pieces_sold').value) || 0;
+            var price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
+            var total = qty * price;
+            var cashEl = document.getElementById('retail_cash');
+            var momoEl = document.getElementById('retail_momo');
+            var loanEl = document.getElementById('retail_loan_split');
+            var cash = parseFloat(cashEl.value) || 0;
+            var momo = parseFloat(momoEl.value) || 0;
+            var loan = parseFloat(loanEl.value) || 0;
+
+            // Cascade: auto-fill the next field with the remaining
+            if (changed === 'cash') {
+                momo = Math.max(0, total - cash - loan);
+                momoEl.value = momo;
+            } else if (changed === 'momo') {
+                loan = Math.max(0, total - cash - momo);
+                loanEl.value = loan;
+            } else if (changed === 'loan') {
+                momo = Math.max(0, total - cash - loan);
+                momoEl.value = momo;
+            }
+
+            var remaining = Math.round(total - cash - momo - loan);
+            var splitOk = remaining === 0;
+
+            var remEl = document.getElementById('retail_remaining');
+            var remRow = document.getElementById('retail_remaining_row');
+            remEl.textContent = 'RWF ' + remaining.toLocaleString();
+            remRow.className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
+
+            document.getElementById('retail_loan_fields').style.display = loan > 0 ? 'block' : 'none';
+
+            var clientOk = loan <= 0 || (
+                document.getElementById('retail_customer').value.trim().length > 0 &&
+                document.getElementById('retail_phone').value.trim().length > 0
+            );
+            document.getElementById('retail_submit_btn').disabled = !(retailCoreValid && splitOk && clientOk);
         }
 
         function confirmRetailSale() {
-            const opt = document.getElementById('retail_product_id').options[document.getElementById('retail_product_id').selectedIndex];
-            const qty = document.getElementById('pieces_sold').value;
-            const price = parseFloat(document.getElementById('retail_selling_price').value);
-            const total = qty * price;
-            const name = opt.dataset.productName;
-
+            var opt = document.getElementById('retail_product_id').options[document.getElementById('retail_product_id').selectedIndex];
+            var qty = document.getElementById('pieces_sold').value;
+            var price = parseFloat(document.getElementById('retail_selling_price').value);
+            var total = qty * price;
+            var cash = parseFloat(document.getElementById('retail_cash').value) || 0;
+            var momo = parseFloat(document.getElementById('retail_momo').value) || 0;
+            var loan = parseFloat(document.getElementById('retail_loan_split').value) || 0;
+            var parts = [];
+            if (cash > 0) parts.push('Cash: RWF ' + cash.toLocaleString());
+            if (momo > 0) parts.push('Momo: RWF ' + momo.toLocaleString());
+            if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
             return confirm(
                 'Confirm Retail Sale?\n\n' +
-                'Product: ' + name + '\n' +
+                'Product: ' + opt.dataset.productName + '\n' +
                 'Pieces: ' + qty + '\n' +
                 'Price/Piece: RWF ' + price.toLocaleString() + '\n' +
-                'Total: RWF ' + total.toLocaleString() + '\n\n' +
+                'Total: RWF ' + total.toLocaleString() + '\n' +
+                'Payment: ' + parts.join(' | ') + '\n\n' +
                 'This will deduct ' + qty + ' piece(s) from retail stock.'
             );
-        }
-
-        // --- Loan toggle ---
-        function toggleBulkLoan() {
-            var isLoan = document.getElementById('bulk_is_loan').checked;
-            var show = isLoan ? 'block' : 'none';
-            document.getElementById('bulk_phone_group').style.display = show;
-            document.getElementById('bulk_loan_amount_group').style.display = show;
-            var cpg = document.getElementById('bulk_client_picker_group');
-            if (cpg) cpg.style.display = show;
-            if (isLoan) {
-                var qty = parseInt(document.getElementById('bulk_quantity').value) || 0;
-                var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
-                if (qty > 0 && price > 0) document.getElementById('bulk_loan_amount').value = qty * price;
-            }
-            var btn = document.getElementById('bulk_submit_btn');
-            btn.name = isLoan ? 'bulk_loan' : 'bulk_sale';
-            btn.textContent = isLoan ? 'Register Loan' : 'Save Bulk Sale';
-        }
-
-        function toggleRetailLoan() {
-            var isLoan = document.getElementById('retail_is_loan').checked;
-            var show = isLoan ? 'block' : 'none';
-            document.getElementById('retail_phone_group').style.display = show;
-            document.getElementById('retail_loan_amount_group').style.display = show;
-            var cpg = document.getElementById('retail_client_picker_group');
-            if (cpg) cpg.style.display = show;
-            if (isLoan) {
-                var qty = parseInt(document.getElementById('pieces_sold').value) || 0;
-                var price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
-                if (qty > 0 && price > 0) document.getElementById('retail_loan_amount').value = qty * price;
-            }
-            var btn = document.getElementById('retail_submit_btn');
-            btn.name = isLoan ? 'retail_loan' : 'retail_sale';
-            btn.textContent = isLoan ? 'Register Loan' : 'Save Retail Sale';
         }
 
         function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId) {
@@ -989,7 +1328,9 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             }
             function pick(opt) {
                 document.getElementById(clientInputId).value = opt.getAttribute('data-client');
-                document.getElementById(phoneInputId).value  = opt.getAttribute('data-phone');
+                var phoneEl = document.getElementById(phoneInputId);
+                phoneEl.value = opt.getAttribute('data-phone');
+                phoneEl.dispatchEvent(new Event('input'));
                 search.value = opt.getAttribute('data-client');
                 dropdown.classList.remove('open'); hi = -1;
             }
@@ -998,49 +1339,192 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         initLoanClientPicker('bulkClientPickerWrap',   'bulk_client_picker_search',   'bulk_client_picker_dropdown',   'bulk_customer',   'bulk_phone');
         initLoanClientPicker('retailClientPickerWrap', 'retail_client_picker_search', 'retail_client_picker_dropdown', 'retail_customer', 'retail_phone');
 
+        function submitFormWithAction(formId, actionName) {
+            var form = document.getElementById(formId);
+            var inp = document.createElement('input');
+            inp.type = 'hidden'; inp.name = actionName; inp.value = '1';
+            form.appendChild(inp);
+            form.submit();
+        }
         function handleBulkSubmit() {
-            return document.getElementById('bulk_is_loan').checked ? confirmBulkLoan() : confirmBulkSale();
+            if (confirmBulkSale()) submitFormWithAction('bulkSaleForm', 'bulk_sale');
         }
-
         function handleRetailSubmit() {
-            return document.getElementById('retail_is_loan').checked ? confirmRetailLoan() : confirmRetailSale();
+            if (confirmRetailSale()) submitFormWithAction('retailSaleForm', 'retail_sale');
         }
 
-        function confirmBulkLoan() {
-            var opt = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
-            var qty = document.getElementById('bulk_quantity').value;
-            var price = parseFloat(document.getElementById('bulk_selling_price').value);
-            return confirm(
-                'Register as Loan?\n\n' +
-                'Product: ' + opt.dataset.productName + '\n' +
-                'Packages: ' + qty + '\n' +
-                'Price/Package: RWF ' + price.toLocaleString() + '\n' +
-                'Total Owed: RWF ' + (qty * price).toLocaleString() + '\n' +
-                'Client: ' + document.getElementById('bulk_customer').value + '\n\n' +
-                'Stock will be deducted. Payment is deferred.'
+        // --- External Sale product picker ---
+        (function() {
+            var search   = document.getElementById('ext_product_search');
+            var dropdown = document.getElementById('ext_product_dropdown');
+            var options  = dropdown.querySelectorAll('.searchable-select-option');
+            var hi = -1;
+
+            search.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
+            search.addEventListener('input',  function() { dropdown.classList.add('open'); hi = -1; filter(); });
+            search.addEventListener('keydown', function(e) {
+                var vis = dropdown.querySelectorAll('.searchable-select-option:not(.hidden)');
+                if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(hi+1, vis.length-1); hl(vis); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(hi-1, 0); hl(vis); }
+                else if (e.key === 'Enter') { e.preventDefault(); if (hi >= 0 && vis[hi]) pick(vis[hi]); }
+                else if (e.key === 'Escape') dropdown.classList.remove('open');
+            });
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('#extProductSearchable')) dropdown.classList.remove('open');
+            });
+            options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
+
+            function filter() {
+                var term = search.value.toLowerCase();
+                options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term) === -1); });
+            }
+            function hl(vis) {
+                options.forEach(function(o) { o.classList.remove('highlighted'); });
+                if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
+            }
+            function pick(opt) {
+                var name  = opt.getAttribute('data-name');
+                var bulk  = parseFloat(opt.getAttribute('data-bulk'))  || 0;
+                var retail= parseFloat(opt.getAttribute('data-retail')) || 0;
+                document.getElementById('ext_product_name').value = name;
+                search.value = name;
+                dropdown.classList.remove('open'); hi = -1;
+                // Suggest price: prefer bulk price, fallback retail
+                var priceEl = document.getElementById('ext_unit_price');
+                if ((priceEl.value === '' || parseFloat(priceEl.value) === 0) && (bulk > 0 || retail > 0)) {
+                    priceEl.value = bulk > 0 ? bulk : retail;
+                }
+                calcExtTotal();
+            }
+        })();
+
+        function extSwitchToManual() {
+            document.getElementById('ext_picker_mode').style.display = 'none';
+            document.getElementById('ext_manual_mode').style.display = 'block';
+            document.getElementById('ext_product_name').value = '';
+            document.getElementById('ext_manual_name').focus();
+            calcExtTotal();
+        }
+        function extSwitchToPicker() {
+            document.getElementById('ext_manual_mode').style.display = 'none';
+            document.getElementById('ext_picker_mode').style.display = 'block';
+            document.getElementById('ext_product_name').value = document.getElementById('ext_product_search').getAttribute('data-selected') || '';
+            calcExtTotal();
+        }
+        function extSetManualName(val) {
+            document.getElementById('ext_product_name').value = val.trim();
+            calcExtTotal();
+        }
+
+        // --- External Sale ---
+        var extCoreValid = false;
+
+        function calcExtTotal() {
+            var name  = document.getElementById('ext_product_name').value.trim();
+            var qty   = parseInt(document.getElementById('ext_quantity').value) || 0;
+            var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
+            var total = qty * price;
+            var valid = name.length > 0 && qty > 0 && price > 0;
+            extCoreValid = valid;
+
+            if (valid) {
+                document.getElementById('ext_sum_product').textContent = name;
+                document.getElementById('ext_sum_qty').textContent = qty;
+                document.getElementById('ext_sum_price').textContent = 'RWF ' + price.toLocaleString();
+                document.getElementById('ext_sum_total').textContent = 'RWF ' + total.toLocaleString();
+                document.getElementById('ext_summary').style.display = 'block';
+                // Auto-default momo to total when all splits are still 0
+                var cash = parseFloat(document.getElementById('ext_cash').value) || 0;
+                var momo = parseFloat(document.getElementById('ext_momo').value) || 0;
+                var loan = parseFloat(document.getElementById('ext_loan').value) || 0;
+                if (cash === 0 && momo === 0 && loan === 0) {
+                    document.getElementById('ext_momo').value = total;
+                }
+            } else {
+                document.getElementById('ext_summary').style.display = 'none';
+                document.getElementById('ext_submit_btn').disabled = true;
+            }
+            calcExtSplit();
+        }
+
+        function calcExtSplit(changed) {
+            var qty   = parseInt(document.getElementById('ext_quantity').value) || 0;
+            var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
+            var total = qty * price;
+            var cashEl = document.getElementById('ext_cash');
+            var momoEl = document.getElementById('ext_momo');
+            var loanEl = document.getElementById('ext_loan');
+            var cash = parseFloat(cashEl.value) || 0;
+            var momo = parseFloat(momoEl.value) || 0;
+            var loan = parseFloat(loanEl.value) || 0;
+
+            if (changed === 'cash') {
+                momo = Math.max(0, total - cash - loan);
+                momoEl.value = momo;
+            } else if (changed === 'momo') {
+                loan = Math.max(0, total - cash - momo);
+                loanEl.value = loan;
+            } else if (changed === 'loan') {
+                momo = Math.max(0, total - cash - loan);
+                momoEl.value = momo;
+            }
+
+            var remaining = Math.round(total - cash - momo - loan);
+            var splitOk = extCoreValid && remaining === 0;
+            var remEl = document.getElementById('ext_remaining');
+            var remRow = document.getElementById('ext_remaining_row');
+            if (!extCoreValid) {
+                remEl.textContent = '—';
+                remRow.className = 'split-row split-remaining-row';
+            } else {
+                remEl.textContent = 'RWF ' + remaining.toLocaleString();
+                remRow.className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
+            }
+
+            document.getElementById('ext_loan_fields').style.display = loan > 0 ? 'block' : 'none';
+
+            var clientOk = loan <= 0 || (
+                document.getElementById('ext_customer_name').value.trim().length > 0 &&
+                document.getElementById('ext_phone').value.trim().length > 0
             );
+            document.getElementById('ext_submit_btn').disabled = !(extCoreValid && splitOk && clientOk);
         }
 
-        function confirmRetailLoan() {
-            var opt = document.getElementById('retail_product_id').options[document.getElementById('retail_product_id').selectedIndex];
-            var qty = document.getElementById('pieces_sold').value;
-            var price = parseFloat(document.getElementById('retail_selling_price').value);
-            return confirm(
-                'Register as Loan?\n\n' +
-                'Product: ' + opt.dataset.productName + '\n' +
-                'Pieces: ' + qty + '\n' +
-                'Price/Piece: RWF ' + price.toLocaleString() + '\n' +
-                'Total Owed: RWF ' + (qty * price).toLocaleString() + '\n' +
-                'Client: ' + document.getElementById('retail_customer').value + '\n\n' +
-                'Stock will be deducted. Payment is deferred.'
+        function handleExtSubmit() {
+            var name  = document.getElementById('ext_product_name').value.trim();
+            var qty   = document.getElementById('ext_quantity').value;
+            var price = parseFloat(document.getElementById('ext_unit_price').value);
+            var total = qty * price;
+            var cash  = parseFloat(document.getElementById('ext_cash').value) || 0;
+            var momo  = parseFloat(document.getElementById('ext_momo').value) || 0;
+            var loan  = parseFloat(document.getElementById('ext_loan').value) || 0;
+            var parts = [];
+            if (cash > 0) parts.push('Cash: RWF ' + cash.toLocaleString());
+            if (momo > 0) parts.push('Momo: RWF ' + momo.toLocaleString());
+            if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
+            var ok = confirm(
+                'Confirm External Sale?\n\n' +
+                'Product: ' + name + '\n' +
+                'Quantity: ' + qty + '\n' +
+                'Unit Price: RWF ' + price.toLocaleString() + '\n' +
+                'Total: RWF ' + total.toLocaleString() + '\n' +
+                'Payment: ' + parts.join(' | ') + '\n\n' +
+                'No stock will be deducted.'
             );
+            if (ok) submitFormWithAction('externalSaleForm', 'external_sale');
         }
 
-        // --- Shared ---
-        function toggleSection(header) {
-            const body = header.nextElementSibling;
-            header.classList.toggle('collapsed');
-            body.classList.toggle('collapsed');
+        initLoanClientPicker('extClientPickerWrap', 'ext_client_picker_search', 'ext_client_picker_dropdown', 'ext_customer_name', 'ext_phone');
+
+        // --- Sales Tabs ---
+        function switchSalesTab(tab) {
+            ['bulk','retail','external'].forEach(function(t) {
+                document.getElementById('stab-' + t).style.display = t === tab ? '' : 'none';
+            });
+            document.querySelectorAll('.sales-tab-btn').forEach(function(btn, i) {
+                btn.classList.toggle('active', ['bulk','retail','external'][i] === tab);
+            });
+            document.getElementById('filter_tab').value = tab;
         }
 
         document.addEventListener('DOMContentLoaded', function() {

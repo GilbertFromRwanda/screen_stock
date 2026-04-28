@@ -168,6 +168,30 @@ $total_suppliers = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as co
 // Calculate profit margin
 $profit_margin = $week_sales > 0 ? ($week_profit / $week_sales) * 100 : 0;
 
+// Payment method breakdown (today — AJAX handles other ranges)
+$today_payment = mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT
+        COALESCE(SUM(cash_amount), 0) as cash_total,
+        COALESCE(SUM(momo_amount), 0) as momo_total,
+        COALESCE(SUM(loan_amount), 0) as loan_total
+    FROM (
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_bulk     WHERE sale_date = '$today'
+        UNION ALL
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_retail   WHERE sale_date = '$today'
+        UNION ALL
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_external WHERE sale_date = '$today'
+    ) as combined
+"));
+$today_cash      = $today_payment['cash_total'] ?? 0;
+$today_momo      = $today_payment['momo_total'] ?? 0;
+$today_loan      = $today_payment['loan_total'] ?? 0;
+$today_pay_total = $today_cash + $today_momo + $today_loan;
+
+// Total outstanding loans (all time)
+$outstanding_loans = mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(amount), 0) as total FROM loans
+"))['total'] ?? 0;
+
 // Get alerts and notifications
 $alerts = [];
 
@@ -308,8 +332,13 @@ if (($today_sales['total'] ?? 0) == 0) {
                         <?php endif; ?>
                     </div>
                     <div class="stat-footer">
-                        Bulk: RWF <?php echo number_format($today_sales['bulk_total'] ?? 0, 0); ?> | 
+                        Bulk: RWF <?php echo number_format($today_sales['bulk_total'] ?? 0, 0); ?> |
                         Retail: RWF <?php echo number_format($today_sales['retail_total'] ?? 0, 0); ?>
+                        <div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
+                            <span style="color:#16a34a;">💵 <?php echo number_format($today_cash, 0); ?></span>
+                            <span style="color:#2563eb;">📱 <?php echo number_format($today_momo, 0); ?></span>
+                            <span style="color:#d97706;">🔖 <?php echo number_format($today_loan, 0); ?></span>
+                        </div>
                     </div>
                 </div>
                 
@@ -381,6 +410,185 @@ if (($today_sales['total'] ?? 0) == 0) {
                 </div>
             </div>
             
+            <!-- Payment Collection Breakdown -->
+            <?php
+                $init_cash_pct = $today_pay_total > 0 ? round($today_cash / $today_pay_total * 100) : 0;
+                $init_momo_pct = $today_pay_total > 0 ? round($today_momo / $today_pay_total * 100) : 0;
+                $init_loan_pct = $today_pay_total > 0 ? 100 - $init_cash_pct - $init_momo_pct : 0;
+            ?>
+            <div style="margin-bottom:24px;">
+                <div class="chart-container" style="padding:20px 24px;">
+
+                    <!-- Header -->
+                    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+                        <div>
+                            <h3 style="margin:0 0 2px;">Collection Breakdown</h3>
+                            <p id="coll-subtitle" style="font-size:12px;color:var(--secondary);margin:0;">Today</p>
+                        </div>
+                        <form id="coll-form" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                            <input type="date" id="coll-from" value="<?php echo $today; ?>"
+                                style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;">
+                            <span style="font-size:12px;color:var(--secondary);">to</span>
+                            <input type="date" id="coll-to" value="<?php echo $today; ?>"
+                                style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;">
+                            <button type="button" onclick="fetchCollection()" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;">Filter</button>
+                            <button type="button" id="coll-today-btn" onclick="fetchCollection('<?php echo $today; ?>','<?php echo $today; ?>')"
+                                style="display:none;padding:6px 10px;background:var(--gray-200);color:var(--dark);border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;">Today</button>
+                            <span id="coll-loader" style="display:none;font-size:12px;color:var(--secondary);">Loading…</span>
+                        </form>
+                    </div>
+
+                    <!-- Has-data state -->
+                    <div id="coll-data" style="display:<?php echo $today_pay_total > 0 ? 'block' : 'none'; ?>">
+                        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;">
+
+                            <!-- Cash -->
+                            <div style="background:#f0fdf4;border-radius:12px;padding:16px;border-left:4px solid #22c55e;">
+                                <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+                                    <span style="font-size:18px;">💵</span>
+                                    <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.5px;">Cash</span>
+                                </div>
+                                <div id="coll-cash-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">
+                                    RWF <?php echo number_format($today_cash, 0); ?>
+                                </div>
+                                <div style="background:#dcfce7;border-radius:99px;height:6px;margin-bottom:5px;">
+                                    <div id="coll-cash-bar" style="background:#22c55e;height:6px;border-radius:99px;width:<?php echo $init_cash_pct; ?>%;transition:width .4s;"></div>
+                                </div>
+                                <div id="coll-cash-pct" style="font-size:11px;color:#15803d;font-weight:600;"><?php echo $init_cash_pct; ?>% of total</div>
+                            </div>
+
+                            <!-- Momo -->
+                            <div style="background:#eff6ff;border-radius:12px;padding:16px;border-left:4px solid #3b82f6;">
+                                <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+                                    <span style="font-size:18px;">📱</span>
+                                    <span style="font-size:12px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;">Momo</span>
+                                </div>
+                                <div id="coll-momo-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">
+                                    RWF <?php echo number_format($today_momo, 0); ?>
+                                </div>
+                                <div style="background:#dbeafe;border-radius:99px;height:6px;margin-bottom:5px;">
+                                    <div id="coll-momo-bar" style="background:#3b82f6;height:6px;border-radius:99px;width:<?php echo $init_momo_pct; ?>%;transition:width .4s;"></div>
+                                </div>
+                                <div id="coll-momo-pct" style="font-size:11px;color:#1d4ed8;font-weight:600;"><?php echo $init_momo_pct; ?>% of total</div>
+                            </div>
+
+                            <!-- Loan -->
+                            <div style="background:#fffbeb;border-radius:12px;padding:16px;border-left:4px solid #f59e0b;">
+                                <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+                                    <span style="font-size:18px;">🔖</span>
+                                    <span style="font-size:12px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.5px;">Loan</span>
+                                </div>
+                                <div id="coll-loan-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">
+                                    RWF <?php echo number_format($today_loan, 0); ?>
+                                </div>
+                                <div style="background:#fef3c7;border-radius:99px;height:6px;margin-bottom:5px;">
+                                    <div id="coll-loan-bar" style="background:#f59e0b;height:6px;border-radius:99px;width:<?php echo $init_loan_pct; ?>%;transition:width .4s;"></div>
+                                </div>
+                                <div id="coll-loan-pct" style="font-size:11px;color:#b45309;font-weight:600;"><?php echo $init_loan_pct; ?>% deferred</div>
+                            </div>
+                        </div>
+
+                        <!-- Outstanding loans row -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fafafa;border-radius:10px;border:1px solid #f3f4f6;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:16px;">⚠️</span>
+                                <div>
+                                    <div style="font-size:13px;font-weight:600;color:#374151;">Total Outstanding Loans</div>
+                                    <div style="font-size:11px;color:var(--secondary);">All unpaid client balances</div>
+                                </div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div id="coll-outstanding-amount" style="font-size:18px;font-weight:800;color:#f59e0b;">RWF <?php echo number_format($outstanding_loans, 0); ?></div>
+                                <a href="loans.php" style="font-size:11px;color:var(--primary);text-decoration:none;">View details →</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="coll-empty" style="text-align:center;padding:32px 0;color:var(--secondary);display:<?php echo $today_pay_total > 0 ? 'none' : 'block'; ?>">
+                        <div style="font-size:32px;margin-bottom:8px;">💳</div>
+                        <div style="font-size:13px;">No sales recorded for this period</div>
+                        <div id="coll-empty-loans" style="display:<?php echo $outstanding_loans > 0 ? 'inline-flex' : 'none'; ?>;margin-top:16px;padding:12px 16px;background:#fffbeb;border-radius:10px;border:1px solid #fde68a;gap:12px;align-items:center;">
+                            <span style="font-size:13px;color:#92400e;">⚠️ Outstanding Loans:</span>
+                            <strong id="coll-empty-outstanding" style="color:#f59e0b;">RWF <?php echo number_format($outstanding_loans, 0); ?></strong>
+                            <a href="loans.php" style="font-size:11px;color:var(--primary);">View →</a>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <script>
+            (function () {
+                var collToday = '<?php echo $today; ?>';
+
+                function fmt(n) {
+                    return Math.round(n).toLocaleString();
+                }
+
+                function dateLabel(from, to) {
+                    if (from === to) {
+                        if (from === collToday) return 'Today';
+                        return new Date(from + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+                    }
+                    var f = new Date(from + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'});
+                    var t = new Date(to   + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+                    return f + ' – ' + t;
+                }
+
+                function render(d) {
+                    var total = d.cash + d.momo + d.loan;
+                    var isToday = d.from === collToday && d.to === collToday;
+
+                    document.getElementById('coll-subtitle').textContent = dateLabel(d.from, d.to);
+                    document.getElementById('coll-today-btn').style.display = isToday ? 'none' : '';
+                    document.getElementById('coll-outstanding-amount').textContent = 'RWF ' + fmt(d.outstanding);
+                    document.getElementById('coll-empty-outstanding').textContent  = 'RWF ' + fmt(d.outstanding);
+                    document.getElementById('coll-empty-loans').style.display = d.outstanding > 0 ? 'inline-flex' : 'none';
+
+                    if (total > 0) {
+                        var cPct = Math.round(d.cash / total * 100);
+                        var mPct = Math.round(d.momo / total * 100);
+                        var lPct = 100 - cPct - mPct;
+
+                        document.getElementById('coll-cash-amount').textContent = 'RWF ' + fmt(d.cash);
+                        document.getElementById('coll-cash-bar').style.width    = cPct + '%';
+                        document.getElementById('coll-cash-pct').textContent    = cPct + '% of total';
+
+                        document.getElementById('coll-momo-amount').textContent = 'RWF ' + fmt(d.momo);
+                        document.getElementById('coll-momo-bar').style.width    = mPct + '%';
+                        document.getElementById('coll-momo-pct').textContent    = mPct + '% of total';
+
+                        document.getElementById('coll-loan-amount').textContent = 'RWF ' + fmt(d.loan);
+                        document.getElementById('coll-loan-bar').style.width    = lPct + '%';
+                        document.getElementById('coll-loan-pct').textContent    = lPct + '% deferred';
+
+                        document.getElementById('coll-data').style.display  = 'block';
+                        document.getElementById('coll-empty').style.display = 'none';
+                    } else {
+                        document.getElementById('coll-data').style.display  = 'none';
+                        document.getElementById('coll-empty').style.display = 'block';
+                    }
+                }
+
+                window.fetchCollection = function (from, to) {
+                    from = from || document.getElementById('coll-from').value;
+                    to   = to   || document.getElementById('coll-to').value;
+                    document.getElementById('coll-from').value = from;
+                    document.getElementById('coll-to').value   = to;
+                    document.getElementById('coll-loader').style.display = 'inline';
+
+                    fetch('ajax_collection.php?coll_from=' + from + '&coll_to=' + to)
+                        .then(function (r) { return r.json(); })
+                        .then(function (d) { render(d); })
+                        .catch(function () {})
+                        .finally(function () {
+                            document.getElementById('coll-loader').style.display = 'none';
+                        });
+                };
+            })();
+            </script>
+
             <!-- Alerts Section -->
             <?php if (!empty($alerts)): ?>
             <div class="alerts-container">
@@ -575,6 +783,18 @@ if (($today_sales['total'] ?? 0) == 0) {
                     <div class="insight-row">
                         <span class="insight-label">Items per Sale</span>
                         <span class="insight-value"><?php echo number_format($avg_items['a'] ?? 0, 1); ?></span>
+                    </div>
+                    <div class="insight-row" style="border-top:1px solid var(--gray-100);margin-top:4px;padding-top:8px;">
+                        <span class="insight-label">💵 Cash (today)</span>
+                        <span class="insight-value" style="color:#16a34a;">RWF <?php echo number_format($today_cash, 0); ?></span>
+                    </div>
+                    <div class="insight-row">
+                        <span class="insight-label">📱 Momo (today)</span>
+                        <span class="insight-value" style="color:#2563eb;">RWF <?php echo number_format($today_momo, 0); ?></span>
+                    </div>
+                    <div class="insight-row">
+                        <span class="insight-label">🔖 Loans (today)</span>
+                        <span class="insight-value" style="color:#d97706;">RWF <?php echo number_format($today_loan, 0); ?></span>
                     </div>
                 </div>
             </div>
