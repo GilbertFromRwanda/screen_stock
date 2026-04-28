@@ -351,7 +351,11 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 <button class="btn btn-success btn-lg" onclick="openModal('retailSaleModal')">+ Gucuruza Detaye</button>
                 <button class="btn btn-lg" style="background:var(--warning,#f59e0b);color:#fff;" onclick="openModal('externalSaleModal')">+ External Sale</button>
             </div>
-            
+              <?php
+                $active_tab = in_array($last_sale_type, ['bulk','retail','external'])
+                    ? $last_sale_type
+                    : (in_array($_GET['tab'] ?? '', ['bulk','retail','external']) ? $_GET['tab'] : 'bulk');
+                ?>
             <div class="recent-sales">
                 <h2>Recent Sales</h2>
                 <form method="GET" class="date-filter-form">
@@ -367,11 +371,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                     <button type="submit" class="btn btn-primary btn-sm">Filter</button>
                     <a href="sales.php" class="btn btn-sm" style="background:var(--gray-200);color:var(--dark);">Today</a>
                 </form>
-                <?php
-                $active_tab = in_array($last_sale_type, ['bulk','retail','external'])
-                    ? $last_sale_type
-                    : (in_array($_GET['tab'] ?? '', ['bulk','retail','external']) ? $_GET['tab'] : 'bulk');
-                ?>
+              
                 <div class="sales-tab-nav">
                     <button class="sales-tab-btn<?php echo $active_tab==='bulk'     ? ' active' : ''; ?>" onclick="switchSalesTab('bulk')"    >Ibyaranguwe</button>
                     <button class="sales-tab-btn<?php echo $active_tab==='retail'   ? ' active' : ''; ?>" onclick="switchSalesTab('retail')"  >Ibyacurujwe detaye</button>
