@@ -7,6 +7,8 @@ if (!isLoggedIn()) {
 // Handle External Sale (product not from stock — tracking only)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     $product_name  = mysqli_real_escape_string($conn, trim($_POST['ext_product_name'] ?? ''));
+    $owner_name    = mysqli_real_escape_string($conn, trim($_POST['ext_owner_name'] ?? ''));
+    $owner_phone   = mysqli_real_escape_string($conn, trim($_POST['ext_owner_phone'] ?? ''));
     $quantity      = max(1, (int)($_POST['ext_quantity'] ?? 1));
     $unit_price    = max(0, (float)($_POST['ext_unit_price'] ?? 0));
     $customer_name = mysqli_real_escape_string($conn, trim($_POST['ext_customer_name'] ?? ''));
@@ -32,12 +34,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
         header("Location: sales.php"); exit;
     }
-    $ins = mysqli_query($conn, "INSERT INTO sales_external (product_name, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, customer_name, phone, sale_date)
-                   VALUES ('$product_name', $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, '$customer_name', '$phone', CURDATE())");
+
+    // Resolve owner_id — insert new owner if name provided and not yet registered
+    $owner_id_val = 'NULL';
+    if ($owner_name !== '') {
+        $existing = mysqli_fetch_assoc(mysqli_query($conn,
+            "SELECT id FROM product_owners WHERE name='$owner_name' AND (phone='$owner_phone' OR (phone IS NULL AND '$owner_phone'=''))"
+        ));
+        if ($existing) {
+            $owner_id_val = (int)$existing['id'];
+        } else {
+            $op = $owner_phone !== '' ? "'$owner_phone'" : 'NULL';
+            mysqli_query($conn, "INSERT INTO product_owners (name, phone) VALUES ('$owner_name', $op)");
+            $owner_id_val = (int)mysqli_insert_id($conn);
+        }
+    }
+
+    $sold_by = (int)$_SESSION['user_id'];
+    $ins = mysqli_query($conn, "INSERT INTO sales_external (product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, customer_name, phone, sale_date, sold_by)
+                   VALUES ('$product_name', $owner_id_val, $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, '$customer_name', '$phone', CURDATE(), $sold_by)");
     if ($ins) {
         if ($loan_amount > 0) {
             $loan_date = date('Y-m-d');
-            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES (0, $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date')");
+            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by) VALUES (0, $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by)");
         }
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
@@ -74,13 +93,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $_SESSION['flash_error'] = "Insufficient stock available";
         header("Location: sales.php"); exit;
     }
-    $ins = mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount)
-                   VALUES ($product_id, $quantity, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount)");
+    $sold_by = (int)$_SESSION['user_id'];
+    $ins = mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, sold_by)
+                   VALUES ($product_id, $quantity, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $sold_by)");
     if ($ins) {
         mysqli_query($conn, "UPDATE stock SET quantity = quantity - $quantity WHERE product_id = $product_id");
         if ($loan_amount > 0) {
             $loan_date = date('Y-m-d');
-            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date')");
+            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by)");
         }
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
@@ -117,13 +137,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $_SESSION['flash_error'] = "Insufficient retail stock available";
         header("Location: sales.php"); exit;
     }
-    $ins = mysqli_query($conn, "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount)
-                   VALUES ($product_id, $pieces_sold, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount)");
+    $sold_by = (int)$_SESSION['user_id'];
+    $ins = mysqli_query($conn, "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, sold_by)
+                   VALUES ($product_id, $pieces_sold, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $sold_by)");
     if ($ins) {
         mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_sold WHERE product_id = $product_id");
         if ($loan_amount > 0) {
             $loan_date = date('Y-m-d');
-            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date) VALUES ('$product_id','$pieces_sold','$loan_amount','$customer_name','$phone','$loan_date')");
+            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by) VALUES ('$product_id','$pieces_sold','$loan_amount','$customer_name','$phone','$loan_date',$sold_by)");
         }
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
@@ -168,28 +189,37 @@ $date_from = $_GET['date_from'] ?? date('Y-m-d');
 $date_to = $_GET['date_to'] ?? date('Y-m-d');
 $date_from_safe = mysqli_real_escape_string($conn, $date_from);
 $date_to_safe = mysqli_real_escape_string($conn, $date_to);
+$owner_filter = max(0, (int)($_GET['owner_id'] ?? 0));
 
 // Get sales filtered by date
 $recent_bulk_sales = mysqli_query($conn, "
-    SELECT sb.*, p.name
+    SELECT sb.*, p.name, u.full_name AS seller_name
     FROM sales_bulk sb
     JOIN products p ON sb.product_id = p.id
+    LEFT JOIN users u ON sb.sold_by = u.id
     WHERE sb.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
     ORDER BY sb.created_at DESC
 ");
 
 $recent_retail_sales = mysqli_query($conn, "
-    SELECT sr.*, p.name
+    SELECT sr.*, p.name, u.full_name AS seller_name
     FROM sales_retail sr
     JOIN products p ON sr.product_id = p.id
+    LEFT JOIN users u ON sr.sold_by = u.id
     WHERE sr.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
     ORDER BY sr.created_at DESC
 ");
 
+$ext_owner_where = $owner_filter > 0 ? "AND se.owner_id = $owner_filter" : "";
 $recent_external_sales = mysqli_query($conn, "
-    SELECT * FROM sales_external
-    WHERE sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
-    ORDER BY created_at DESC
+    SELECT se.*, u.full_name AS seller_name,
+           po.name AS owner_name, po.phone AS owner_phone
+    FROM sales_external se
+    LEFT JOIN users u ON se.sold_by = u.id
+    LEFT JOIN product_owners po ON se.owner_id = po.id
+    WHERE se.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
+    $ext_owner_where
+    ORDER BY se.created_at DESC
 ");
 
 // All products for external sale picker (with price hints)
@@ -212,6 +242,18 @@ $loan_clients_query = mysqli_query($conn, "
 ");
 $loan_clients_arr = [];
 while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
+
+// Product owners for picker
+$ext_owners_query = mysqli_query($conn, "
+    SELECT po.id, po.name AS owner_name, po.phone AS owner_phone,
+           COUNT(se.id) AS total_sales
+    FROM product_owners po
+    LEFT JOIN sales_external se ON se.owner_id = po.id
+    GROUP BY po.id
+    ORDER BY total_sales DESC, po.name ASC
+");
+$ext_owners_arr = [];
+while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 ?>
 
 <!DOCTYPE html>
@@ -367,9 +409,21 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <label for="date_to">To</label>
                         <input type="date" id="date_to" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>">
                     </div>
+                    <div class="date-filter-group" id="owner_filter_group" style="<?php echo $active_tab !== 'external' ? 'display:none' : ''; ?>">
+                        <label for="owner_id">Owner</label>
+                        <select name="owner_id" id="owner_id" style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;">
+                            <option value="0">— All owners —</option>
+                            <?php foreach ($ext_owners_arr as $o): ?>
+                                <option value="<?php echo $o['id']; ?>" <?php echo $owner_filter === (int)$o['id'] ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($o['owner_name']); ?>
+                                    <?php if ($o['owner_phone']): ?>(<?php echo htmlspecialchars($o['owner_phone']); ?>)<?php endif; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                     <input type="hidden" id="filter_tab" name="tab" value="<?php echo htmlspecialchars($active_tab); ?>">
                     <button type="submit" class="btn btn-primary btn-sm">Filter</button>
-                    <a href="sales.php" class="btn btn-sm" style="background:var(--gray-200);color:var(--dark);">Today</a>
+                    <a href="sales.php?tab=<?php echo htmlspecialchars($active_tab); ?>" class="btn btn-sm" style="background:var(--gray-200);color:var(--dark);">Today</a>
                 </form>
               
                 <div class="sales-tab-nav">
@@ -383,7 +437,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th>
+                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -403,6 +457,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                             <td class="<?php echo $diff_class; ?>"><?php echo $price_diff != 0 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
+                            <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -410,7 +465,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <tr class="table-total-row">
                             <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($bulk_grand_total, 0); ?></strong></td>
-                            <td></td>
+                            <td colspan="2"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -421,7 +476,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th>
+                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -441,6 +496,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                             <td class="<?php echo $diff_class; ?>"><?php echo $price_diff != 0 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
+                            <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -448,7 +504,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <tr class="table-total-row">
                             <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($retail_grand_total, 0); ?></strong></td>
-                            <td></td>
+                            <td colspan="2"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -459,7 +515,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th>
+                            <th>Date</th><th>Product</th><th>Owner</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -469,6 +525,11 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <tr>
                             <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
                             <td><?php echo htmlspecialchars($row['product_name']); ?></td>
+                            <td><?php
+                                $ow = htmlspecialchars($row['owner_name'] ?? '');
+                                $op = htmlspecialchars($row['owner_phone'] ?? '');
+                                echo $ow ? ($op ? "$ow<br><small style='color:var(--secondary)'>$op</small>" : $ow) : '—';
+                            ?></td>
                             <td><?php echo $row['quantity']; ?></td>
                             <td>RWF <?php echo number_format($row['unit_price'], 0); ?></td>
                             <td><strong>RWF <?php echo number_format($row['total_amount'], 0); ?></strong></td>
@@ -476,14 +537,15 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                             <td><?php echo $row['momo_amount'] > 0 ? 'RWF '.number_format($row['momo_amount'],0) : '—'; ?></td>
                             <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?: 'N/A'); ?></td>
+                            <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
                     <tfoot>
                         <tr class="table-total-row">
-                            <td colspan="4" style="text-align:right;"><strong>Total:</strong></td>
+                            <td colspan="5" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($ext_grand_total, 0); ?></strong></td>
-                            <td colspan="4"></td>
+                            <td colspan="5"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -570,15 +632,15 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <div class="split-payment-box">
                             <div class="split-row">
                                 <span class="split-label">Cash</span>
-                                <input type="number" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
+                                <input type="text" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
                             </div>
                             <div class="split-row">
                                 <span class="split-label">Momo</span>
-                                <input type="number" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
+                                <input type="text" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
                             </div>
                             <div class="split-row">
                                 <span class="split-label">Loan</span>
-                                <input type="number" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
+                                <input type="text" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
                             </div>
                             <div class="split-row split-remaining-row" id="bulk_remaining_row">
                                 <span class="split-label">Remaining</span>
@@ -705,15 +767,15 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <div class="split-payment-box">
                             <div class="split-row">
                                 <span class="split-label">Cash</span>
-                                <input type="number" id="retail_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcRetailSplit('cash')">
+                                <input type="text" id="retail_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcRetailSplit('cash')">
                             </div>
                             <div class="split-row">
                                 <span class="split-label">Momo</span>
-                                <input type="number" id="retail_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcRetailSplit('momo')">
+                                <input type="text" id="retail_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcRetailSplit('momo')">
                             </div>
                             <div class="split-row">
                                 <span class="split-label">Loan</span>
-                                <input type="number" id="retail_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcRetailSplit('loan')">
+                                <input type="text" id="retail_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcRetailSplit('loan')">
                             </div>
                             <div class="split-row split-remaining-row" id="retail_remaining_row">
                                 <span class="split-label">Remaining</span>
@@ -807,13 +869,45 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                     </div>
                 </div>
 
+                <!-- Product Owner -->
+                <input type="hidden" id="ext_owner_name" name="ext_owner_name">
+                <input type="hidden" id="ext_owner_phone" name="ext_owner_phone">
+                <div class="form-group">
+                    <label>Product Owner</label>
+                    <?php if ($ext_owners_arr): ?>
+                    <div class="searchable-select" id="extOwnerPickerWrap">
+                        <input type="text" class="searchable-select-input" id="ext_owner_search"
+                               placeholder="Search registered owner..." autocomplete="off">
+                        <div class="searchable-select-dropdown" id="ext_owner_dropdown">
+                            <?php foreach ($ext_owners_arr as $o): ?>
+                                <div class="searchable-select-option"
+                                     data-id="<?php echo $o['id']; ?>"
+                                     data-owner="<?php echo htmlspecialchars($o['owner_name'], ENT_QUOTES); ?>"
+                                     data-phone="<?php echo htmlspecialchars($o['owner_phone'] ?? '', ENT_QUOTES); ?>">
+                                    <?php echo htmlspecialchars($o['owner_name']); ?>
+                                    <?php if ($o['owner_phone']): ?> — <?php echo htmlspecialchars($o['owner_phone']); ?><?php endif; ?>
+                                    <small style="color:var(--secondary);"> (<?php echo $o['total_sales']; ?> sale<?php echo $o['total_sales']>1?'s':''; ?>)</small>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick existing or fill in a new owner below.</small>
+                    <?php endif; ?>
+                    <div style="display:flex;gap:8px;margin-top:6px;">
+                        <input type="text" id="ext_owner_name_input" placeholder="Owner name"
+                               style="flex:2;" oninput="extSyncOwner()">
+                        <input type="text" id="ext_owner_phone_input" placeholder="Phone (optional)"
+                               style="flex:1;" oninput="extSyncOwner()">
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label for="ext_quantity">Quantity*</label>
-                    <input type="number" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtTotal()">
+                    <input type="text" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtTotal()">
                 </div>
                 <div class="form-group">
                     <label for="ext_unit_price">Unit Price (RWF)*</label>
-                    <input type="number" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtTotal()">
+                    <input type="text" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtTotal()">
                 </div>
                 <div class="form-group">
                     <label for="ext_customer_name">Customer Name</label>
@@ -826,15 +920,15 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <div class="split-payment-box">
                             <div class="split-row">
                                 <span class="split-label">Cash</span>
-                                <input type="number" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
+                                <input type="text" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
                             </div>
                             <div class="split-row">
                                 <span class="split-label">Momo</span>
-                                <input type="number" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
+                                <input type="text" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
                             </div>
                             <div class="split-row">
                                 <span class="split-label">Loan</span>
-                                <input type="number" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
+                                <input type="text" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
                             </div>
                             <div class="split-row split-remaining-row" id="ext_remaining_row">
                                 <span class="split-label">Remaining</span>
@@ -1516,6 +1610,59 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
         initLoanClientPicker('extClientPickerWrap', 'ext_client_picker_search', 'ext_client_picker_dropdown', 'ext_customer_name', 'ext_phone');
 
+        // --- External Sale Owner Picker ---
+        function extSyncOwner() {
+            var name  = document.getElementById('ext_owner_name_input').value.trim();
+            var phone = document.getElementById('ext_owner_phone_input').value.trim();
+            document.getElementById('ext_owner_name').value  = name;
+            document.getElementById('ext_owner_phone').value = phone;
+            // clear search box if user is typing a fresh name
+            var search = document.getElementById('ext_owner_search');
+            if (search && search.value !== name) search.value = '';
+        }
+
+        (function() {
+            var wrap     = document.getElementById('extOwnerPickerWrap');
+            if (!wrap) return;
+            var search   = document.getElementById('ext_owner_search');
+            var dropdown = document.getElementById('ext_owner_dropdown');
+            var options  = dropdown.querySelectorAll('.searchable-select-option');
+            var hi = -1;
+
+            search.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
+            search.addEventListener('input',  function() { dropdown.classList.add('open'); hi = -1; filter(); });
+            search.addEventListener('keydown', function(e) {
+                var vis = dropdown.querySelectorAll('.searchable-select-option:not(.hidden)');
+                if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(hi+1, vis.length-1); hl(vis); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(hi-1, 0); hl(vis); }
+                else if (e.key === 'Enter') { e.preventDefault(); if (hi >= 0 && vis[hi]) pick(vis[hi]); }
+                else if (e.key === 'Escape') dropdown.classList.remove('open');
+            });
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('#extOwnerPickerWrap')) dropdown.classList.remove('open');
+            });
+            options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
+
+            function filter() {
+                var term = search.value.toLowerCase();
+                options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term) === -1); });
+            }
+            function hl(vis) {
+                options.forEach(function(o) { o.classList.remove('highlighted'); });
+                if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
+            }
+            function pick(opt) {
+                var owner = opt.getAttribute('data-owner');
+                var phone = opt.getAttribute('data-phone');
+                document.getElementById('ext_owner_name_input').value  = owner;
+                document.getElementById('ext_owner_phone_input').value = phone;
+                document.getElementById('ext_owner_name').value  = owner;
+                document.getElementById('ext_owner_phone').value = phone;
+                search.value = owner;
+                dropdown.classList.remove('open'); hi = -1;
+            }
+        })();
+
         // --- Sales Tabs ---
         function switchSalesTab(tab) {
             ['bulk','retail','external'].forEach(function(t) {
@@ -1525,6 +1672,8 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 btn.classList.toggle('active', ['bulk','retail','external'][i] === tab);
             });
             document.getElementById('filter_tab').value = tab;
+            var ownerGroup = document.getElementById('owner_filter_group');
+            if (ownerGroup) ownerGroup.style.display = tab === 'external' ? '' : 'none';
         }
 
         document.addEventListener('DOMContentLoaded', function() {

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Apr 28, 2026 at 01:56 PM
+-- Generation Time: May 03, 2026 at 04:51 PM
 -- Server version: 10.4.28-MariaDB
 -- PHP Version: 8.2.4
 
@@ -83,6 +83,7 @@ CREATE TABLE `loans` (
   `client` varchar(100) NOT NULL,
   `phone` varchar(20) DEFAULT NULL,
   `loan_date` date NOT NULL,
+  `given_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -97,6 +98,7 @@ CREATE TABLE `loan_payments` (
   `loan_id` int(11) NOT NULL,
   `amount_paid` decimal(10,2) NOT NULL DEFAULT 0.00,
   `payment_date` date NOT NULL,
+  `received_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -377,6 +379,19 @@ INSERT INTO `products` (`id`, `name`, `category`, `reorder_level`, `unit_measure
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `product_owners`
+--
+
+CREATE TABLE `product_owners` (
+  `id` int(11) NOT NULL,
+  `name` varchar(90) NOT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `purchases`
 --
 
@@ -421,6 +436,7 @@ CREATE TABLE `sales_bulk` (
   `total_amount` decimal(10,2) DEFAULT NULL,
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
+  `sold_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `payment_method` varchar(20) DEFAULT 'Cash',
   `cash_amount` decimal(12,2) DEFAULT 0.00,
@@ -437,6 +453,7 @@ CREATE TABLE `sales_bulk` (
 CREATE TABLE `sales_external` (
   `id` int(11) NOT NULL,
   `product_name` varchar(255) NOT NULL,
+  `owner_id` int(11) DEFAULT NULL,
   `quantity` int(11) NOT NULL DEFAULT 1,
   `unit_price` decimal(12,2) NOT NULL DEFAULT 0.00,
   `total_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
@@ -444,6 +461,7 @@ CREATE TABLE `sales_external` (
   `momo_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `loan_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `customer_name` varchar(255) DEFAULT NULL,
+  `sold_by` int(11) DEFAULT NULL,
   `phone` varchar(20) DEFAULT NULL,
   `sale_date` date NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
@@ -463,6 +481,7 @@ CREATE TABLE `sales_retail` (
   `total_amount` decimal(10,2) DEFAULT NULL,
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
+  `sold_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `payment_method` varchar(20) DEFAULT 'Cash',
   `cash_amount` decimal(12,2) DEFAULT 0.00,
@@ -540,8 +559,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `role`, `created_at`, `status`, `last_login`, `email`) VALUES
-(1, 'admin', '$2y$10$O.gB7jIXhrV2ukyPqdM5wO55h2knORR9RHUQE0lC4r5N14r9s2Lei', 'Gilbert Niyonsaba', 'admin', '2026-02-11 15:05:51', 'active', '2026-04-28 10:09:26', 'askforgilbert@gmail.com'),
-(2, 'olive', '$2y$10$ksTyMrRlUN3Pare9Gun26ezPdbb/O8VRSyTN1Tw0mmqdb/OB6dviO', 'Uwineza Olive', 'manager', '2026-02-11 18:10:20', 'active', NULL, 'olive@gmail.com');
+(1, 'admin', '$2y$10$O.gB7jIXhrV2ukyPqdM5wO55h2knORR9RHUQE0lC4r5N14r9s2Lei', 'Seth', 'admin', '2026-02-11 15:05:51', 'active', '2026-05-03 16:14:19', 'seth@gmail.com');
 
 -- --------------------------------------------------------
 
@@ -561,6 +579,13 @@ CREATE TABLE `weekly_revenue` (
   `profit_margin` decimal(5,2) DEFAULT 0.00,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `weekly_revenue`
+--
+
+INSERT INTO `weekly_revenue` (`id`, `week_start_date`, `week_end_date`, `bulk_sales_total`, `retail_sales_total`, `total_revenue`, `total_cost`, `total_profit`, `profit_margin`, `created_at`) VALUES
+(1, '2026-04-27', '2026-05-03', 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, '2026-04-28 14:30:57');
 
 --
 -- Indexes for dumped tables
@@ -610,6 +635,13 @@ ALTER TABLE `products`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_deleted` (`deleted`),
   ADD KEY `idx_name` (`name`);
+
+--
+-- Indexes for table `product_owners`
+--
+ALTER TABLE `product_owners`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_owner_name_phone` (`name`,`phone`);
 
 --
 -- Indexes for table `purchases`
@@ -726,6 +758,12 @@ ALTER TABLE `products`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=252;
 
 --
+-- AUTO_INCREMENT for table `product_owners`
+--
+ALTER TABLE `product_owners`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `purchases`
 --
 ALTER TABLE `purchases`
@@ -783,7 +821,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `weekly_revenue`
 --
 ALTER TABLE `weekly_revenue`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- Constraints for dumped tables

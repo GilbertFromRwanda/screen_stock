@@ -19,9 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
         header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $msg]); exit;
     }
 
+    $given_by = (int)$_SESSION['user_id'];
     $ins = mysqli_query($conn, "
-        INSERT INTO loans (product_id, qty, amount, client, phone, loan_date)
-        VALUES ('$product_id','$qty','$amount','$client','$phone','$loan_date')
+        INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by)
+        VALUES ('$product_id','$qty','$amount','$client','$phone','$loan_date',$given_by)
     ");
     if ($ins) {
         // deduct from retail_stock
@@ -57,7 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
         header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Payment exceeds remaining balance of RWF ' . number_format($balance, 0)]); exit;
     }
 
-    $ins = mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date) VALUES ('$loan_id','$amount_paid','$payment_date')");
+    $received_by = (int)$_SESSION['user_id'];
+    $ins = mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ('$loan_id','$amount_paid','$payment_date',$received_by)");
     header('Content-Type: application/json'); echo json_encode($ins ? ['success' => true] : ['success' => false, 'message' => mysqli_error($conn)]); exit;
 }
 
@@ -133,7 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
     while ($row = mysqli_fetch_assoc($unpaid)) {
         if ($remaining <= 0) break;
         $pay = min($remaining, (float)$row['balance']);
-        mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date) VALUES ({$row['id']}, $pay, '$payment_date')");
+        $received_by = (int)$_SESSION['user_id'];
+        mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ({$row['id']}, $pay, '$payment_date', $received_by)");
         $remaining -= $pay;
         $count++;
     }
@@ -176,10 +179,12 @@ $limit = ($date_from || $date_to || $name_filter) ? "" : " LIMIT 100";
 
 $records = mysqli_query($conn, "
     SELECT l.*, p.name AS product_name, p.category AS product_category,
-        COALESCE(SUM(lp.amount_paid), 0) AS total_paid
+        COALESCE(SUM(lp.amount_paid), 0) AS total_paid,
+        u.full_name AS given_by_name
     FROM loans l
     JOIN products p ON p.id = l.product_id
     LEFT JOIN loan_payments lp ON lp.loan_id = l.id
+    LEFT JOIN users u ON l.given_by = u.id
     $where
     GROUP BY l.id
     HAVING l.amount > COALESCE(SUM(lp.amount_paid), 0)
@@ -417,6 +422,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                             <th>Amount</th>
                             <th>Paid</th>
                             <th>Balance</th>
+                            <th>Given By</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -440,6 +446,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                         <td>RWF <?php echo number_format($loan['amount'], 0); ?></td>
                         <td>RWF <?php echo number_format($loan['total_paid'], 0); ?></td>
                         <td class="<?php echo $bal > 0 ? 'has-balance' : 'cleared'; ?>">RWF <?php echo number_format($bal, 0); ?></td>
+                        <td style="color:var(--secondary);font-size:12px;"><?php echo htmlspecialchars($loan['given_by_name'] ?? '—'); ?></td>
                         <td onclick="event.stopPropagation()">
                             <div class="loan-actions">
                                 <?php if ($bal > 0): ?>

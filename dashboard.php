@@ -192,6 +192,9 @@ $outstanding_loans = mysqli_fetch_assoc(mysqli_query($conn, "
     SELECT COALESCE(SUM(amount), 0) as total FROM loans
 "))['total'] ?? 0;
 
+// Users for collection filter
+$users_for_filter = mysqli_query($conn, "SELECT id, full_name FROM users ORDER BY full_name ASC");
+
 // Get alerts and notifications
 $alerts = [];
 
@@ -431,8 +434,18 @@ if (($today_sales['total'] ?? 0) == 0) {
                             <span style="font-size:12px;color:var(--secondary);">to</span>
                             <input type="date" id="coll-to" value="<?php echo $today; ?>"
                                 style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;">
+                            <?php if ($_SESSION['role'] === 'admin'): ?>
+                            <select id="coll-user" style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;background:var(--white);">
+                                <option value="0">— All users —</option>
+                                <?php while ($u = mysqli_fetch_assoc($users_for_filter)): ?>
+                                <option value="<?php echo $u['id']; ?>"><?php echo htmlspecialchars($u['full_name']); ?></option>
+                                <?php endwhile; ?>
+                            </select>
+                            <?php else: ?>
+                            <input type="hidden" id="coll-user" value="<?php echo (int)$_SESSION['user_id']; ?>">
+                            <?php endif; ?>
                             <button type="button" onclick="fetchCollection()" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;">Filter</button>
-                            <button type="button" id="coll-today-btn" onclick="fetchCollection('<?php echo $today; ?>','<?php echo $today; ?>')"
+                            <button type="button" id="coll-today-btn" onclick="fetchCollection('<?php echo $today; ?>','<?php echo $today; ?>',0)"
                                 style="display:none;padding:6px 10px;background:var(--gray-200);color:var(--dark);border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;">Today</button>
                             <span id="coll-loader" style="display:none;font-size:12px;color:var(--secondary);">Loading…</span>
                         </form>
@@ -571,14 +584,16 @@ if (($today_sales['total'] ?? 0) == 0) {
                     }
                 }
 
-                window.fetchCollection = function (from, to) {
-                    from = from || document.getElementById('coll-from').value;
-                    to   = to   || document.getElementById('coll-to').value;
-                    document.getElementById('coll-from').value = from;
-                    document.getElementById('coll-to').value   = to;
+                window.fetchCollection = function (from, to, userId) {
+                    from   = from   !== undefined ? from   : document.getElementById('coll-from').value;
+                    to     = to     !== undefined ? to     : document.getElementById('coll-to').value;
+                    userId = userId !== undefined ? userId : document.getElementById('coll-user').value;
+                    document.getElementById('coll-from').value  = from;
+                    document.getElementById('coll-to').value    = to;
+                    document.getElementById('coll-user').value  = userId;
                     document.getElementById('coll-loader').style.display = 'inline';
 
-                    fetch('ajax_collection.php?coll_from=' + from + '&coll_to=' + to)
+                    fetch('ajax_collection.php?coll_from=' + from + '&coll_to=' + to + '&user_id=' + userId)
                         .then(function (r) { return r.json(); })
                         .then(function (d) { render(d); })
                         .catch(function () {})
