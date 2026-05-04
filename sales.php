@@ -4,6 +4,120 @@ require_once 'config.php';
 if (!isLoggedIn()) {
     redirect('login.php');
 }
+
+// ── DELETE Bulk Sale ─────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
+    $id = (int)$_POST['sale_id'];
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_bulk WHERE id=$id"));
+    if ($row) {
+        mysqli_query($conn, "UPDATE stock SET quantity = quantity + {$row['quantity']} WHERE product_id = {$row['product_id']}");
+        if ($row['loan_amount'] > 0) {
+            $client_e = mysqli_real_escape_string($conn, $row['customer_name']);
+            mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
+        }
+        mysqli_query($conn, "DELETE FROM sales_bulk WHERE id=$id");
+        $_SESSION['flash_success'] = "Bulk sale deleted and stock restored.";
+    }
+    header("Location: sales.php?tab=bulk"); exit;
+}
+
+// ── EDIT Bulk Sale ───────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
+    $id            = (int)$_POST['sale_id'];
+    $new_qty       = max(1, (int)$_POST['quantity']);
+    $new_price     = max(0, (float)$_POST['selling_price']);
+    $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
+    $cash_amount   = max(0, (float)$_POST['cash_amount']);
+    $momo_amount   = max(0, (float)$_POST['momo_amount']);
+    $loan_amount   = max(0, (float)$_POST['loan_amount']);
+    $sale_date     = mysqli_real_escape_string($conn, $_POST['sale_date']);
+    $total_amount  = $new_qty * $new_price;
+
+    $old = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_bulk WHERE id=$id"));
+    if ($old) {
+        $qty_diff = $old['quantity'] - $new_qty;
+        if ($qty_diff !== 0) {
+            mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty_diff WHERE product_id = {$old['product_id']}");
+        }
+        mysqli_query($conn, "UPDATE sales_bulk SET quantity=$new_qty, package_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
+        $_SESSION['flash_success'] = "Bulk sale updated.";
+    }
+    header("Location: sales.php?tab=bulk"); exit;
+}
+
+// ── DELETE Retail Sale ───────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale'])) {
+    $id = (int)$_POST['sale_id'];
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_retail WHERE id=$id"));
+    if ($row) {
+        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$row['pieces_sold']} WHERE product_id = {$row['product_id']}");
+        if ($row['loan_amount'] > 0) {
+            $client_e = mysqli_real_escape_string($conn, $row['customer_name']);
+            mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
+        }
+        mysqli_query($conn, "DELETE FROM sales_retail WHERE id=$id");
+        $_SESSION['flash_success'] = "Retail sale deleted and stock restored.";
+    }
+    header("Location: sales.php?tab=retail"); exit;
+}
+
+// ── EDIT Retail Sale ─────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
+    $id            = (int)$_POST['sale_id'];
+    $new_qty       = max(1, (int)$_POST['pieces_sold']);
+    $new_price     = max(0, (float)$_POST['selling_price']);
+    $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
+    $cash_amount   = max(0, (float)$_POST['cash_amount']);
+    $momo_amount   = max(0, (float)$_POST['momo_amount']);
+    $loan_amount   = max(0, (float)$_POST['loan_amount']);
+    $sale_date     = mysqli_real_escape_string($conn, $_POST['sale_date']);
+    $total_amount  = $new_qty * $new_price;
+
+    $old = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_retail WHERE id=$id"));
+    if ($old) {
+        $qty_diff = $old['pieces_sold'] - $new_qty;
+        if ($qty_diff !== 0) {
+            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty_diff WHERE product_id = {$old['product_id']}");
+        }
+        mysqli_query($conn, "UPDATE sales_retail SET pieces_sold=$new_qty, retail_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
+        $_SESSION['flash_success'] = "Retail sale updated.";
+    }
+    header("Location: sales.php?tab=retail"); exit;
+}
+
+// ── DELETE External Sale ─────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_external_sale'])) {
+    $id = (int)$_POST['sale_id'];
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_external WHERE id=$id"));
+    if ($row) {
+        if ($row['loan_amount'] > 0) {
+            $client_e = mysqli_real_escape_string($conn, $row['customer_name']);
+            mysqli_query($conn, "DELETE FROM loans WHERE product_id=0 AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
+        }
+        mysqli_query($conn, "DELETE FROM sales_external WHERE id=$id");
+        $_SESSION['flash_success'] = "External sale deleted.";
+    }
+    header("Location: sales.php?tab=external"); exit;
+}
+
+// ── EDIT External Sale ───────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_external_sale'])) {
+    $id            = (int)$_POST['sale_id'];
+    $product_name  = mysqli_real_escape_string($conn, trim($_POST['product_name']));
+    $quantity      = max(1, (int)$_POST['quantity']);
+    $unit_price    = max(0, (float)$_POST['unit_price']);
+    $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
+    $cash_amount   = max(0, (float)$_POST['cash_amount']);
+    $momo_amount   = max(0, (float)$_POST['momo_amount']);
+    $loan_amount   = max(0, (float)$_POST['loan_amount']);
+    $sale_date     = mysqli_real_escape_string($conn, $_POST['sale_date']);
+    $total_amount  = $quantity * $unit_price;
+
+    mysqli_query($conn, "UPDATE sales_external SET product_name='$product_name', quantity=$quantity, unit_price=$unit_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
+    $_SESSION['flash_success'] = "External sale updated.";
+    header("Location: sales.php?tab=external"); exit;
+}
+
 // Handle External Sale (product not from stock — tracking only)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     $product_name  = mysqli_real_escape_string($conn, trim($_POST['ext_product_name'] ?? ''));
@@ -57,6 +171,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         if ($loan_amount > 0) {
             $loan_date = date('Y-m-d');
             mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by) VALUES (0, $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by)");
+            $new_loan_id = (int)mysqli_insert_id($conn);
+            $initial_paid = $cash_amount + $momo_amount;
+            if ($initial_paid > 0 && $new_loan_id > 0) {
+                mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ($new_loan_id, $initial_paid, '$loan_date', $sold_by)");
+            }
         }
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
@@ -101,6 +220,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         if ($loan_amount > 0) {
             $loan_date = date('Y-m-d');
             mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by)");
+            $new_loan_id = (int)mysqli_insert_id($conn);
+            $initial_paid = $cash_amount + $momo_amount;
+            if ($initial_paid > 0 && $new_loan_id > 0) {
+                mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ($new_loan_id, $initial_paid, '$loan_date', $sold_by)");
+            }
         }
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
@@ -145,6 +269,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         if ($loan_amount > 0) {
             $loan_date = date('Y-m-d');
             mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by) VALUES ('$product_id','$pieces_sold','$loan_amount','$customer_name','$phone','$loan_date',$sold_by)");
+            $new_loan_id = (int)mysqli_insert_id($conn);
+            $initial_paid = $cash_amount + $momo_amount;
+            if ($initial_paid > 0 && $new_loan_id > 0) {
+                mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ($new_loan_id, $initial_paid, '$loan_date', $sold_by)");
+            }
         }
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
@@ -434,10 +563,13 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 
                 <!-- Bulk tab -->
                 <div class="sales-tab-panel" id="stab-bulk" <?php echo $active_tab!=='bulk'     ? 'style="display:none"' : ''; ?>>
-                <table class="table">
+                <div style="margin-bottom:10px;">
+                    <input type="text" id="search-bulk" placeholder="Search customer, product..." oninput="filterTable('tbl-bulk', this.value)" style="width:100%;max-width:360px;padding:7px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;">
+                </div>
+                <table class="table" id="tbl-bulk">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th>
+                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -458,6 +590,14 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-sm" style="background:var(--warning,#f59e0b);color:#fff;padding:3px 8px;"
+                                    onclick="openEditBulk(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['package_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>')">Edit</button>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this bulk sale and restore stock?')">
+                                    <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
+                                    <button type="submit" name="delete_bulk_sale" class="btn btn-sm" style="background:var(--danger,#dc2626);color:#fff;padding:3px 8px;">Del</button>
+                                </form>
+                            </td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -465,7 +605,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                         <tr class="table-total-row">
                             <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($bulk_grand_total, 0); ?></strong></td>
-                            <td colspan="2"></td>
+                            <td colspan="3"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -473,10 +613,13 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 
                 <!-- Retail tab -->
                 <div class="sales-tab-panel" id="stab-retail" <?php echo $active_tab!=='retail'   ? 'style="display:none"' : ''; ?>>
-                <table class="table">
+                <div style="margin-bottom:10px;">
+                    <input type="text" id="search-retail" placeholder="Search customer, product..." oninput="filterTable('tbl-retail', this.value)" style="width:100%;max-width:360px;padding:7px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;">
+                </div>
+                <table class="table" id="tbl-retail">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th>
+                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -497,6 +640,14 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-sm" style="background:var(--warning,#f59e0b);color:#fff;padding:3px 8px;"
+                                    onclick="openEditRetail(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['retail_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>')">Edit</button>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this retail sale and restore stock?')">
+                                    <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
+                                    <button type="submit" name="delete_retail_sale" class="btn btn-sm" style="background:var(--danger,#dc2626);color:#fff;padding:3px 8px;">Del</button>
+                                </form>
+                            </td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -504,7 +655,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                         <tr class="table-total-row">
                             <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($retail_grand_total, 0); ?></strong></td>
-                            <td colspan="2"></td>
+                            <td colspan="3"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -512,10 +663,13 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 
                 <!-- External tab -->
                 <div class="sales-tab-panel" id="stab-external" <?php echo $active_tab!=='external' ? 'style="display:none"' : ''; ?>>
-                <table class="table">
+                <div style="margin-bottom:10px;">
+                    <input type="text" id="search-external" placeholder="Search customer, product, owner..." oninput="filterTable('tbl-external', this.value)" style="width:100%;max-width:360px;padding:7px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;">
+                </div>
+                <table class="table" id="tbl-external">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Owner</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th>
+                            <th>Date</th><th>Product</th><th>Owner</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -538,6 +692,14 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?: 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-sm" style="background:var(--warning,#f59e0b);color:#fff;padding:3px 8px;"
+                                    onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>)">Edit</button>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this external sale?')">
+                                    <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
+                                    <button type="submit" name="delete_external_sale" class="btn btn-sm" style="background:var(--danger,#dc2626);color:#fff;padding:3px 8px;">Del</button>
+                                </form>
+                            </td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -545,7 +707,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                         <tr class="table-total-row">
                             <td colspan="5" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($ext_grand_total, 0); ?></strong></td>
-                            <td colspan="5"></td>
+                            <td colspan="6"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -973,6 +1135,126 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 </div>
 
                 <button type="button" id="ext_submit_btn" class="btn btn-primary" disabled onclick="handleExtSubmit()" style="background:var(--warning,#f59e0b);border-color:var(--warning,#f59e0b);">Save External Sale</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Bulk Sale Modal -->
+    <div id="editBulkModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('editBulkModal')">&times;</span>
+            <h2>Edit Bulk Sale</h2>
+            <form method="POST" id="editBulkForm">
+                <input type="hidden" name="sale_id" id="edit_bulk_id">
+                <div class="form-group">
+                    <label>Product</label>
+                    <input type="text" id="edit_bulk_product_label" disabled style="background:var(--gray-100);color:var(--secondary);">
+                </div>
+                <div class="form-group">
+                    <label for="edit_bulk_date">Date*</label>
+                    <input type="date" id="edit_bulk_date" name="sale_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit_bulk_qty">Quantity (Packages)*</label>
+                    <input type="number" id="edit_bulk_qty" name="quantity" required min="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit_bulk_price">Price per Package*</label>
+                    <input type="number" id="edit_bulk_price" name="selling_price" required min="1" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit_bulk_customer">Customer Name</label>
+                    <input type="text" id="edit_bulk_customer" name="customer_name">
+                </div>
+                <div class="form-group">
+                    <label>Payment Split</label>
+                    <div class="split-payment-box">
+                        <div class="split-row"><span class="split-label">Cash</span><input type="number" id="edit_bulk_cash" name="cash_amount" min="0" step="1" value="0"></div>
+                        <div class="split-row"><span class="split-label">Momo</span><input type="number" id="edit_bulk_momo" name="momo_amount" min="0" step="1" value="0"></div>
+                        <div class="split-row"><span class="split-label">Loan</span><input type="number" id="edit_bulk_loan" name="loan_amount" min="0" step="1" value="0"></div>
+                    </div>
+                </div>
+                <button type="submit" name="edit_bulk_sale" class="btn btn-primary">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Retail Sale Modal -->
+    <div id="editRetailModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('editRetailModal')">&times;</span>
+            <h2>Edit Retail Sale</h2>
+            <form method="POST" id="editRetailForm">
+                <input type="hidden" name="sale_id" id="edit_retail_id">
+                <div class="form-group">
+                    <label>Product</label>
+                    <input type="text" id="edit_retail_product_label" disabled style="background:var(--gray-100);color:var(--secondary);">
+                </div>
+                <div class="form-group">
+                    <label for="edit_retail_date">Date*</label>
+                    <input type="date" id="edit_retail_date" name="sale_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit_retail_qty">Pieces Sold*</label>
+                    <input type="number" id="edit_retail_qty" name="pieces_sold" required min="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit_retail_price">Price per Piece*</label>
+                    <input type="number" id="edit_retail_price" name="selling_price" required min="1" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit_retail_customer">Customer Name</label>
+                    <input type="text" id="edit_retail_customer" name="customer_name">
+                </div>
+                <div class="form-group">
+                    <label>Payment Split</label>
+                    <div class="split-payment-box">
+                        <div class="split-row"><span class="split-label">Cash</span><input type="number" id="edit_retail_cash" name="cash_amount" min="0" step="1" value="0"></div>
+                        <div class="split-row"><span class="split-label">Momo</span><input type="number" id="edit_retail_momo" name="momo_amount" min="0" step="1" value="0"></div>
+                        <div class="split-row"><span class="split-label">Loan</span><input type="number" id="edit_retail_loan" name="loan_amount" min="0" step="1" value="0"></div>
+                    </div>
+                </div>
+                <button type="submit" name="edit_retail_sale" class="btn btn-primary">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit External Sale Modal -->
+    <div id="editExternalModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('editExternalModal')">&times;</span>
+            <h2>Edit External Sale</h2>
+            <form method="POST" id="editExternalForm">
+                <input type="hidden" name="sale_id" id="edit_ext_id">
+                <div class="form-group">
+                    <label for="edit_ext_date">Date*</label>
+                    <input type="date" id="edit_ext_date" name="sale_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit_ext_product">Product Name*</label>
+                    <input type="text" id="edit_ext_product" name="product_name" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit_ext_qty">Quantity*</label>
+                    <input type="number" id="edit_ext_qty" name="quantity" required min="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit_ext_price">Unit Price*</label>
+                    <input type="number" id="edit_ext_price" name="unit_price" required min="1" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit_ext_customer">Customer Name</label>
+                    <input type="text" id="edit_ext_customer" name="customer_name">
+                </div>
+                <div class="form-group">
+                    <label>Payment Split</label>
+                    <div class="split-payment-box">
+                        <div class="split-row"><span class="split-label">Cash</span><input type="number" id="edit_ext_cash" name="cash_amount" min="0" step="1" value="0"></div>
+                        <div class="split-row"><span class="split-label">Momo</span><input type="number" id="edit_ext_momo" name="momo_amount" min="0" step="1" value="0"></div>
+                        <div class="split-row"><span class="split-label">Loan</span><input type="number" id="edit_ext_loan" name="loan_amount" min="0" step="1" value="0"></div>
+                    </div>
+                </div>
+                <button type="submit" name="edit_external_sale" class="btn btn-primary">Save Changes</button>
             </form>
         </div>
     </div>
@@ -1674,6 +1956,55 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             document.getElementById('filter_tab').value = tab;
             var ownerGroup = document.getElementById('owner_filter_group');
             if (ownerGroup) ownerGroup.style.display = tab === 'external' ? '' : 'none';
+        }
+
+        function openEditBulk(id, date, qty, price, customer, cash, momo, loan, productName) {
+            document.getElementById('edit_bulk_id').value = id;
+            document.getElementById('edit_bulk_date').value = date;
+            document.getElementById('edit_bulk_qty').value = qty;
+            document.getElementById('edit_bulk_price').value = price;
+            document.getElementById('edit_bulk_customer').value = customer;
+            document.getElementById('edit_bulk_cash').value = cash;
+            document.getElementById('edit_bulk_momo').value = momo;
+            document.getElementById('edit_bulk_loan').value = loan;
+            document.getElementById('edit_bulk_product_label').value = productName;
+            openModal('editBulkModal');
+        }
+
+        function openEditRetail(id, date, qty, price, customer, cash, momo, loan, productName) {
+            document.getElementById('edit_retail_id').value = id;
+            document.getElementById('edit_retail_date').value = date;
+            document.getElementById('edit_retail_qty').value = qty;
+            document.getElementById('edit_retail_price').value = price;
+            document.getElementById('edit_retail_customer').value = customer;
+            document.getElementById('edit_retail_cash').value = cash;
+            document.getElementById('edit_retail_momo').value = momo;
+            document.getElementById('edit_retail_loan').value = loan;
+            document.getElementById('edit_retail_product_label').value = productName;
+            openModal('editRetailModal');
+        }
+
+        function openEditExternal(id, date, productName, qty, price, customer, cash, momo, loan) {
+            document.getElementById('edit_ext_id').value = id;
+            document.getElementById('edit_ext_date').value = date;
+            document.getElementById('edit_ext_product').value = productName;
+            document.getElementById('edit_ext_qty').value = qty;
+            document.getElementById('edit_ext_price').value = price;
+            document.getElementById('edit_ext_customer').value = customer;
+            document.getElementById('edit_ext_cash').value = cash;
+            document.getElementById('edit_ext_momo').value = momo;
+            document.getElementById('edit_ext_loan').value = loan;
+            openModal('editExternalModal');
+        }
+
+        function filterTable(tableId, term) {
+            var tbl = document.getElementById(tableId);
+            if (!tbl) return;
+            var rows = tbl.querySelectorAll('tbody tr');
+            term = term.toLowerCase().trim();
+            rows.forEach(function(row) {
+                row.style.display = !term || row.textContent.toLowerCase().indexOf(term) > -1 ? '' : 'none';
+            });
         }
 
         document.addEventListener('DOMContentLoaded', function() {
