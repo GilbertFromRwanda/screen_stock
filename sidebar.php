@@ -20,6 +20,7 @@ $nav = [
             // ['href' => 'consumption.php','icon' => '⌂',  'label' => 'Home Consumption'],
             ['href' => 'expenses.php',   'icon' => '−',  'label' => 'Expenses'],
             ['href' => 'loans.php',      'icon' => '⇄',  'label' => 'Loans'],
+            ['href' => 'losses.php',     'icon' => '↓',  'label' => 'Losses'],
             ['href' => 'boaster.php',    'icon' => '↑',  'label' => 'Top Up'],
         ]
     ],

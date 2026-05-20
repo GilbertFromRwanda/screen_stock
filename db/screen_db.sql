@@ -77,14 +77,18 @@ CREATE TABLE `expenses` (
 
 CREATE TABLE `loans` (
   `id` int(11) NOT NULL,
-  `product_id` int(11) NOT NULL,
+  `product_id` int(11) DEFAULT NULL,
+  `product_name` varchar(255) DEFAULT NULL,
   `qty` int(11) NOT NULL DEFAULT 1,
   `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `client` varchar(100) NOT NULL,
   `phone` varchar(20) DEFAULT NULL,
   `loan_date` date NOT NULL,
   `given_by` int(11) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `retail_id` int(11) DEFAULT NULL,
+  `bulk_id` int(11) DEFAULT NULL,
+  `external_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -441,7 +445,9 @@ CREATE TABLE `sales_bulk` (
   `payment_method` varchar(20) DEFAULT 'Cash',
   `cash_amount` decimal(12,2) DEFAULT 0.00,
   `momo_amount` decimal(12,2) DEFAULT 0.00,
-  `loan_amount` decimal(12,2) DEFAULT 0.00
+  `loan_amount` decimal(12,2) DEFAULT 0.00,
+  `has_loan` tinyint(1) NOT NULL DEFAULT 0,
+  `amount` decimal(12,2) DEFAULT 0.00
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -486,7 +492,9 @@ CREATE TABLE `sales_retail` (
   `payment_method` varchar(20) DEFAULT 'Cash',
   `cash_amount` decimal(12,2) DEFAULT 0.00,
   `momo_amount` decimal(12,2) DEFAULT 0.00,
-  `loan_amount` decimal(12,2) DEFAULT 0.00
+  `loan_amount` decimal(12,2) DEFAULT 0.00,
+  `has_loan` tinyint(1) NOT NULL DEFAULT 0,
+  `amount` decimal(12,2) DEFAULT 0.00
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------

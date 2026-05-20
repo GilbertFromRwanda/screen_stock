@@ -5,6 +5,42 @@ if (!isLoggedIn()) {
     redirect('login.php');
 }
 
+// ── Edit warehouse stock ──────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_stock'])) {
+    $product_id       = (int)$_POST['product_id'];
+    $quantity         = max(0, (int)$_POST['quantity']);
+    $pieces_per_pkg   = max(1, (int)$_POST['pieces_per_package']);
+    $package_price    = max(0, (float)$_POST['package_price']);
+    $retail_price     = max(0, (float)$_POST['retail_price']);
+
+    mysqli_query($conn, "
+        UPDATE stock
+        SET quantity = $quantity,
+            pieces_per_package = $pieces_per_pkg,
+            package_price = $package_price,
+            retail_price  = $retail_price
+        WHERE product_id = $product_id
+    ");
+    $_SESSION['flash_success'] = "Warehouse stock updated.";
+    header("Location: stock.php"); exit;
+}
+
+// ── Edit retail stock ─────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_stock'])) {
+    $product_id     = (int)$_POST['product_id'];
+    $pieces_qty     = max(0, (int)$_POST['pieces_quantity']);
+    $retail_price   = max(0, (float)$_POST['retail_price']);
+
+    mysqli_query($conn, "
+        UPDATE retail_stock
+        SET pieces_quantity = $pieces_qty,
+            retail_price    = $retail_price
+        WHERE product_id = $product_id
+    ");
+    $_SESSION['flash_success'] = "Retail stock updated.";
+    header("Location: stock.php"); exit;
+}
+
 // Handle move to retail shop - PRG pattern to prevent duplicates
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['move_to_retail'])) {
     $product_id = (int)$_POST['product_id'];
@@ -146,9 +182,11 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                     <td>RWF <?php echo number_format($row['package_price'], 0); ?></td>
                                     <td>RWF <?php echo number_format($row['retail_price'], 0); ?></td>
                                     <td><span class="badge badge-<?php echo $status_class; ?>"><?php echo $status; ?></span></td>
-                                    <td>
-                                        <button onclick="openMoveModal(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name']); ?>', <?php echo $total_pieces; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['quantity']; ?>)"
+                                    <td style="white-space:nowrap;">
+                                        <button onclick="openMoveModal(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $total_pieces; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['quantity']; ?>)"
                                                 class="btn btn-sm btn-primary">Move to Detaye</button>
+                                        <button onclick="openEditStock(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $row['quantity']; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['package_price']; ?>, <?php echo $row['retail_price']; ?>)"
+                                                class="btn btn-sm btn-secondary" style="margin-left:4px;">Edit</button>
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
@@ -173,6 +211,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                     <th>Pieces/KG/Box Available</th>
                                     <th>Retail Price</th>
                                     <th>Total Value</th>
+                                    <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -183,6 +222,10 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                     <td><?php echo $row['pieces_quantity']; ?></td>
                                     <td>RWF <?php echo number_format($row['retail_price'], 0); ?></td>
                                     <td>RWF <?php echo number_format($row['pieces_quantity'] * $row['retail_price'], 0); ?></td>
+                                    <td>
+                                        <button onclick="openEditRetail(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $row['pieces_quantity']; ?>, <?php echo $row['retail_price']; ?>)"
+                                                class="btn btn-sm btn-secondary">Edit</button>
+                                    </td>
                                 </tr>
                                 <?php endwhile; ?>
                             </tbody>
@@ -245,6 +288,68 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
         </div>
     </div>
     
+    <!-- Edit Warehouse Stock Modal -->
+    <div id="editStockModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('editStockModal')">&times;</span>
+            <h2>Edit Warehouse Stock</h2>
+            <form method="POST">
+                <input type="hidden" name="product_id" id="es_product_id">
+                <div class="form-group">
+                    <label>Product</label>
+                    <p id="es_product_name" style="font-weight:600;margin:4px 0 0;"></p>
+                </div>
+                <div class="form-group">
+                    <label>Packages (Qty)*</label>
+                    <input type="number" name="quantity" id="es_quantity" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Pieces per Package*</label>
+                    <input type="number" name="pieces_per_package" id="es_pieces_per_pkg" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Kuranguza Price (RWF)*</label>
+                    <input type="number" name="package_price" id="es_package_price" min="0" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Detaye Price (RWF)*</label>
+                    <input type="number" name="retail_price" id="es_retail_price" min="0" step="1" required>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" name="edit_stock" class="btn btn-primary">Save Changes</button>
+                    <button type="button" onclick="closeModal('editStockModal')" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Retail Stock Modal -->
+    <div id="editRetailModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('editRetailModal')">&times;</span>
+            <h2>Edit Retail Stock</h2>
+            <form method="POST">
+                <input type="hidden" name="product_id" id="er_product_id">
+                <div class="form-group">
+                    <label>Product</label>
+                    <p id="er_product_name" style="font-weight:600;margin:4px 0 0;"></p>
+                </div>
+                <div class="form-group">
+                    <label>Pieces Available*</label>
+                    <input type="number" name="pieces_quantity" id="er_pieces_qty" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Retail Price (RWF)*</label>
+                    <input type="number" name="retail_price" id="er_retail_price" min="0" step="1" required>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" name="edit_retail_stock" class="btn btn-primary">Save Changes</button>
+                    <button type="button" onclick="closeModal('editRetailModal')" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="script.js"></script>
     <script>
 createAdvancedTableSearch('txtSearchStock', 'tblStock', []);
@@ -254,6 +359,24 @@ function toggleSection(header) {
     const body = header.nextElementSibling;
     header.classList.toggle('collapsed');
     body.classList.toggle('collapsed');
+}
+
+function openEditStock(productId, name, qty, piecesPerPkg, packagePrice, retailPrice) {
+    document.getElementById('es_product_id').value    = productId;
+    document.getElementById('es_product_name').textContent = name;
+    document.getElementById('es_quantity').value      = qty;
+    document.getElementById('es_pieces_per_pkg').value = piecesPerPkg;
+    document.getElementById('es_package_price').value = packagePrice;
+    document.getElementById('es_retail_price').value  = retailPrice;
+    openModal('editStockModal');
+}
+
+function openEditRetail(productId, name, piecesQty, retailPrice) {
+    document.getElementById('er_product_id').value    = productId;
+    document.getElementById('er_product_name').textContent = name;
+    document.getElementById('er_pieces_qty').value    = piecesQty;
+    document.getElementById('er_retail_price').value  = retailPrice;
+    openModal('editRetailModal');
 }
     </script>
 </body>

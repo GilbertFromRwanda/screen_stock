@@ -32,9 +32,37 @@ $total_retail_value = mysqli_fetch_assoc($retail_value_query)['total_value'] ?? 
 
 // Total retail pieces
 $total_retail_pieces = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT SUM(pieces_quantity) as total 
+    SELECT SUM(pieces_quantity) as total
     FROM retail_stock
 "))['total'] ?? 0;
+
+// Purchase stock value — weighted average cost across ALL purchases × current qty on hand
+$purchase_stock_value = mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(s.quantity * avg_cost.wac), 0) AS purchase_value
+    FROM stock s
+    JOIN (
+        SELECT product_id,
+               SUM(quantity * cost_price) / NULLIF(SUM(quantity), 0) AS wac
+        FROM purchases
+        WHERE cost_price IS NOT NULL
+        GROUP BY product_id
+    ) avg_cost ON avg_cost.product_id = s.product_id
+"))['purchase_value'] ?? 0;
+
+$purchase_retail_value = mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(rs.pieces_quantity * (avg_cost.wac / NULLIF(st.pieces_per_package, 1))), 0) AS purchase_value
+    FROM retail_stock rs
+    JOIN (
+        SELECT product_id,
+               SUM(quantity * cost_price) / NULLIF(SUM(quantity), 0) AS wac
+        FROM purchases
+        WHERE cost_price IS NOT NULL
+        GROUP BY product_id
+    ) avg_cost ON avg_cost.product_id = rs.product_id
+    LEFT JOIN stock st ON st.product_id = rs.product_id
+"))['purchase_value'] ?? 0;
+
+$total_purchase_value = $purchase_stock_value + $purchase_retail_value;
 
 // Low stock products (below reorder level)
 $low_stock_query = mysqli_query($conn, "
@@ -283,20 +311,39 @@ if (($today_sales['total'] ?? 0) == 0) {
                 
                 <div class="stat-card">
                     <div class="stat-icon">💰</div>
-                    <div class="stat-label">Stock Value</div>
+                    <div class="stat-label">Stock Value (Selling)</div>
                     <div class="stat-number">RWF <?php echo number_format($total_stock_value, 0); ?></div>
                     <div class="stat-trend">
                         <span class="stock-status">
-                            <span class="stock-dot <?php 
+                            <span class="stock-dot <?php
                                 if ($total_stock_value > 1000000) echo 'green';
                                 elseif ($total_stock_value > 500000) echo 'yellow';
                                 else echo 'red';
                             ?>"></span>
-                            Warehouse value
+                            Warehouse selling price
                         </span>
                     </div>
                     <div class="stat-footer">
                         Retail: RWF <?php echo number_format($total_retail_value, 0); ?>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">🏷️</div>
+                    <div class="stat-label">Stock Value (Purchase)</div>
+                    <div class="stat-number">RWF <?php echo number_format($total_purchase_value, 0); ?></div>
+                    <div class="stat-trend">
+                        <?php
+                        $stock_margin = $total_purchase_value > 0
+                            ? (($total_stock_value + $total_retail_value - $total_purchase_value) / $total_purchase_value) * 100
+                            : 0;
+                        ?>
+                        <span class="<?php echo $stock_margin >= 0 ? 'trend-up' : 'trend-down'; ?>">
+                            <?php echo ($stock_margin >= 0 ? '↑' : '↓') . ' ' . number_format(abs($stock_margin), 1); ?>% potential margin
+                        </span>
+                    </div>
+                    <div class="stat-footer">
+                        Retail cost: RWF <?php echo number_format($purchase_retail_value, 0); ?>
                     </div>
                 </div>
                 

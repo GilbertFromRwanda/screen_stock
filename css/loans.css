@@ -175,8 +175,8 @@
     font-size: 13px;
 }
 
-.balance-cell.has-balance { color: var(--danger); }
-.balance-cell.cleared     { color: var(--success); }
+.balance-cell.has-balance, .has-balance { color: var(--danger); }
+.balance-cell.cleared,     .cleared     { color: var(--success); }
 
 /* Grand total row */
 .loans-table-wrap .grand-total td {
