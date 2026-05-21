@@ -156,6 +156,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                         <table class="table" id="tblStock">
                             <thead>
                                 <tr>
+                                    <th>#</th>
                                     <th>Product</th>
                                     <th>Category</th>
                                     <th>Packages</th>
@@ -168,12 +169,13 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php while($row = mysqli_fetch_assoc($main_stock)): 
+                                <?php $main_i = 0; while($row = mysqli_fetch_assoc($main_stock)):
                                     $total_pieces = $row['quantity'] * $row['pieces_per_package'];
                                     $status = $row['quantity'] <= $row['reorder_level'] ? 'Low Stock' : 'In Stock';
                                     $status_class = $row['quantity'] <= $row['reorder_level'] ? 'danger' : 'success';
                                 ?>
                                 <tr>
+                                    <td style="color:var(--secondary);"><?php echo ++$main_i; ?></td>
                                     <td><?php echo htmlspecialchars($row['name']); ?></td>
                                     <td><?php echo htmlspecialchars($row['category']); ?></td>
                                     <td><?php echo $row['quantity']; ?></td>
@@ -206,6 +208,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                         <table class="table"id="tblRetail">
                             <thead>
                                 <tr>
+                                    <th>#</th>
                                     <th>Product</th>
                                     <th>Category</th>
                                     <th>Pieces/KG/Box Available</th>
@@ -215,8 +218,9 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php while($row = mysqli_fetch_assoc($retail_stock)): ?>
+                                <?php $retail_i = 0; while($row = mysqli_fetch_assoc($retail_stock)): ?>
                                 <tr>
+                                    <td style="color:var(--secondary);"><?php echo ++$retail_i; ?></td>
                                     <td><?php echo htmlspecialchars($row['name']); ?></td>
                                     <td><?php echo htmlspecialchars($row['category']); ?></td>
                                     <td><?php echo $row['pieces_quantity']; ?></td>
