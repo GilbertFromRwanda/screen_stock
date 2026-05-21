@@ -275,6 +275,12 @@ $purchases = mysqli_query($conn, "
                 <div class="alert alert-danger"><?php echo $error; ?></div>
             <?php endif; ?>
             
+            <div id="date-group-filters" style="margin-bottom:12px;display:none;">
+                <select id="date-group-select" style="padding:7px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;min-width:220px;">
+                    <option value="all">All dates</option>
+                </select>
+            </div>
+
             <div class="table-responsive">
                 <table class="table" id="tblPurchases">
                     <thead>
@@ -325,7 +331,7 @@ $purchases = mysqli_query($conn, "
                                 $day_total = 0;
                                 $is_first = ($group_index === 0);
                         ?>
-                        <tr class="date-group-header <?php echo $is_first ? 'active' : ''; ?>" data-toggle="<?php echo $group_index; ?>" onclick="toggleDateGroup(this)">
+                        <tr class="date-group-header <?php echo $is_first ? 'active' : ''; ?>" data-toggle="<?php echo $group_index; ?>" data-date="<?php echo $row_date; ?>" onclick="toggleDateGroup(this)">
                             <td colspan="5">
                                 <span class="toggle-icon"><?php echo $is_first ? '&#9660;' : '&#9654;'; ?></span>
                                 <?php echo date('D, M d Y', strtotime($row_date)); ?>
@@ -685,6 +691,48 @@ $purchases = mysqli_query($conn, "
                 dropdown.classList.remove('open');
                 highlightedIndex = -1;
             }
+        })();
+
+        // ── Date-group filter dropdown ────────────────────────────────────────────
+        (function() {
+            var wrap    = document.getElementById('date-group-filters');
+            var select  = document.getElementById('date-group-select');
+            var headers = document.querySelectorAll('.date-group-header');
+            if (headers.length < 2) return;
+
+            headers.forEach(function(header) {
+                var date = header.getAttribute('data-date');
+                var raw  = header.querySelector('td').textContent.trim().replace(/^.\s*/, '').trim();
+                var opt  = document.createElement('option');
+                opt.value       = date;
+                opt.textContent = raw;
+                select.appendChild(opt);
+            });
+
+            wrap.style.display = '';
+
+            select.addEventListener('change', function() {
+                var selectedDate = this.value;
+                headers.forEach(function(header) {
+                    var date      = header.getAttribute('data-date');
+                    var groupId   = header.getAttribute('data-toggle');
+                    var groupRows = document.querySelectorAll('tr[data-group="' + groupId + '"]');
+
+                    if (selectedDate === 'all') {
+                        header.style.display = '';
+                        var expanded = header.classList.contains('active');
+                        groupRows.forEach(function(r) { r.style.display = expanded ? '' : 'none'; });
+                    } else if (date === selectedDate) {
+                        header.style.display = '';
+                        header.classList.add('active');
+                        header.querySelector('.toggle-icon').innerHTML = '&#9660;';
+                        groupRows.forEach(function(r) { r.style.display = ''; });
+                    } else {
+                        header.style.display = 'none';
+                        groupRows.forEach(function(r) { r.style.display = 'none'; });
+                    }
+                });
+            });
         })();
 
         function toggleDateGroup(header) {
