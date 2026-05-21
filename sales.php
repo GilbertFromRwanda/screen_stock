@@ -110,10 +110,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_external_sale']))
     $cash_amount   = max(0, (float)$_POST['cash_amount']);
     $momo_amount   = max(0, (float)$_POST['momo_amount']);
     $loan_amount   = max(0, (float)$_POST['loan_amount']);
+    $my_revenue    = max(0, (float)($_POST['my_revenue'] ?? 0));
     $sale_date     = mysqli_real_escape_string($conn, $_POST['sale_date']);
     $total_amount  = $quantity * $unit_price;
 
-    mysqli_query($conn, "UPDATE sales_external SET product_name='$product_name', quantity=$quantity, unit_price=$unit_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
+    mysqli_query($conn, "UPDATE sales_external SET product_name='$product_name', quantity=$quantity, unit_price=$unit_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, my_revenue=$my_revenue, sale_date='$sale_date' WHERE id=$id");
     $_SESSION['flash_success'] = "External sale updated.";
     header("Location: sales.php?tab=external"); exit;
 }
@@ -130,6 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     $cash_amount   = max(0, (float)($_POST['ext_cash_amount'] ?? 0));
     $momo_amount   = max(0, (float)($_POST['ext_momo_amount'] ?? 0));
     $loan_amount   = max(0, (float)($_POST['ext_loan_amount'] ?? 0));
+    $my_revenue    = max(0, (float)($_POST['ext_my_revenue'] ?? 0));
     $phone         = mysqli_real_escape_string($conn, trim($_POST['ext_phone'] ?? ''));
     $total_amount  = $quantity * $unit_price;
 
@@ -166,8 +168,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     }
 
     $sold_by = (int)$_SESSION['user_id'];
-    $ins = mysqli_query($conn, "INSERT INTO sales_external (product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, customer_name, phone, sale_date, sold_by)
-                   VALUES ('$product_name', $owner_id_val, $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, '$customer_name', '$phone', CURDATE(), $sold_by)");
+    $ins = mysqli_query($conn, "INSERT INTO sales_external (product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
+                   VALUES ('$product_name', $owner_id_val, $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by)");
     if ($ins) {
         $ext_sale_id = (int)mysqli_insert_id($conn);
         if ($loan_amount > 0) {
@@ -864,7 +866,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <table class="table" id="tbl-external">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Owner</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
+                            <th>Date</th><th>Product</th><th>Owner</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>My Commission</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -882,6 +884,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td><?php echo $row['quantity']; ?></td>
                             <td>RWF <?php echo number_format($row['unit_price'], 0); ?></td>
                             <td><strong>RWF <?php echo number_format($row['total_amount'], 0); ?></strong></td>
+                            <td><?php echo $row['my_revenue'] > 0 ? '<strong>RWF '.number_format($row['my_revenue'],0).'</strong>' : '—'; ?></td>
                             <td><?php echo $row['cash_amount'] > 0 ? 'RWF '.number_format($row['cash_amount'],0) : '—'; ?></td>
                             <td><?php echo $row['momo_amount'] > 0 ? 'RWF '.number_format($row['momo_amount'],0) : '—'; ?></td>
                             <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
@@ -892,7 +895,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                 <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
                                 <?php else: ?>
                                 <button class="btn btn-sm" style="background:var(--warning,#f59e0b);color:#fff;padding:3px 8px;"
-                                    onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>)">Edit</button>
+                                    onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,<?php echo (float)($row['my_revenue'] ?? 0); ?>)">Edit</button>
                                 <button class="btn btn-sm" style="background:#8b5cf6;color:#fff;padding:3px 8px;"
                                     onclick="openRefundModal('external',<?php echo $row['id']; ?>,0,'<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>)">Refund</button>
                                 <?php endif; ?>
@@ -910,7 +913,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                         <tr class="table-total-row">
                             <td colspan="5" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($ext_grand_total, 0); ?></strong></td>
-                            <td colspan="6"></td>
+                            <td colspan="7"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -1331,6 +1334,10 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     <input type="text" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtTotal()">
                 </div>
                 <div class="form-group">
+                    <label for="ext_my_revenue">My Commission (RWF)</label>
+                    <input type="text" id="ext_my_revenue" name="ext_my_revenue" min="0" step="1" value="0" placeholder="Your commission from this sale">
+                </div>
+                <div class="form-group">
                     <label for="ext_customer_name">Customer Name</label>
                     <input type="text" id="ext_customer_name" name="ext_customer_name" value="client" placeholder="Enter customer name">
                 </div>
@@ -1501,6 +1508,10 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <div class="form-group">
                     <label for="edit_ext_price">Unit Price*</label>
                     <input type="number" id="edit_ext_price" name="unit_price" required min="1" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit_ext_revenue">My Commission (RWF)</label>
+                    <input type="number" id="edit_ext_revenue" name="my_revenue" min="0" step="1" value="0">
                 </div>
                 <div class="form-group">
                     <label for="edit_ext_customer">Customer Name</label>
@@ -2247,12 +2258,13 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             openModal('editRetailModal');
         }
 
-        function openEditExternal(id, date, productName, qty, price, customer, cash, momo, loan) {
+        function openEditExternal(id, date, productName, qty, price, customer, cash, momo, loan, myRevenue) {
             document.getElementById('edit_ext_id').value = id;
             document.getElementById('edit_ext_date').value = date;
             document.getElementById('edit_ext_product').value = productName;
             document.getElementById('edit_ext_qty').value = qty;
             document.getElementById('edit_ext_price').value = price;
+            document.getElementById('edit_ext_revenue').value = myRevenue || 0;
             document.getElementById('edit_ext_customer').value = customer;
             document.getElementById('edit_ext_cash').value = cash;
             document.getElementById('edit_ext_momo').value = momo;

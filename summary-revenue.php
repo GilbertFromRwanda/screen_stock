@@ -21,6 +21,8 @@ $bulk = mysqli_fetch_assoc(mysqli_query($conn, "
         ), 0)                                                                        AS cost
     FROM sales_bulk sb
     WHERE sb.sale_date BETWEEN '$from' AND '$to'
+      AND sb.refunded = 0
+      AND sb.has_loan = 0
 "));
 
 // ── Retail sales total ─────────────────────────────────────────────────────────
@@ -37,6 +39,8 @@ $retail = mysqli_fetch_assoc(mysqli_query($conn, "
         ), 0)                                                                        AS cost
     FROM sales_retail sr
     WHERE sr.sale_date BETWEEN '$from' AND '$to'
+      AND sr.refunded = 0
+      AND sr.has_loan = 0
 "));
 
 // ── Expenses total ─────────────────────────────────────────────────────────────
@@ -66,8 +70,16 @@ if (mysqli_num_rows($con_check) > 0) {
     $total_consumption_unpaid = $con['unpaid'];
 }
 
+// ── External commission total ──────────────────────────────────────────────────
+$ext_commission = mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(my_revenue), 0) AS commission
+    FROM sales_external
+    WHERE sale_date BETWEEN '$from' AND '$to'
+      AND refunded = 0
+"))['commission'] ?? 0;
+
 // ── Derived totals ─────────────────────────────────────────────────────────────
-$total_revenue      = $bulk['revenue']  + $retail['revenue'];
+$total_revenue      = $bulk['revenue']  + $retail['revenue'] + $ext_commission;
 $total_cost         = $bulk['cost']     + $retail['cost'];
 $gross_profit       = $total_revenue    - $total_cost;
 $net_profit         = $gross_profit     - $total_expenses - $total_consumption_unpaid;
@@ -80,6 +92,8 @@ $bulk_daily_q = mysqli_query($conn, "
     SELECT sale_date, SUM(total_amount) AS total
     FROM sales_bulk
     WHERE sale_date BETWEEN '$from' AND '$to'
+      AND refunded = 0
+      AND has_loan = 0
     GROUP BY sale_date
 ");
 while ($r = mysqli_fetch_assoc($bulk_daily_q)) $daily_bulk[$r['sale_date']] = $r['total'];
@@ -89,6 +103,8 @@ $retail_daily_q = mysqli_query($conn, "
     SELECT sale_date, SUM(total_amount) AS total
     FROM sales_retail
     WHERE sale_date BETWEEN '$from' AND '$to'
+      AND refunded = 0
+      AND has_loan = 0
     GROUP BY sale_date
 ");
 while ($r = mysqli_fetch_assoc($retail_daily_q)) $daily_retail[$r['sale_date']] = $r['total'];

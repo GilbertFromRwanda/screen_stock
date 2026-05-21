@@ -77,27 +77,30 @@ $low_stock_query = mysqli_query($conn, "
 // ============== SALES STATISTICS ==============
 // Today's sales
 $today_sales_query = mysqli_query($conn, "
-    SELECT 
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date = '$today'), 0) +
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date = '$today'), 0) as total,
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date = '$today'), 0) as bulk_total,
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date = '$today'), 0) as retail_total
+    SELECT
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date = '$today' AND refunded = 0 AND has_loan = 0), 0) +
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date = '$today' AND refunded = 0 AND has_loan = 0), 0) +
+        COALESCE((SELECT COALESCE(SUM(my_revenue),0) FROM sales_external WHERE sale_date = '$today' AND refunded = 0), 0) as total,
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date = '$today' AND refunded = 0 AND has_loan = 0), 0) as bulk_total,
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date = '$today' AND refunded = 0 AND has_loan = 0), 0) as retail_total
 ");
 $today_sales = mysqli_fetch_assoc($today_sales_query);
 
 // This week's sales
 $week_sales_query = mysqli_query($conn, "
-    SELECT 
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date BETWEEN '$week_start' AND '$week_end'), 0) +
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date BETWEEN '$week_start' AND '$week_end'), 0) as total
+    SELECT
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date BETWEEN '$week_start' AND '$week_end' AND refunded = 0 AND has_loan = 0), 0) +
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date BETWEEN '$week_start' AND '$week_end' AND refunded = 0 AND has_loan = 0), 0) +
+        COALESCE((SELECT COALESCE(SUM(my_revenue),0) FROM sales_external WHERE sale_date BETWEEN '$week_start' AND '$week_end' AND refunded = 0), 0) as total
 ");
 $week_sales = mysqli_fetch_assoc($week_sales_query)['total'] ?? 0;
 
 // This month's sales
 $month_sales_query = mysqli_query($conn, "
-    SELECT 
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date BETWEEN '$month_start' AND '$month_end'), 0) +
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date BETWEEN '$month_start' AND '$month_end'), 0) as total
+    SELECT
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk WHERE sale_date BETWEEN '$month_start' AND '$month_end' AND refunded = 0 AND has_loan = 0), 0) +
+        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail WHERE sale_date BETWEEN '$month_start' AND '$month_end' AND refunded = 0 AND has_loan = 0), 0) +
+        COALESCE((SELECT COALESCE(SUM(my_revenue),0) FROM sales_external WHERE sale_date BETWEEN '$month_start' AND '$month_end' AND refunded = 0), 0) as total
 ");
 $month_sales = mysqli_fetch_assoc($month_sales_query)['total'] ?? 0;
 
@@ -111,6 +114,8 @@ $today_profit_query = mysqli_query($conn, "
             FROM sales_bulk sb
             JOIN purchases pu ON pu.product_id = sb.product_id
             WHERE sb.sale_date = '$today'
+            AND sb.refunded = 0
+            AND sb.has_loan = 0
             AND pu.id = (
                 SELECT id FROM purchases p2 
                 WHERE p2.product_id = sb.product_id 
@@ -125,13 +130,17 @@ $today_profit_query = mysqli_query($conn, "
             JOIN purchases pu ON pu.product_id = sr.product_id
             LEFT JOIN stock s ON sr.product_id = s.product_id
             WHERE sr.sale_date = '$today'
+            AND sr.refunded = 0
+            AND sr.has_loan = 0
             AND pu.id = (
                 SELECT id FROM purchases p2 
                 WHERE p2.product_id = sr.product_id 
                 AND p2.purchase_date <= sr.sale_date 
                 ORDER BY p2.purchase_date DESC LIMIT 1
             )
-        ), 0) as total_profit
+        ), 0) +
+        -- External commission (pure profit)
+        COALESCE((SELECT COALESCE(SUM(my_revenue),0) FROM sales_external WHERE sale_date = '$today' AND refunded = 0), 0) as total_profit
 ");
 $today_profit = mysqli_fetch_assoc($today_profit_query)['total_profit'] ?? 0;
 
@@ -203,11 +212,11 @@ $today_payment = mysqli_fetch_assoc(mysqli_query($conn, "
         COALESCE(SUM(momo_amount), 0) as momo_total,
         COALESCE(SUM(loan_amount), 0) as loan_total
     FROM (
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_bulk     WHERE sale_date = '$today'
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_bulk     WHERE sale_date = '$today' AND refunded = 0
         UNION ALL
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_retail   WHERE sale_date = '$today'
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_retail   WHERE sale_date = '$today' AND refunded = 0
         UNION ALL
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_external WHERE sale_date = '$today'
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_external WHERE sale_date = '$today' AND refunded = 0
     ) as combined
 "));
 $today_cash      = $today_payment['cash_total'] ?? 0;

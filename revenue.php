@@ -33,6 +33,8 @@ function updateWeeklyRevenue($conn) {
         FROM sales_bulk sb
         JOIN products p ON sb.product_id = p.id
         WHERE sb.sale_date BETWEEN '$week_start' AND '$week_end'
+          AND sb.refunded = 0
+          AND sb.has_loan = 0
     ");
     
     $bulk_total = 0;
@@ -60,6 +62,8 @@ function updateWeeklyRevenue($conn) {
         JOIN products p ON sr.product_id = p.id
         LEFT JOIN stock s ON sr.product_id = s.product_id
         WHERE sr.sale_date BETWEEN '$week_start' AND '$week_end'
+          AND sr.refunded = 0
+          AND sr.has_loan = 0
     ");
     
     $retail_total = 0;
@@ -76,9 +80,13 @@ function updateWeeklyRevenue($conn) {
         $retail_profit += ($sale['total_amount'] - $cost);
     }
     
-    $total_revenue = $bulk_total + $retail_total;
+    // External commission — pure profit, no cost
+    $ext_q = mysqli_query($conn, "SELECT COALESCE(SUM(my_revenue),0) AS commission FROM sales_external WHERE sale_date BETWEEN '$week_start' AND '$week_end' AND refunded = 0");
+    $ext_commission = (float)(mysqli_fetch_assoc($ext_q)['commission'] ?? 0);
+
+    $total_revenue = $bulk_total + $retail_total + $ext_commission;
     $total_cost = $bulk_cost_total + $retail_cost_total;
-    $total_profit = $bulk_profit + $retail_profit;
+    $total_profit = $bulk_profit + $retail_profit + $ext_commission;
     $profit_margin = $total_revenue > 0 ? ($total_profit / $total_revenue) * 100 : 0;
     
     // Check if record exists for this week

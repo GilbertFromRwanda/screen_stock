@@ -26,11 +26,11 @@ $row = mysqli_fetch_assoc(mysqli_query($conn, "
         COALESCE(SUM(momo_amount), 0) as momo_total,
         COALESCE(SUM(loan_amount), 0) as loan_total
     FROM (
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_bulk     WHERE sale_date BETWEEN '$from' AND '$to' $user_where_bulk
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_bulk     WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $user_where_bulk
         UNION ALL
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_retail   WHERE sale_date BETWEEN '$from' AND '$to' $user_where_retail
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_retail   WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $user_where_retail
         UNION ALL
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_external WHERE sale_date BETWEEN '$from' AND '$to' $user_where_external
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_external WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $user_where_external
     ) as combined
 "));
 

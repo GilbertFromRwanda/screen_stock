@@ -64,25 +64,6 @@ SET lc.total_loans   = agg.cnt,
     lc.paid_amount   = agg.paid_sum,
     lc.unpaid_amount = agg.loaned - agg.paid_sum;
 
-
--- Backfill aggregate columns from existing loans/payments data
-UPDATE loan_clients lc
-JOIN (
-    SELECT l.client, COALESCE(l.phone,'') AS phone,
-           COUNT(DISTINCT l.id)              AS cnt,
-           COALESCE(SUM(l.amount), 0)        AS loaned,
-           COALESCE(SUM(lp_s.paid), 0)       AS paid_sum
-    FROM loans l
-    LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
-           ON lp_s.loan_id = l.id
-    GROUP BY l.client, COALESCE(l.phone,'')
-) agg ON lc.name = agg.client AND COALESCE(lc.phone,'') = agg.phone
-SET lc.total_loans   = agg.cnt,
-    lc.paid_amount   = agg.paid_sum,
-    lc.unpaid_amount = agg.loaned - agg.paid_sum;
-
-
-
    CREATE TABLE `refunds` (
    `id`            INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   `sale_type` enum('bulk','retail','external') NOT NULL,
@@ -106,4 +87,7 @@ ALTER TABLE `refunds` ADD COLUMN IF NOT EXISTS `loss_amount` DECIMAL(12,2) DEFAU
 ALTER TABLE `sales_bulk`     ADD COLUMN IF NOT EXISTS `refunded` TINYINT(1) NOT NULL DEFAULT 0;
 ALTER TABLE `sales_retail`   ADD COLUMN IF NOT EXISTS `refunded` TINYINT(1) NOT NULL DEFAULT 0;
 ALTER TABLE `sales_external` ADD COLUMN IF NOT EXISTS `refunded` TINYINT(1) NOT NULL DEFAULT 0;
+
+-- My revenue on external sales (shop's cut from third-party product sales)
+ALTER TABLE `sales_external` ADD COLUMN IF NOT EXISTS `my_revenue` DECIMAL(12,2) NOT NULL DEFAULT 0;
  

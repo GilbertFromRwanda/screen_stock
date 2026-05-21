@@ -52,7 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
     // Check loan exists and get balance + client info for aggregate update
     $loan = mysqli_fetch_assoc(mysqli_query($conn, "
         SELECT l.amount, l.client, COALESCE(l.phone,'') AS phone,
-               COALESCE(SUM(lp.amount_paid),0) AS paid
+               COALESCE(SUM(lp.amount_paid),0) AS paid,
+               l.bulk_id, l.retail_id, l.external_id
         FROM loans l
         LEFT JOIN loan_payments lp ON lp.loan_id = l.id
         WHERE l.id = $loan_id
@@ -77,6 +78,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
                 unpaid_amount = unpaid_amount - '$amount_paid'
             WHERE name = '$lc_name' AND COALESCE(phone,'') = '$lc_phone'
         ");
+        // Reduce loan_amount on the linked sale; clear has_loan when fully paid
+        $fully_paid = (($loan['paid'] + $amount_paid) >= $loan['amount']);
+        if ($loan['bulk_id']) {
+            $q = $fully_paid
+                ? "UPDATE sales_bulk SET loan_amount = 0, has_loan = 0 WHERE id = {$loan['bulk_id']}"
+                : "UPDATE sales_bulk SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['bulk_id']}";
+            mysqli_query($conn, $q);
+        }
+        if ($loan['retail_id']) {
+            $q = $fully_paid
+                ? "UPDATE sales_retail SET loan_amount = 0, has_loan = 0 WHERE id = {$loan['retail_id']}"
+                : "UPDATE sales_retail SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['retail_id']}";
+            mysqli_query($conn, $q);
+        }
+        if ($loan['external_id']) {
+            mysqli_query($conn, "UPDATE sales_external SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['external_id']}");
+        }
     }
     header('Content-Type: application/json'); echo json_encode($ins ? ['success' => true] : ['success' => false, 'message' => mysqli_error($conn)]); exit;
 }
@@ -142,6 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
 
     $unpaid = mysqli_query($conn, "
         SELECT l.id, l.amount, l.client, COALESCE(l.phone,'') AS phone,
+               l.bulk_id, l.retail_id, l.external_id,
                COALESCE(lp_sum.paid, 0) AS total_paid,
                (l.amount - COALESCE(lp_sum.paid, 0)) AS balance
         FROM loans l
@@ -159,6 +178,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
         $pay = min($remaining, (float)$row['balance']);
         $received_by = (int)$_SESSION['user_id'];
         mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ({$row['id']}, $pay, '$payment_date', $received_by)");
+        // Reduce loan_amount on the linked sale; clear has_loan when fully paid
+        $fully_paid = ($pay >= (float)$row['balance']);
+        if ($row['bulk_id']) {
+            $q = $fully_paid
+                ? "UPDATE sales_bulk SET loan_amount = 0, has_loan = 0 WHERE id = {$row['bulk_id']}"
+                : "UPDATE sales_bulk SET loan_amount = GREATEST(0, loan_amount - $pay) WHERE id = {$row['bulk_id']}";
+            mysqli_query($conn, $q);
+        }
+        if ($row['retail_id']) {
+            $q = $fully_paid
+                ? "UPDATE sales_retail SET loan_amount = 0, has_loan = 0 WHERE id = {$row['retail_id']}"
+                : "UPDATE sales_retail SET loan_amount = GREATEST(0, loan_amount - $pay) WHERE id = {$row['retail_id']}";
+            mysqli_query($conn, $q);
+        }
+        if ($row['external_id']) {
+            mysqli_query($conn, "UPDATE sales_external SET loan_amount = GREATEST(0, loan_amount - $pay) WHERE id = {$row['external_id']}");
+        }
         $remaining -= $pay;
         $count++;
         // Accumulate per-client deltas
@@ -349,11 +385,17 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             </div>
         </div>
 
-        <!-- Search bar -->
+        <!-- Search bar + status filter -->
         <div style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
             <input type="text" id="clientTableSearch" placeholder="Search client name or phone..."
-                   oninput="filterClientTable(this.value)"
+                   oninput="filterClientTable()"
                    style="flex:1;min-width:200px;max-width:360px;padding:8px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;">
+            <div style="display:flex;gap:6px;">
+                <button class="filter-status-btn active" data-status="all"    onclick="setStatusFilter(this)">All</button>
+                <button class="filter-status-btn"        data-status="unpaid" onclick="setStatusFilter(this)">Unpaid</button>
+                <button class="filter-status-btn"        data-status="partial" onclick="setStatusFilter(this)">Partial</button>
+                <button class="filter-status-btn"        data-status="paid"   onclick="setStatusFilter(this)">Paid</button>
+            </div>
             <span id="clientCountBadge" style="font-size:13px;color:var(--secondary);"></span>
         </div>
 
@@ -386,7 +428,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 elseif ($c['total_paid'] > 0)    { $status = 'Partial'; $badge_cls = 'badge-partial'; }
                 else                             { $status = 'Unpaid';  $badge_cls = 'badge-unpaid'; }
             ?>
-            <tr>
+            <tr data-status="<?php echo strtolower($status); ?>">
                 <td style="color:var(--secondary);"><?php echo $i + 1; ?></td>
                 <td style="font-weight:600;"><?php echo htmlspecialchars($c['name']); ?></td>
                 <td style="color:var(--secondary);"><?php echo htmlspecialchars($c['phone'] ?: '—'); ?></td>
@@ -727,19 +769,34 @@ function openPayment(btn) {
 }
 
 // ── Filter client table ────────────────────────────────────────────────────────
-function filterClientTable(term) {
-    term = term.trim().toLowerCase();
+var _activeStatus = 'all';
+
+function setStatusFilter(btn) {
+    document.querySelectorAll('.filter-status-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    _activeStatus = btn.getAttribute('data-status');
+    filterClientTable();
+}
+
+function filterClientTable() {
+    var term = (document.getElementById('clientTableSearch').value || '').trim().toLowerCase();
     var rows = document.querySelectorAll('#tbl-loan-clients tbody tr');
     var visible = 0;
     rows.forEach(function(row) {
-        var name  = (row.cells[1] || {}).textContent || '';
-        var phone = (row.cells[2] || {}).textContent || '';
-        var match = !term || name.toLowerCase().indexOf(term) !== -1 || phone.toLowerCase().indexOf(term) !== -1;
-        row.style.display = match ? '' : 'none';
-        if (match) visible++;
+        var name   = (row.cells[1] || {}).textContent || '';
+        var phone  = (row.cells[2] || {}).textContent || '';
+        var status = row.getAttribute('data-status') || '';
+        var matchText   = !term || name.toLowerCase().indexOf(term) !== -1 || phone.toLowerCase().indexOf(term) !== -1;
+        var matchStatus = _activeStatus === 'all' || status === _activeStatus;
+        var show = matchText && matchStatus;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
     });
     var badge = document.getElementById('clientCountBadge');
-    if (badge) badge.textContent = term ? (visible + ' match' + (visible !== 1 ? 'es' : '')) : '';
+    if (badge) {
+        var isFiltered = term || _activeStatus !== 'all';
+        badge.textContent = isFiltered ? (visible + ' match' + (visible !== 1 ? 'es' : '')) : '';
+    }
 }
 
 // ── View client loans modal ────────────────────────────────────────────────────

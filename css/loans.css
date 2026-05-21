@@ -214,6 +214,23 @@
 .badge-partial { background: #fef9c3; color: #a16207; }
 .badge-unpaid  { background: #fee2e2; color: #b91c1c; }
 
+/* ── Status filter buttons ───────────────────────────────────────────────────── */
+.filter-status-btn {
+    padding: 6px 14px;
+    border: 1px solid var(--gray-300);
+    border-radius: 99px;
+    background: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--secondary);
+    transition: background .15s, color .15s, border-color .15s;
+}
+.filter-status-btn:hover { border-color: var(--primary); color: var(--primary); }
+.filter-status-btn.active[data-status="all"]     { background: var(--primary);   border-color: var(--primary);   color: #fff; }
+.filter-status-btn.active[data-status="unpaid"]  { background: #b91c1c;          border-color: #b91c1c;          color: #fff; }
+.filter-status-btn.active[data-status="partial"] { background: #a16207;          border-color: #a16207;          color: #fff; }
+.filter-status-btn.active[data-status="paid"]    { background: #15803d;          border-color: #15803d;          color: #fff; }
+
 /* ── Action Buttons ──────────────────────────────────────────────────────────── */
 .loan-actions {
     display: flex;
