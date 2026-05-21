@@ -5,6 +5,15 @@ if (!isLoggedIn()) {
     redirect('login.php');
 }
 
+function abbr_money($n) {
+    $n = (float)$n;
+    $abs = abs($n);
+    $sign = $n < 0 ? '-' : '';
+    if ($abs >= 1_000_000) return $sign . rtrim(rtrim(number_format($abs / 1_000_000, 1), '0'), '.') . 'M';
+    if ($abs >= 1_000)     return $sign . rtrim(rtrim(number_format($abs / 1_000, 1), '0'), '.') . 'K';
+    return $sign . number_format($abs, 0);
+}
+
 // Get current date information
 $today = date('Y-m-d');
 $week_start = date('Y-m-d', strtotime('monday this week'));
@@ -321,45 +330,38 @@ if (($today_sales['total'] ?? 0) == 0) {
                 <div class="stat-card">
                     <div class="stat-icon">💰</div>
                     <div class="stat-label">Stock Value (Selling)</div>
-                    <div class="stat-number">RWF <?php echo number_format($total_stock_value, 0); ?></div>
+                    <div class="stat-number">RWF <?php echo abbr_money($total_stock_value + $total_retail_value); ?></div>
                     <div class="stat-trend">
                         <span class="stock-status">
                             <span class="stock-dot <?php
-                                if ($total_stock_value > 1000000) echo 'green';
-                                elseif ($total_stock_value > 500000) echo 'yellow';
+                                $total_selling = $total_stock_value + $total_retail_value;
+                                if ($total_selling > 1000000) echo 'green';
+                                elseif ($total_selling > 500000) echo 'yellow';
                                 else echo 'red';
                             ?>"></span>
-                            Warehouse selling price
+                            Warehouse + Retail selling price
                         </span>
                     </div>
                     <div class="stat-footer">
-                        Retail: RWF <?php echo number_format($total_retail_value, 0); ?>
+                        Warehouse: RWF <?php echo abbr_money($total_stock_value); ?> |
+                        Retail: RWF <?php echo abbr_money($total_retail_value); ?>
                     </div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-icon">🏷️</div>
                     <div class="stat-label">Stock Value (Purchase)</div>
-                    <div class="stat-number">RWF <?php echo number_format($total_purchase_value, 0); ?></div>
-                    <div class="stat-trend">
-                        <?php
-                        $stock_margin = $total_purchase_value > 0
-                            ? (($total_stock_value + $total_retail_value - $total_purchase_value) / $total_purchase_value) * 100
-                            : 0;
-                        ?>
-                        <span class="<?php echo $stock_margin >= 0 ? 'trend-up' : 'trend-down'; ?>">
-                            <?php echo ($stock_margin >= 0 ? '↑' : '↓') . ' ' . number_format(abs($stock_margin), 1); ?>% potential margin
-                        </span>
-                    </div>
+                    <div class="stat-number">RWF <?php echo abbr_money($total_purchase_value); ?></div>
                     <div class="stat-footer">
-                        Retail cost: RWF <?php echo number_format($purchase_retail_value, 0); ?>
+                        Warehouse: RWF <?php echo abbr_money($purchase_stock_value); ?> |
+                        Retail: RWF <?php echo abbr_money($purchase_retail_value); ?>
                     </div>
                 </div>
                 
                 <div class="stat-card">
                     <div class="stat-icon">🛒</div>
                     <div class="stat-label">Today's Sales</div>
-                    <div class="stat-number">RWF <?php echo number_format($today_sales['total'] ?? 0, 0); ?></div>
+                    <div class="stat-number">RWF <?php echo abbr_money($today_sales['total'] ?? 0); ?></div>
                     <div class="stat-trend">
                         <?php 
                         $yesterday_query = mysqli_query($conn, "
@@ -391,12 +393,12 @@ if (($today_sales['total'] ?? 0) == 0) {
                         <?php endif; ?>
                     </div>
                     <div class="stat-footer">
-                        Bulk: RWF <?php echo number_format($today_sales['bulk_total'] ?? 0, 0); ?> |
-                        Retail: RWF <?php echo number_format($today_sales['retail_total'] ?? 0, 0); ?>
+                        Bulk: RWF <?php echo abbr_money($today_sales['bulk_total'] ?? 0); ?> |
+                        Retail: RWF <?php echo abbr_money($today_sales['retail_total'] ?? 0); ?>
                         <div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
-                            <span style="color:#16a34a;">💵 <?php echo number_format($today_cash, 0); ?></span>
-                            <span style="color:#2563eb;">📱 <?php echo number_format($today_momo, 0); ?></span>
-                            <span style="color:#d97706;">🔖 <?php echo number_format($today_loan, 0); ?></span>
+                            <span style="color:#16a34a;">💵 <?php echo abbr_money($today_cash); ?></span>
+                            <span style="color:#2563eb;">📱 <?php echo abbr_money($today_momo); ?></span>
+                            <span style="color:#d97706;">🔖 <?php echo abbr_money($today_loan); ?></span>
                         </div>
                     </div>
                 </div>
@@ -404,47 +406,29 @@ if (($today_sales['total'] ?? 0) == 0) {
                 <div class="stat-card">
                     <div class="stat-icon">💵</div>
                     <div class="stat-label">Today's Revenue</div>
-                    <div class="stat-number">RWF <?php echo number_format($today_profit, 0); ?></div>
-                    <div class="stat-trend">
-                        <?php
-                        $today_sales_total = $today_sales['total'] ?? 0;
-                        $today_margin = $today_sales_total > 0 ? ($today_profit / $today_sales_total) * 100 : 0;
-                        ?>
-                        <?php if ($today_profit > 0): ?>
-                            <span class="trend-up">Margin: <?php echo number_format($today_margin, 1); ?>%</span>
-                        <?php elseif ($today_profit < 0): ?>
-                            <span class="trend-down">Loss today</span>
-                        <?php else: ?>
-                            <span>No profit yet</span>
-                        <?php endif; ?>
-                    </div>
+                    <div class="stat-number">RWF <?php echo abbr_money($today_profit); ?></div>
+                    <?php $today_sales_total = $today_sales['total'] ?? 0; ?>
                     <div class="stat-footer">
-                        Sales: RWF <?php echo number_format($today_sales_total, 0); ?> |
-                        Cost: RWF <?php echo number_format($today_sales_total - $today_profit, 0); ?>
+                        Sales: RWF <?php echo abbr_money($today_sales_total); ?> |
+                        Cost: RWF <?php echo abbr_money($today_sales_total - $today_profit); ?>
                     </div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-icon">📊</div>
                     <div class="stat-label">This Week</div>
-                    <div class="stat-number">RWF <?php echo number_format($week_sales, 0); ?></div>
-                    <div class="stat-trend">
-                        <span>Sales revenue</span>
-                    </div>
+                    <div class="stat-number">RWF <?php echo abbr_money($week_sales); ?></div>
                     <div class="stat-footer">
-                        Profit: RWF <?php echo number_format($week_profit, 0); ?> |
-                        Margin: <span class="<?php echo $profit_margin >= 20 ? 'trend-up' : ($profit_margin >= 10 ? '' : 'trend-down'); ?>">
-                            <?php echo number_format($profit_margin, 1); ?>%
-                        </span>
+                        Profit: RWF <?php echo abbr_money($week_profit); ?>
                     </div>
                 </div>
                 
                 <div class="stat-card">
                     <div class="stat-icon">📈</div>
                     <div class="stat-label">This Month</div>
-                    <div class="stat-number">RWF <?php echo number_format($month_sales, 0); ?></div>
+                    <div class="stat-number">RWF <?php echo abbr_money($month_sales); ?></div>
                     <div class="stat-trend">
-                        <span>Monthly target: RWF <?php echo number_format($month_sales * 1.2, 0); ?></span>
+                        <span>Monthly target: RWF <?php echo abbr_money($month_sales * 1.2); ?></span>
                     </div>
                     <div class="stat-footer">
                         <?php 
@@ -464,7 +448,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                         <span>Pieces available for retail</span>
                     </div>
                     <div class="stat-footer">
-                        Value: RWF <?php echo number_format($total_retail_value, 0); ?>
+                        Value: RWF <?php echo abbr_money($total_retail_value); ?>
                     </div>
                 </div>
             </div>
@@ -518,7 +502,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                                     <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.5px;">Cash</span>
                                 </div>
                                 <div id="coll-cash-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">
-                                    RWF <?php echo number_format($today_cash, 0); ?>
+                                    RWF <?php echo abbr_money($today_cash); ?>
                                 </div>
                                 <div style="background:#dcfce7;border-radius:99px;height:6px;margin-bottom:5px;">
                                     <div id="coll-cash-bar" style="background:#22c55e;height:6px;border-radius:99px;width:<?php echo $init_cash_pct; ?>%;transition:width .4s;"></div>
@@ -533,7 +517,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                                     <span style="font-size:12px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;">Momo</span>
                                 </div>
                                 <div id="coll-momo-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">
-                                    RWF <?php echo number_format($today_momo, 0); ?>
+                                    RWF <?php echo abbr_money($today_momo); ?>
                                 </div>
                                 <div style="background:#dbeafe;border-radius:99px;height:6px;margin-bottom:5px;">
                                     <div id="coll-momo-bar" style="background:#3b82f6;height:6px;border-radius:99px;width:<?php echo $init_momo_pct; ?>%;transition:width .4s;"></div>
@@ -548,7 +532,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                                     <span style="font-size:12px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.5px;">Loan</span>
                                 </div>
                                 <div id="coll-loan-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">
-                                    RWF <?php echo number_format($today_loan, 0); ?>
+                                    RWF <?php echo abbr_money($today_loan); ?>
                                 </div>
                                 <div style="background:#fef3c7;border-radius:99px;height:6px;margin-bottom:5px;">
                                     <div id="coll-loan-bar" style="background:#f59e0b;height:6px;border-radius:99px;width:<?php echo $init_loan_pct; ?>%;transition:width .4s;"></div>
@@ -567,7 +551,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                                 </div>
                             </div>
                             <div style="text-align:right;">
-                                <div id="coll-outstanding-amount" style="font-size:18px;font-weight:800;color:#f59e0b;">RWF <?php echo number_format($outstanding_loans, 0); ?></div>
+                                <div id="coll-outstanding-amount" style="font-size:18px;font-weight:800;color:#f59e0b;">RWF <?php echo abbr_money($outstanding_loans); ?></div>
                                 <a href="loans.php" style="font-size:11px;color:var(--primary);text-decoration:none;">View details →</a>
                             </div>
                         </div>
@@ -579,7 +563,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                         <div style="font-size:13px;">No sales recorded for this period</div>
                         <div id="coll-empty-loans" style="display:<?php echo $outstanding_loans > 0 ? 'inline-flex' : 'none'; ?>;margin-top:16px;padding:12px 16px;background:#fffbeb;border-radius:10px;border:1px solid #fde68a;gap:12px;align-items:center;">
                             <span style="font-size:13px;color:#92400e;">⚠️ Outstanding Loans:</span>
-                            <strong id="coll-empty-outstanding" style="color:#f59e0b;">RWF <?php echo number_format($outstanding_loans, 0); ?></strong>
+                            <strong id="coll-empty-outstanding" style="color:#f59e0b;">RWF <?php echo abbr_money($outstanding_loans); ?></strong>
                             <a href="loans.php" style="font-size:11px;color:var(--primary);">View →</a>
                         </div>
                     </div>
@@ -592,7 +576,11 @@ if (($today_sales['total'] ?? 0) == 0) {
                 var collToday = '<?php echo $today; ?>';
 
                 function fmt(n) {
-                    return Math.round(n).toLocaleString();
+                    n = Math.round(n);
+                    var abs = Math.abs(n), sign = n < 0 ? '-' : '';
+                    if (abs >= 1000000) return sign + parseFloat((abs/1000000).toFixed(1)) + 'M';
+                    if (abs >= 1000)    return sign + parseFloat((abs/1000).toFixed(1)) + 'K';
+                    return sign + abs.toLocaleString();
                 }
 
                 function dateLabel(from, to) {
@@ -775,7 +763,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                                         <td><span class="cat-badge"><?php echo htmlspecialchars($product['category'] ?: 'N/A'); ?></span></td>
                                         <td style="text-align:center;color:var(--secondary);"><?php echo $product['bulk_quantity']; ?> pkg</td>
                                         <td style="text-align:center;color:var(--secondary);"><?php echo $product['retail_quantity']; ?> pcs</td>
-                                        <td style="text-align:right;font-weight:700;color:var(--success);">RWF <?php echo number_format($product['total_revenue'], 0); ?></td>
+                                        <td style="text-align:right;font-weight:700;color:var(--success);">RWF <?php echo abbr_money($product['total_revenue']); ?></td>
                                     </tr>
                                     <?php endwhile; ?>
                                 <?php else: ?>
@@ -803,7 +791,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                                             UNION ALL SELECT sale_date, total_amount FROM sales_retail
                                         ) as s GROUP BY sale_date ORDER BY sale_date DESC LIMIT 30
                                     ) as t"));
-                                echo number_format($avg_daily['avg_sales'] ?? 0, 0); ?></div>
+                                echo abbr_money($avg_daily['avg_sales'] ?? 0); ?></div>
                         </div>
                         <div class="perf-item">
                             <div class="perf-item-label">Best Day</div>
@@ -845,7 +833,7 @@ if (($today_sales['total'] ?? 0) == 0) {
                     </div>
                     <div class="insight-row">
                         <span class="insight-label">Avg. Transaction</span>
-                        <span class="insight-value">RWF <?php echo number_format($avg_trans['a'] ?? 0, 0); ?></span>
+                        <span class="insight-value">RWF <?php echo abbr_money($avg_trans['a'] ?? 0); ?></span>
                     </div>
                     <div class="insight-row">
                         <span class="insight-label">Peak Hour</span>
@@ -857,15 +845,15 @@ if (($today_sales['total'] ?? 0) == 0) {
                     </div>
                     <div class="insight-row" style="border-top:1px solid var(--gray-100);margin-top:4px;padding-top:8px;">
                         <span class="insight-label">💵 Cash (today)</span>
-                        <span class="insight-value" style="color:#16a34a;">RWF <?php echo number_format($today_cash, 0); ?></span>
+                        <span class="insight-value" style="color:#16a34a;">RWF <?php echo abbr_money($today_cash); ?></span>
                     </div>
                     <div class="insight-row">
                         <span class="insight-label">📱 Momo (today)</span>
-                        <span class="insight-value" style="color:#2563eb;">RWF <?php echo number_format($today_momo, 0); ?></span>
+                        <span class="insight-value" style="color:#2563eb;">RWF <?php echo abbr_money($today_momo); ?></span>
                     </div>
                     <div class="insight-row">
                         <span class="insight-label">🔖 Loans (today)</span>
-                        <span class="insight-value" style="color:#d97706;">RWF <?php echo number_format($today_loan, 0); ?></span>
+                        <span class="insight-value" style="color:#d97706;">RWF <?php echo abbr_money($today_loan); ?></span>
                     </div>
                 </div>
             </div>
