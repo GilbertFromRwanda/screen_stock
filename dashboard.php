@@ -6,12 +6,14 @@ if (!isLoggedIn()) {
 }
 
 function abbr_money($n) {
-    $n = (float)$n;
+    $n   = (float)$n;
     $abs = abs($n);
     $sign = $n < 0 ? '-' : '';
-    if ($abs >= 1_000_000) return $sign . rtrim(rtrim(number_format($abs / 1_000_000, 1), '0'), '.') . 'M';
-    if ($abs >= 1_000)     return $sign . rtrim(rtrim(number_format($abs / 1_000, 1), '0'), '.') . 'K';
-    return $sign . number_format($abs, 0);
+    if ($abs >= 1_000_000) $abbr = $sign . rtrim(rtrim(number_format($abs / 1_000_000, 1), '0'), '.') . 'M';
+    elseif ($abs >= 1_000) $abbr = $sign . rtrim(rtrim(number_format($abs / 1_000, 1), '0'), '.') . 'K';
+    else                   $abbr = $sign . number_format($abs, 0);
+    $full = ($n < 0 ? '-' : '') . number_format($abs, 0);
+    return '<span class="money-val" data-abbr="' . $abbr . '" data-full="' . $full . '">' . $abbr . '</span>';
 }
 
 // Get current date information
@@ -303,13 +305,19 @@ if (($today_sales['total'] ?? 0) == 0) {
                     <h2>Welcome back, <?php echo explode(' ', $_SESSION['full_name'] ?? $_SESSION['username'])[0]; ?>! 👋</h2>
                     <p><?php echo date('l, F j, Y'); ?> - Here's your business overview</p>
                 </div>
-                <div class="welcome-time">
-                    <?php 
-                    $hour = date('H');
-                    if ($hour < 12) echo 'Good Morning';
-                    elseif ($hour < 17) echo 'Good Afternoon';
-                    else echo 'Good Evening';
-                    ?>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <button id="moneyToggleBtn" onclick="toggleMoneyFormat()"
+                        style="padding:6px 14px;border:1px solid var(--gray-300);border-radius:99px;background:#fff;font-size:12px;cursor:pointer;color:var(--secondary);white-space:nowrap;">
+                        Show full
+                    </button>
+                    <div class="welcome-time">
+                        <?php
+                        $hour = date('H');
+                        if ($hour < 12) echo 'Good Morning';
+                        elseif ($hour < 17) echo 'Good Afternoon';
+                        else echo 'Good Evening';
+                        ?>
+                    </div>
                 </div>
             </div>
             
@@ -962,5 +970,25 @@ if (($today_sales['total'] ?? 0) == 0) {
 </script>
     
     <script src="script.js"></script>
+    <script>
+        (function() {
+            var full = localStorage.getItem('moneyFull') === '1';
+            applyMoneyFormat(full);
+
+            function applyMoneyFormat(showFull) {
+                document.querySelectorAll('.money-val').forEach(function(el) {
+                    el.textContent = showFull ? el.getAttribute('data-full') : el.getAttribute('data-abbr');
+                });
+                var btn = document.getElementById('moneyToggleBtn');
+                if (btn) btn.textContent = showFull ? 'Show abbr' : 'Show full';
+            }
+
+            window.toggleMoneyFormat = function() {
+                var nowFull = localStorage.getItem('moneyFull') !== '1';
+                localStorage.setItem('moneyFull', nowFull ? '1' : '0');
+                applyMoneyFormat(nowFull);
+            };
+        })();
+    </script>
 </body>
 </html>
