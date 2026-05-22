@@ -226,10 +226,11 @@
     transition: background .15s, color .15s, border-color .15s;
 }
 .filter-status-btn:hover { border-color: var(--primary); color: var(--primary); }
-.filter-status-btn.active[data-status="all"]     { background: var(--primary);   border-color: var(--primary);   color: #fff; }
-.filter-status-btn.active[data-status="unpaid"]  { background: #b91c1c;          border-color: #b91c1c;          color: #fff; }
-.filter-status-btn.active[data-status="partial"] { background: #a16207;          border-color: #a16207;          color: #fff; }
-.filter-status-btn.active[data-status="paid"]    { background: #15803d;          border-color: #15803d;          color: #fff; }
+.filter-status-btn.active[data-status="all"]             { background: var(--primary);   border-color: var(--primary);   color: #fff; }
+.filter-status-btn.active[data-status="unpaid-partial"]  { background: #b45309;          border-color: #b45309;          color: #fff; }
+.filter-status-btn.active[data-status="unpaid"]          { background: #b91c1c;          border-color: #b91c1c;          color: #fff; }
+.filter-status-btn.active[data-status="partial"]         { background: #a16207;          border-color: #a16207;          color: #fff; }
+.filter-status-btn.active[data-status="paid"]            { background: #15803d;          border-color: #15803d;          color: #fff; }
 
 /* ── Action Buttons ──────────────────────────────────────────────────────────── */
 .loan-actions {

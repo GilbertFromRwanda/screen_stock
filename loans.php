@@ -20,22 +20,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
     }
 
     $given_by = (int)$_SESSION['user_id'];
-    $ins = mysqli_query($conn, "
+    $ph = $phone !== '' ? "'$phone'" : 'NULL';
+
+    mysqli_begin_transaction($conn);
+    $ok = true;
+
+    $ok = (bool)mysqli_query($conn, "
         INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by)
         VALUES ('$product_id','$qty','$amount','$client','$phone','$loan_date',$given_by)
     ");
-    if ($ins) {
-        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id");
-        $ph = $phone !== '' ? "'$phone'" : 'NULL';
-        mysqli_query($conn, "
-            INSERT INTO loan_clients (name, phone, total_loans, unpaid_amount)
-            VALUES ('$client', $ph, 1, '$amount')
-            ON DUPLICATE KEY UPDATE
-                total_loans   = total_loans + 1,
-                unpaid_amount = unpaid_amount + '$amount'
-        ");
-        header('Content-Type: application/json'); echo json_encode(['success' => true]); exit;
-    }
+    $loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id");
+
+    if ($ok) $ok = (bool)mysqli_query($conn, "
+        INSERT INTO loan_clients (name, phone, total_loans, unpaid_amount)
+        VALUES ('$client', $ph, 1, '$amount')
+        ON DUPLICATE KEY UPDATE
+            id            = LAST_INSERT_ID(id),
+            total_loans   = total_loans + 1,
+            unpaid_amount = unpaid_amount + '$amount'
+    ");
+    $client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $client_id WHERE id = $loan_id");
+
+    if ($ok) { mysqli_commit($conn); header('Content-Type: application/json'); echo json_encode(['success' => true]); exit; }
+    mysqli_rollback($conn);
     header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => mysqli_error($conn)]); exit;
 }
 
@@ -51,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
 
     // Check loan exists and get balance + client info for aggregate update
     $loan = mysqli_fetch_assoc(mysqli_query($conn, "
-        SELECT l.amount, l.client, COALESCE(l.phone,'') AS phone,
+        SELECT l.amount, l.client_id,
                COALESCE(SUM(lp.amount_paid),0) AS paid,
                l.bulk_id, l.retail_id, l.external_id
         FROM loans l
@@ -68,35 +79,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
     }
 
     $received_by = (int)$_SESSION['user_id'];
-    $ins = mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ('$loan_id','$amount_paid','$payment_date',$received_by)");
-    if ($ins) {
-        $lc_name  = mysqli_real_escape_string($conn, $loan['client']);
-        $lc_phone = mysqli_real_escape_string($conn, $loan['phone']);
-        mysqli_query($conn, "
-            UPDATE loan_clients
-            SET paid_amount   = paid_amount   + '$amount_paid',
-                unpaid_amount = unpaid_amount - '$amount_paid'
-            WHERE name = '$lc_name' AND COALESCE(phone,'') = '$lc_phone'
-        ");
-        // Reduce loan_amount on the linked sale; clear has_loan when fully paid
-        $fully_paid = (($loan['paid'] + $amount_paid) >= $loan['amount']);
-        if ($loan['bulk_id']) {
-            $q = $fully_paid
-                ? "UPDATE sales_bulk SET loan_amount = 0, has_loan = 0 WHERE id = {$loan['bulk_id']}"
-                : "UPDATE sales_bulk SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['bulk_id']}";
-            mysqli_query($conn, $q);
-        }
-        if ($loan['retail_id']) {
-            $q = $fully_paid
-                ? "UPDATE sales_retail SET loan_amount = 0, has_loan = 0 WHERE id = {$loan['retail_id']}"
-                : "UPDATE sales_retail SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['retail_id']}";
-            mysqli_query($conn, $q);
-        }
-        if ($loan['external_id']) {
-            mysqli_query($conn, "UPDATE sales_external SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['external_id']}");
-        }
+    $lc_id      = (int)$loan['client_id'];
+    $fully_paid = (($loan['paid'] + $amount_paid) >= $loan['amount']);
+
+    mysqli_begin_transaction($conn);
+    $ok = true;
+
+    $ok = (bool)mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ('$loan_id','$amount_paid','$payment_date',$received_by)");
+
+    if ($ok) $ok = (bool)mysqli_query($conn, "
+        UPDATE loan_clients SET paid_amount = paid_amount + '$amount_paid', unpaid_amount = unpaid_amount - '$amount_paid' WHERE id = $lc_id
+    ");
+
+    if ($ok && $loan['bulk_id']) {
+        $q = $fully_paid
+            ? "UPDATE sales_bulk SET loan_amount = 0, has_loan = 0 WHERE id = {$loan['bulk_id']}"
+            : "UPDATE sales_bulk SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['bulk_id']}";
+        $ok = (bool)mysqli_query($conn, $q);
     }
-    header('Content-Type: application/json'); echo json_encode($ins ? ['success' => true] : ['success' => false, 'message' => mysqli_error($conn)]); exit;
+    if ($ok && $loan['retail_id']) {
+        $q = $fully_paid
+            ? "UPDATE sales_retail SET loan_amount = 0, has_loan = 0 WHERE id = {$loan['retail_id']}"
+            : "UPDATE sales_retail SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['retail_id']}";
+        $ok = (bool)mysqli_query($conn, $q);
+    }
+    if ($ok && $loan['external_id']) {
+        $ok = (bool)mysqli_query($conn, "UPDATE sales_external SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['external_id']}");
+    }
+
+    if ($ok) { mysqli_commit($conn); header('Content-Type: application/json'); echo json_encode(['success' => true]); exit; }
+    mysqli_rollback($conn);
+    header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => mysqli_error($conn)]); exit;
 }
 
 // ── AJAX: Preview Global Loan Payment ─────────────────────────────────────────
@@ -159,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
     $client_where = $client_filter ? "AND l.client LIKE '%$client_filter%'" : "";
 
     $unpaid = mysqli_query($conn, "
-        SELECT l.id, l.amount, l.client, COALESCE(l.phone,'') AS phone,
+        SELECT l.id, l.amount, l.client_id,
                l.bulk_id, l.retail_id, l.external_id,
                COALESCE(lp_sum.paid, 0) AS total_paid,
                (l.amount - COALESCE(lp_sum.paid, 0)) AS balance
@@ -169,62 +182,70 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
         ORDER BY l.loan_date ASC, l.id ASC
     ");
 
-    $remaining    = $total;
-    $count        = 0;
-    $client_deltas = []; // [key => ['name'=>..,'phone'=>..,'paid'=>..,'unpaid_delta'=>..]]
+    $remaining     = $total;
+    $count         = 0;
+    $client_deltas = [];
+    $received_by   = (int)$_SESSION['user_id'];
 
-    while ($row = mysqli_fetch_assoc($unpaid)) {
-        if ($remaining <= 0) break;
-        $pay = min($remaining, (float)$row['balance']);
-        $received_by = (int)$_SESSION['user_id'];
-        mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ({$row['id']}, $pay, '$payment_date', $received_by)");
-        // Reduce loan_amount on the linked sale; clear has_loan when fully paid
+    // Collect all rows first so the cursor is free before we write
+    $rows = [];
+    while ($row = mysqli_fetch_assoc($unpaid)) $rows[] = $row;
+
+    mysqli_begin_transaction($conn);
+    $ok = true;
+
+    foreach ($rows as $row) {
+        if (!$ok || $remaining <= 0) break;
+        $pay        = min($remaining, (float)$row['balance']);
         $fully_paid = ($pay >= (float)$row['balance']);
-        if ($row['bulk_id']) {
+
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ({$row['id']}, $pay, '$payment_date', $received_by)");
+
+        if ($ok && $row['bulk_id']) {
             $q = $fully_paid
                 ? "UPDATE sales_bulk SET loan_amount = 0, has_loan = 0 WHERE id = {$row['bulk_id']}"
                 : "UPDATE sales_bulk SET loan_amount = GREATEST(0, loan_amount - $pay) WHERE id = {$row['bulk_id']}";
-            mysqli_query($conn, $q);
+            $ok = (bool)mysqli_query($conn, $q);
         }
-        if ($row['retail_id']) {
+        if ($ok && $row['retail_id']) {
             $q = $fully_paid
                 ? "UPDATE sales_retail SET loan_amount = 0, has_loan = 0 WHERE id = {$row['retail_id']}"
                 : "UPDATE sales_retail SET loan_amount = GREATEST(0, loan_amount - $pay) WHERE id = {$row['retail_id']}";
-            mysqli_query($conn, $q);
+            $ok = (bool)mysqli_query($conn, $q);
         }
-        if ($row['external_id']) {
-            mysqli_query($conn, "UPDATE sales_external SET loan_amount = GREATEST(0, loan_amount - $pay) WHERE id = {$row['external_id']}");
+        if ($ok && $row['external_id']) {
+            $ok = (bool)mysqli_query($conn, "UPDATE sales_external SET loan_amount = GREATEST(0, loan_amount - $pay) WHERE id = {$row['external_id']}");
         }
-        $remaining -= $pay;
-        $count++;
-        // Accumulate per-client deltas
-        $key = $row['client'] . '||' . $row['phone'];
-        if (!isset($client_deltas[$key])) {
-            $client_deltas[$key] = ['name' => $row['client'], 'phone' => $row['phone'], 'delta' => 0.0];
+
+        if ($ok) {
+            $remaining -= $pay;
+            $count++;
+            $cid = (int)$row['client_id'];
+            $client_deltas[$cid] = ($client_deltas[$cid] ?? 0.0) + $pay;
         }
-        $client_deltas[$key]['delta'] += $pay;
     }
-    // Flush per-client aggregate updates
-    foreach ($client_deltas as $cd) {
-        $cn = mysqli_real_escape_string($conn, $cd['name']);
-        $cp = mysqli_real_escape_string($conn, $cd['phone']);
-        $d  = (float)$cd['delta'];
-        mysqli_query($conn, "
-            UPDATE loan_clients
-            SET paid_amount   = paid_amount   + $d,
-                unpaid_amount = unpaid_amount - $d
-            WHERE name = '$cn' AND COALESCE(phone,'') = '$cp'
-        ");
+
+    foreach ($client_deltas as $cid => $d) {
+        if (!$ok) break;
+        $ok = (bool)mysqli_query($conn, "UPDATE loan_clients SET paid_amount = paid_amount + $d, unpaid_amount = unpaid_amount - $d WHERE id = $cid");
     }
-    header('Content-Type: application/json');
-    echo json_encode(['success' => true, 'count' => $count, 'applied' => $total - $remaining]);
+
+    if ($ok) {
+        mysqli_commit($conn);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'count' => $count, 'applied' => $total - $remaining]);
+    } else {
+        mysqli_rollback($conn);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Payment failed. No changes were applied.']);
+    }
     exit;
 }
 
 // ── AJAX: Get Client Loans ────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_loans'])) {
-    $client_name  = mysqli_real_escape_string($conn, trim($_POST['client_name']));
-    $client_phone = mysqli_real_escape_string($conn, trim($_POST['client_phone'] ?? ''));
+    $client_id = (int)$_POST['client_id'];
+    if ($client_id <= 0) { header('Content-Type: application/json'); echo json_encode([]); exit; }
 
     $loans_q = mysqli_query($conn, "
         SELECT l.*,
@@ -236,13 +257,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_loans'])) {
         LEFT JOIN products p ON p.id = l.product_id
         LEFT JOIN loan_payments lp ON lp.loan_id = l.id
         LEFT JOIN users u ON l.given_by = u.id
-        WHERE l.client = '$client_name'
-          AND COALESCE(l.phone,'') = COALESCE('$client_phone','')
+        WHERE l.client_id = $client_id
         GROUP BY l.id
-        ORDER BY l.loan_date ASC, l.id ASC
+        ORDER BY l.id DESC
     ");
     $rows = [];
     while ($r = mysqli_fetch_assoc($loans_q)) $rows[] = $r;
+    header('Content-Type: application/json');
+    echo json_encode($rows);
+    exit;
+}
+
+// ── AJAX: Get Client Payments ─────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_payments'])) {
+    $client_id = (int)$_POST['client_id'];
+    $date_from = mysqli_real_escape_string($conn, $_POST['date_from'] ?? date('Y-m-d', strtotime('-1 month')));
+    $date_to   = mysqli_real_escape_string($conn, $_POST['date_to']   ?? date('Y-m-d'));
+    if ($client_id <= 0) { header('Content-Type: application/json'); echo json_encode([]); exit; }
+
+    $q = mysqli_query($conn, "
+        SELECT lp.id, lp.amount_paid, lp.payment_date,
+               COALESCE(p.name, l.product_name)  AS product_name,
+               COALESCE(p.category, 'External')   AS product_category,
+               l.amount AS loan_amount,
+               u.full_name AS received_by_name,
+               lp.created_at
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        LEFT JOIN products p ON p.id = l.product_id
+        LEFT JOIN users u ON u.id = lp.received_by
+        WHERE l.client_id = $client_id
+          AND lp.payment_date BETWEEN '$date_from' AND '$date_to'
+        ORDER BY lp.payment_date DESC, lp.id DESC
+    ");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
     header('Content-Type: application/json');
     echo json_encode($rows);
     exit;
@@ -253,15 +302,17 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
     $del_id = (int)$_GET['delete'];
     $loan = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM loans WHERE id=$del_id"));
     if ($loan) {
+        $del_client_id = (int)$loan['client_id'];
+
+        mysqli_begin_transaction($conn);
+        $ok = true;
+
         if ($loan['product_id']) {
-            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$loan['qty']} WHERE product_id = {$loan['product_id']}");
+            $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$loan['qty']} WHERE product_id = {$loan['product_id']}");
         }
-        $del_client = mysqli_real_escape_string($conn, $loan['client']);
-        $del_phone  = mysqli_real_escape_string($conn, $loan['phone'] ?? '');
-        mysqli_query($conn, "DELETE FROM loan_payments WHERE loan_id = $del_id");
-        mysqli_query($conn, "DELETE FROM loans WHERE id = $del_id");
-        // Recompute aggregates from scratch for this client
-        mysqli_query($conn, "
+        if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loan_payments WHERE loan_id = $del_id");
+        if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loans WHERE id = $del_id");
+        if ($ok) $ok = (bool)mysqli_query($conn, "
             UPDATE loan_clients lc
             JOIN (
                 SELECT COUNT(DISTINCT l.id)       AS cnt,
@@ -270,14 +321,16 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
                 FROM loans l
                 LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
                        ON lp_s.loan_id = l.id
-                WHERE l.client = '$del_client' AND COALESCE(l.phone,'') = '$del_phone'
+                WHERE l.client_id = $del_client_id
             ) agg
             SET lc.total_loans   = agg.cnt,
                 lc.paid_amount   = agg.paid_sum,
                 lc.unpaid_amount = agg.loaned - agg.paid_sum
-            WHERE lc.name = '$del_client' AND COALESCE(lc.phone,'') = '$del_phone'
+            WHERE lc.id = $del_client_id
         ");
-        $_SESSION['flash_success'] = "Loan deleted.";
+
+        if ($ok) { mysqli_commit($conn); $_SESSION['flash_success'] = "Loan deleted."; }
+        else      { mysqli_rollback($conn); $_SESSION['flash_error'] = "Could not delete loan. Please try again."; }
     }
     header("Location: loans.php"); exit;
 }
@@ -391,7 +444,8 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                    oninput="filterClientTable()"
                    style="flex:1;min-width:200px;max-width:360px;padding:8px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;">
             <div style="display:flex;gap:6px;">
-                <button class="filter-status-btn active" data-status="all"    onclick="setStatusFilter(this)">All</button>
+                <button class="filter-status-btn active" data-status="unpaid-partial" onclick="setStatusFilter(this)">Unpaid &amp; Partial</button>
+                <button class="filter-status-btn"        data-status="all"    onclick="setStatusFilter(this)">All</button>
                 <button class="filter-status-btn"        data-status="unpaid" onclick="setStatusFilter(this)">Unpaid</button>
                 <button class="filter-status-btn"        data-status="partial" onclick="setStatusFilter(this)">Partial</button>
                 <button class="filter-status-btn"        data-status="paid"   onclick="setStatusFilter(this)">Paid</button>
@@ -441,8 +495,12 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 <td><span class="<?php echo $badge_cls; ?>"><?php echo $status; ?></span></td>
                 <td style="white-space:nowrap;">
                     <button class="btn-pay" style="margin-right:4px;"
-                        onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo htmlspecialchars(json_encode($c['phone'] ?? ''), ENT_QUOTES); ?>)">
+                        onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>)">
                         View
+                    </button>
+                    <button class="btn-pay" style="margin-right:4px;background:#0891b2;"
+                        onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>)">
+                        Payments
                     </button>
                     <?php if ($outstanding > 0): ?>
                     <button class="btn-pay" style="background:var(--warning,#f59e0b);"
@@ -513,7 +571,34 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     <div class="modal-content" style="max-width:800px;">
         <span class="close" onclick="closeModal('clientLoansModal')">&times;</span>
         <h2 id="clientLoansTitle">Loans</h2>
-        <div id="clientLoansBody" style="overflow-x:auto;max-height:500px;overflow-y:auto;margin-top:16px;"></div>
+        <div id="clientLoansFilter" style="display:none;margin:12px 0 8px;gap:6px;align-items:center;flex-wrap:wrap;">
+            <button class="filter-status-btn active" data-status="unpaid" onclick="setClientLoanFilter(this)">Unpaid</button>
+            <button class="filter-status-btn" data-status="all" onclick="setClientLoanFilter(this)">All</button>
+            <span id="clientLoansCount" style="font-size:13px;color:var(--secondary);margin-left:4px;"></span>
+        </div>
+        <div id="clientLoansBody" style="overflow-x:auto;max-height:420px;overflow-y:auto;"></div>
+        <div id="clientLoansPagination" style="display:none;margin-top:10px;gap:6px;justify-content:center;align-items:center;flex-wrap:wrap;"></div>
+    </div>
+</div>
+
+<!-- Client Payments Modal -->
+<div id="clientPaymentsModal" class="modal">
+    <div class="modal-content" style="max-width:720px;">
+        <span class="close" onclick="closeModal('clientPaymentsModal')">&times;</span>
+        <h2 id="clientPaymentsTitle">Payments</h2>
+        <div style="display:flex;gap:10px;margin:12px 0 8px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="form-group" style="margin:0;min-width:140px;">
+                <label style="font-size:12px;">From</label>
+                <input type="date" id="cpay_from">
+            </div>
+            <div class="form-group" style="margin:0;min-width:140px;">
+                <label style="font-size:12px;">To</label>
+                <input type="date" id="cpay_to">
+            </div>
+            <button class="btn btn-primary" style="padding:7px 18px;" onclick="loadClientPayments()">Find</button>
+            <span id="clientPaymentsCount" style="font-size:13px;color:var(--secondary);padding-bottom:6px;"></span>
+        </div>
+        <div id="clientPaymentsBody" style="overflow-x:auto;max-height:420px;overflow-y:auto;"></div>
     </div>
 </div>
 
@@ -719,8 +804,18 @@ function ajaxForm(formId, alertId, actionName, onSuccess) {
         data.append(actionName, '1');
 
         fetch('loans.php', { method: 'POST', body: data })
-            .then(function(r) { return r.json(); })
-            .then(function(res) {
+            .then(function(r) { return r.text(); })
+            .then(function(raw) {
+                console.log('[ajaxForm:' + actionName + '] raw response:', raw);
+                var res;
+                try { res = JSON.parse(raw); } catch(e) {
+                    console.error('[ajaxForm:' + actionName + '] JSON parse failed:', e);
+                    alertBox.className = 'alert alert-danger';
+                    alertBox.textContent = 'Server returned unexpected response. Check console.';
+                    alertBox.style.display = 'block';
+                    btn.disabled = false; btn.textContent = orig;
+                    return;
+                }
                 if (res.success) { onSuccess(); }
                 else {
                     alertBox.className = 'alert alert-danger';
@@ -729,7 +824,8 @@ function ajaxForm(formId, alertId, actionName, onSuccess) {
                     btn.disabled = false; btn.textContent = orig;
                 }
             })
-            .catch(function() {
+            .catch(function(err) {
+                console.error('[ajaxForm:' + actionName + '] fetch error:', err);
                 alertBox.className = 'alert alert-danger';
                 alertBox.textContent = 'Network error. Please try again.';
                 alertBox.style.display = 'block';
@@ -769,7 +865,7 @@ function openPayment(btn) {
 }
 
 // ── Filter client table ────────────────────────────────────────────────────────
-var _activeStatus = 'all';
+var _activeStatus = 'unpaid-partial';
 
 function setStatusFilter(btn) {
     document.querySelectorAll('.filter-status-btn').forEach(function(b) { b.classList.remove('active'); });
@@ -787,7 +883,8 @@ function filterClientTable() {
         var phone  = (row.cells[2] || {}).textContent || '';
         var status = row.getAttribute('data-status') || '';
         var matchText   = !term || name.toLowerCase().indexOf(term) !== -1 || phone.toLowerCase().indexOf(term) !== -1;
-        var matchStatus = _activeStatus === 'all' || status === _activeStatus;
+        var matchStatus = _activeStatus === 'all' ||
+                          (_activeStatus === 'unpaid-partial' ? (status === 'unpaid' || status === 'partial') : status === _activeStatus);
         var show = matchText && matchStatus;
         row.style.display = show ? '' : 'none';
         if (show) visible++;
@@ -798,18 +895,29 @@ function filterClientTable() {
         badge.textContent = isFiltered ? (visible + ' match' + (visible !== 1 ? 'es' : '')) : '';
     }
 }
+filterClientTable();
 
 // ── View client loans modal ────────────────────────────────────────────────────
-function viewClientLoans(clientName, clientPhone) {
+var _clLoans = [], _clFilter = 'unpaid', _clPage = 1, _clPageSize = 10, _clName = '';
+
+function viewClientLoans(clientName, clientId) {
+    _clName = clientName;
+    _clFilter = 'unpaid';
+    _clPage = 1;
+    _clLoans = [];
     document.getElementById('clientLoansTitle').textContent = clientName + ' — Loans';
+    document.querySelectorAll('#clientLoansFilter [data-status]').forEach(function(b) {
+        b.classList.toggle('active', b.getAttribute('data-status') === 'unpaid');
+    });
+    document.getElementById('clientLoansFilter').style.display = 'none';
+    document.getElementById('clientLoansPagination').style.display = 'none';
     var body = document.getElementById('clientLoansBody');
     body.innerHTML = '<p style="text-align:center;padding:20px;color:var(--secondary);">Loading...</p>';
     openModal('clientLoansModal');
 
     var data = new FormData();
     data.append('get_client_loans', '1');
-    data.append('client_name', clientName);
-    data.append('client_phone', clientPhone || '');
+    data.append('client_id', clientId);
 
     fetch('loans.php', { method: 'POST', body: data })
         .then(function(r) { return r.json(); })
@@ -818,58 +926,107 @@ function viewClientLoans(clientName, clientPhone) {
                 body.innerHTML = '<p style="text-align:center;padding:24px;color:var(--secondary);">No loans found for this client.</p>';
                 return;
             }
-            var totalLoaned = 0, totalPaid = 0;
-            var html = '<table class="table" style="font-size:13px;min-width:680px;">' +
-                '<thead><tr>' +
-                '<th>Loan Date</th><th>Product</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Created At</th><th>Status</th><th></th>' +
-                '</tr></thead><tbody>';
-            rows.forEach(function(l) {
-                var balance = parseFloat(l.amount) - parseFloat(l.total_paid);
-                totalLoaned += parseFloat(l.amount);
-                totalPaid   += parseFloat(l.total_paid);
-                var statusCls = balance <= 0 ? 'badge-paid' : (parseFloat(l.total_paid) > 0 ? 'badge-partial' : 'badge-unpaid');
-                var statusTxt = balance <= 0 ? 'Paid'       : (parseFloat(l.total_paid) > 0 ? 'Partial'       : 'Unpaid');
-                var createdAt = l.created_at ? l.created_at.replace('T', ' ').substring(0, 16) : '—';
-                // Build sale origin link
-                var saleTab = '', saleId = 0;
-                if (l.external_id) { saleTab = 'external'; saleId = l.external_id; }
-                else if (l.bulk_id) { saleTab = 'bulk';     saleId = l.bulk_id;     }
-                else if (l.retail_id) { saleTab = 'retail'; saleId = l.retail_id;   }
-                var saleLink = saleId
-                    ? '<a href="sales.php?tab=' + saleTab + '&highlight=' + saleId + '" target="_blank" ' +
-                      'style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 6px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;" ' +
-                      'title="View ' + saleTab + ' sale">' + saleTab.charAt(0).toUpperCase() + saleTab.slice(1) + ' ↗</a>'
-                    : '';
-                html += '<tr>' +
-                    '<td style="white-space:nowrap;">' + l.loan_date + '</td>' +
-                    '<td>' + (l.product_category || '') + '-' + (l.product_name || '—') + '</td>' +
-                    '<td>RWF ' + parseFloat(l.amount).toLocaleString() + '</td>' +
-                    '<td>RWF ' + parseFloat(l.total_paid).toLocaleString() + '</td>' +
-                    '<td class="' + (balance > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(balance).toLocaleString() + '</strong></td>' +
-                    '<td style="white-space:nowrap;color:var(--secondary);font-size:12px;">' + createdAt + '</td>' +
-                    '<td><span class="' + statusCls + '">' + statusTxt + '</span></td>' +
-                    '<td style="white-space:nowrap;">' +
-                    saleLink +
-                    (balance > 0
-                        ? '<button class="btn-pay" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + clientName.replace(/"/g,'&quot;') + '" onclick="openPayment(this)" style="margin-right:4px;">Pay</button>'
-                        : '') +
-                    '<a href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');" style="font-size:12px;color:var(--danger);text-decoration:none;padding:3px 6px;border:1px solid var(--danger);border-radius:4px;">Del</a>' +
-                    '</td></tr>';
-            });
-            var outstanding = totalLoaned - totalPaid;
-            html += '</tbody>' +
-                '<tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
-                '<td colspan="2" style="padding:10px 12px;">Total</td>' +
-                '<td>RWF ' + totalLoaned.toLocaleString() + '</td>' +
-                '<td>RWF ' + totalPaid.toLocaleString() + '</td>' +
-                '<td class="' + (outstanding > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(outstanding).toLocaleString() + '</strong></td>' +
-                '<td colspan="2"></td>' +
-                '</tr></tfoot></table>';
-            body.innerHTML = html;
+            _clLoans = rows;
+            document.getElementById('clientLoansFilter').style.display = 'flex';
+            renderClientLoans();
         })
         .catch(function() {
             body.innerHTML = '<p style="color:var(--danger);padding:20px;">Failed to load loans. Please try again.</p>';
         });
+}
+
+function setClientLoanFilter(btn) {
+    document.querySelectorAll('#clientLoansFilter [data-status]').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    _clFilter = btn.getAttribute('data-status');
+    _clPage = 1;
+    renderClientLoans();
+}
+
+function clientLoanGoPage(p) { _clPage = p; renderClientLoans(); }
+
+function renderClientLoans() {
+    var filtered = _clLoans.filter(function(l) {
+        return _clFilter === 'all' || (parseFloat(l.amount) - parseFloat(l.total_paid)) > 0;
+    });
+
+    var totalPages = Math.max(1, Math.ceil(filtered.length / _clPageSize));
+    if (_clPage > totalPages) _clPage = totalPages;
+    var start = (_clPage - 1) * _clPageSize;
+    var pageRows = filtered.slice(start, start + _clPageSize);
+
+    document.getElementById('clientLoansCount').textContent =
+        filtered.length + ' loan' + (filtered.length !== 1 ? 's' : '');
+
+    var body = document.getElementById('clientLoansBody');
+    if (filtered.length === 0) {
+        body.innerHTML = '<p style="text-align:center;padding:24px;color:var(--secondary);">No unpaid loans for this client.</p>';
+        document.getElementById('clientLoansPagination').style.display = 'none';
+        return;
+    }
+
+    var totalLoaned = 0, totalPaid = 0;
+    filtered.forEach(function(l) { totalLoaned += parseFloat(l.amount); totalPaid += parseFloat(l.total_paid); });
+
+    var html = '<table class="table" style="font-size:13px;min-width:680px;">' +
+        '<thead><tr><th>#</th><th>Loan Date</th><th>Product</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+
+    pageRows.forEach(function(l, idx) {
+        var balance = parseFloat(l.amount) - parseFloat(l.total_paid);
+        var statusCls = balance <= 0 ? 'badge-paid' : (parseFloat(l.total_paid) > 0 ? 'badge-partial' : 'badge-unpaid');
+        var statusTxt = balance <= 0 ? 'Paid' : (parseFloat(l.total_paid) > 0 ? 'Partial' : 'Unpaid');
+        var saleTab = '', saleId = 0;
+        if (l.external_id) { saleTab = 'external'; saleId = l.external_id; }
+        else if (l.bulk_id) { saleTab = 'bulk'; saleId = l.bulk_id; }
+        else if (l.retail_id) { saleTab = 'retail'; saleId = l.retail_id; }
+        var saleLink = saleId
+            ? '<a href="sales.php?tab=' + saleTab + '&highlight=' + saleId + '" target="_blank" ' +
+              'style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 6px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;">' +
+              saleTab.charAt(0).toUpperCase() + saleTab.slice(1) + ' ↗</a>' : '';
+        html += '<tr>' +
+            '<td style="color:var(--secondary);">' + (start + idx + 1) + '</td>' +
+            '<td style="white-space:nowrap;">' + l.loan_date + '</td>' +
+            '<td>' + (l.product_category || '') + '-' + (l.product_name || '—') + '</td>' +
+            '<td>RWF ' + parseFloat(l.amount).toLocaleString() + '</td>' +
+            '<td>RWF ' + parseFloat(l.total_paid).toLocaleString() + '</td>' +
+            '<td class="' + (balance > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(balance).toLocaleString() + '</strong></td>' +
+            '<td><span class="' + statusCls + '">' + statusTxt + '</span></td>' +
+            '<td style="white-space:nowrap;">' + saleLink +
+            (balance > 0 ? '<button class="btn-pay" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this)" style="margin-right:4px;">Pay</button>' : '') +
+            '<a href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');" style="font-size:12px;color:var(--danger);text-decoration:none;padding:3px 6px;border:1px solid var(--danger);border-radius:4px;">Del</a>' +
+            '</td></tr>';
+    });
+
+    var outstanding = totalLoaned - totalPaid;
+    html += '</tbody><tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
+        '<td colspan="3" style="padding:10px 12px;">Total (' + filtered.length + ')</td>' +
+        '<td>RWF ' + totalLoaned.toLocaleString() + '</td>' +
+        '<td>RWF ' + totalPaid.toLocaleString() + '</td>' +
+        '<td class="' + (outstanding > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(outstanding).toLocaleString() + '</strong></td>' +
+        '<td colspan="2"></td></tr></tfoot></table>';
+    body.innerHTML = html;
+
+    // Pagination
+    var pag = document.getElementById('clientLoansPagination');
+    if (totalPages <= 1) { pag.style.display = 'none'; return; }
+    pag.style.display = 'flex';
+    var ph = '<button onclick="clientLoanGoPage(' + Math.max(1, _clPage - 1) + ')" ' + (_clPage <= 1 ? 'disabled ' : '') +
+        'style="padding:4px 10px;border:1px solid var(--gray-300);border-radius:6px;cursor:pointer;background:#fff;">&#8249;</button>';
+    var last = 0;
+    for (var p = 1; p <= totalPages; p++) {
+        if (p === 1 || p === totalPages || (p >= _clPage - 2 && p <= _clPage + 2)) {
+            if (last && p - last > 1) ph += '<span style="padding:4px 6px;">…</span>';
+            var isActive = p === _clPage;
+            ph += '<button onclick="clientLoanGoPage(' + p + ')" style="padding:4px 10px;border:1px solid ' +
+                (isActive ? 'var(--primary)' : 'var(--gray-300)') + ';border-radius:6px;cursor:pointer;background:' +
+                (isActive ? 'var(--primary)' : '#fff') + ';color:' + (isActive ? '#fff' : 'inherit') + ';">' + p + '</button>';
+            last = p;
+        }
+    }
+    ph += '<button onclick="clientLoanGoPage(' + Math.min(totalPages, _clPage + 1) + ')" ' + (_clPage >= totalPages ? 'disabled ' : '') +
+        'style="padding:4px 10px;border:1px solid var(--gray-300);border-radius:6px;cursor:pointer;background:#fff;">&#8250;</button>' +
+        '<span style="font-size:13px;color:var(--secondary);">Page ' + _clPage + ' of ' + totalPages + '</span>';
+    pag.innerHTML = ph;
 }
 
 // ── Global Loan Payment ────────────────────────────────────────────────────────
@@ -986,6 +1143,72 @@ function execGlobalLoanPay() {
                 alertBox.style.display = 'block';
                 btn.disabled = false; btn.textContent = 'Apply Payment';
             }
+        });
+}
+
+// ── Client Payments Modal ──────────────────────────────────────────────────────
+var _cpayClientId = 0;
+
+function viewClientPayments(clientId, clientName) {
+    _cpayClientId = clientId;
+    document.getElementById('clientPaymentsTitle').textContent = clientName + ' — Payments';
+    document.getElementById('clientPaymentsCount').textContent = '';
+
+    var today = new Date();
+    var from  = new Date(today.getFullYear(), today.getMonth(), 1);
+    document.getElementById('cpay_to').value   = today.toISOString().split('T')[0];
+    document.getElementById('cpay_from').value = from.toISOString().split('T')[0];
+
+    openModal('clientPaymentsModal');
+    loadClientPayments();
+}
+
+function loadClientPayments() {
+    var body = document.getElementById('clientPaymentsBody');
+    body.innerHTML = '<p style="text-align:center;padding:20px;color:var(--secondary);">Loading...</p>';
+
+    var data = new FormData();
+    data.append('get_client_payments', '1');
+    data.append('client_id',  _cpayClientId);
+    data.append('date_from',  document.getElementById('cpay_from').value);
+    data.append('date_to',    document.getElementById('cpay_to').value);
+
+    fetch('loans.php', { method: 'POST', body: data })
+        .then(function(r) { return r.json(); })
+        .then(function(rows) {
+            document.getElementById('clientPaymentsCount').textContent =
+                rows.length + ' payment' + (rows.length !== 1 ? 's' : '');
+
+            if (!rows.length) {
+                body.innerHTML = '<p style="text-align:center;padding:24px;color:var(--secondary);">No payments in this period.</p>';
+                return;
+            }
+
+            var total = 0;
+            var html = '<table class="table" style="font-size:13px;min-width:620px;">' +
+                '<thead><tr><th>#</th><th>Date</th><th>Product</th><th>Amount Paid</th><th>Received By</th><th>Created At</th></tr></thead><tbody>';
+
+            rows.forEach(function(p, i) {
+                total += parseFloat(p.amount_paid);
+                var createdAt = p.created_at ? p.created_at.replace('T',' ').substring(0,16) : '—';
+                html += '<tr>' +
+                    '<td style="color:var(--secondary);">' + (i + 1) + '</td>' +
+                    '<td style="white-space:nowrap;">' + p.payment_date + '</td>' +
+                    '<td>' + (p.product_category || '') + '-' + (p.product_name || '—') + '</td>' +
+                    '<td style="font-weight:600;color:var(--success);">RWF ' + parseFloat(p.amount_paid).toLocaleString() + '</td>' +
+                    '<td style="color:var(--secondary);">' + (p.received_by_name || '—') + '</td>' +
+                    '<td style="color:var(--secondary);font-size:12px;white-space:nowrap;">' + createdAt + '</td>' +
+                    '</tr>';
+            });
+
+            html += '</tbody><tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
+                '<td colspan="3" style="padding:10px 12px;">Total</td>' +
+                '<td style="color:var(--success);">RWF ' + total.toLocaleString() + '</td>' +
+                '<td colspan="2"></td></tr></tfoot></table>';
+            body.innerHTML = html;
+        })
+        .catch(function() {
+            body.innerHTML = '<p style="color:var(--danger);padding:20px;">Failed to load payments.</p>';
         });
 }
 </script>

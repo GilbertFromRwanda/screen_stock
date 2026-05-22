@@ -152,46 +152,61 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         header("Location: sales.php"); exit;
     }
 
-    // Resolve owner_id — insert new owner if name provided and not yet registered
+    // Resolve owner — SELECT outside transaction (read-only)
     $owner_id_val = 'NULL';
+    $need_new_owner = false;
+    $op = $owner_phone !== '' ? "'$owner_phone'" : 'NULL';
     if ($owner_name !== '') {
         $existing = mysqli_fetch_assoc(mysqli_query($conn,
             "SELECT id FROM product_owners WHERE name='$owner_name' AND (phone='$owner_phone' OR (phone IS NULL AND '$owner_phone'=''))"
         ));
-        if ($existing) {
-            $owner_id_val = (int)$existing['id'];
-        } else {
-            $op = $owner_phone !== '' ? "'$owner_phone'" : 'NULL';
-            mysqli_query($conn, "INSERT INTO product_owners (name, phone) VALUES ('$owner_name', $op)");
-            $owner_id_val = (int)mysqli_insert_id($conn);
-        }
+        if ($existing) { $owner_id_val = (int)$existing['id']; }
+        else            { $need_new_owner = true; }
     }
 
-    $sold_by = (int)$_SESSION['user_id'];
-    $ins = mysqli_query($conn, "INSERT INTO sales_external (product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
+    $sold_by         = (int)$_SESSION['user_id'];
+    $loan_date       = date('Y-m-d');
+    $loan_product_id = $ext_product_id > 0 ? $ext_product_id : 'NULL';
+    $ph_lc_ext       = $phone !== '' ? "'$phone'" : 'NULL';
+
+    mysqli_begin_transaction($conn);
+    $ok = true;
+
+    if ($need_new_owner) {
+        $ok = (bool)mysqli_query($conn, "INSERT INTO product_owners (name, phone) VALUES ('$owner_name', $op)");
+        if ($ok) $owner_id_val = (int)mysqli_insert_id($conn);
+    }
+
+    if ($ok) $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
                    VALUES ('$product_name', $owner_id_val, $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by)");
-    if ($ins) {
-        $ext_sale_id = (int)mysqli_insert_id($conn);
-        if ($loan_amount > 0) {
-            $loan_date = date('Y-m-d');
-            $loan_product_id = $ext_product_id > 0 ? $ext_product_id : 'NULL';
-            mysqli_query($conn, "INSERT INTO loans (product_id, product_name, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($loan_product_id, '$product_name', $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
-            $new_loan_id = (int)mysqli_insert_id($conn);
-            $ph_lc_ext   = $phone !== '' ? "'$phone'" : 'NULL';
-            mysqli_query($conn, "
-                INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
-                VALUES ('$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
-                ON DUPLICATE KEY UPDATE
-                    total_loans   = total_loans   + 1,
-                    unpaid_amount = unpaid_amount + $loan_amount
-            ");
-        }
+    $ext_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+
+    if ($ok && $loan_amount > 0) {
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, product_name, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($loan_product_id, '$product_name', $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
+        $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) $ok = (bool)mysqli_query($conn, "
+            INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ('$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
+            ON DUPLICATE KEY UPDATE
+                id            = LAST_INSERT_ID(id),
+                total_loans   = total_loans   + 1,
+                unpaid_amount = unpaid_amount + $loan_amount
+        ");
+        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+    }
+
+    if ($ok) {
+        mysqli_commit($conn);
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
         $_SESSION['flash_success'] = "External sale recorded — " . implode(", ", $parts);
         $_SESSION['flash_sale_type'] = 'external';
+    } else {
+        mysqli_rollback($conn);
+        $_SESSION['flash_error'] = "Sale could not be recorded. Please try again.";
     }
     header("Location: sales.php"); exit;
 }
@@ -221,32 +236,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $_SESSION['flash_error'] = "Insufficient stock available";
         header("Location: sales.php"); exit;
     }
-    $sold_by = (int)$_SESSION['user_id'];
+    $sold_by       = (int)$_SESSION['user_id'];
     $has_loan_flag = $loan_amount > 0 ? 1 : 0;
-    $ins = mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+    $loan_date     = date('Y-m-d');
+    $ph_lc         = $phone !== '' ? "'$phone'" : 'NULL';
+
+    mysqli_begin_transaction($conn);
+    $ok = true;
+
+    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
                    VALUES ($product_id, $quantity, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
-    if ($ins) {
-        $bulk_sale_id = (int)mysqli_insert_id($conn);
-        mysqli_query($conn, "UPDATE stock SET quantity = quantity - $quantity WHERE product_id = $product_id");
-        if ($loan_amount > 0) {
-            $loan_date = date('Y-m-d');
-            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$bulk_sale_id)");
-            $new_loan_id = (int)mysqli_insert_id($conn);
-            $ph_lc       = $phone !== '' ? "'$phone'" : 'NULL';
-            mysqli_query($conn, "
-                INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
-                VALUES ('$customer_name', $ph_lc, 1, 0, $loan_amount)
-                ON DUPLICATE KEY UPDATE
-                    total_loans   = total_loans   + 1,
-                    unpaid_amount = unpaid_amount + $loan_amount
-            ");
-        }
+    $bulk_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $quantity WHERE product_id = $product_id");
+
+    if ($ok && $loan_amount > 0) {
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$bulk_sale_id)");
+        $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) $ok = (bool)mysqli_query($conn, "
+            INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ('$customer_name', $ph_lc, 1, 0, $loan_amount)
+            ON DUPLICATE KEY UPDATE
+                id            = LAST_INSERT_ID(id),
+                total_loans   = total_loans   + 1,
+                unpaid_amount = unpaid_amount + $loan_amount
+        ");
+        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+    }
+
+    if ($ok) {
+        mysqli_commit($conn);
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
         $_SESSION['flash_success'] = "Bulk sale recorded — " . implode(", ", $parts);
         $_SESSION['flash_sale_type'] = 'bulk';
+    } else {
+        mysqli_rollback($conn);
+        $_SESSION['flash_error'] = "Sale could not be recorded. Please try again.";
     }
     header("Location: sales.php"); exit;
 }
@@ -276,32 +305,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $_SESSION['flash_error'] = "Insufficient retail stock available";
         header("Location: sales.php"); exit;
     }
-    $sold_by = (int)$_SESSION['user_id'];
+    $sold_by       = (int)$_SESSION['user_id'];
     $has_loan_flag = $loan_amount > 0 ? 1 : 0;
-    $ins = mysqli_query($conn, "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+    $loan_date     = date('Y-m-d');
+    $ph_lc         = $phone !== '' ? "'$phone'" : 'NULL';
+
+    mysqli_begin_transaction($conn);
+    $ok = true;
+
+    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
                    VALUES ($product_id, $pieces_sold, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
-    if ($ins) {
-        $retail_sale_id = (int)mysqli_insert_id($conn);
-        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_sold WHERE product_id = $product_id");
-        if ($loan_amount > 0) {
-            $loan_date = date('Y-m-d');
-            mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ('$product_id','$pieces_sold','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$retail_sale_id)");
-            $new_loan_id = (int)mysqli_insert_id($conn);
-            $ph_lc       = $phone !== '' ? "'$phone'" : 'NULL';
-            mysqli_query($conn, "
-                INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
-                VALUES ('$customer_name', $ph_lc, 1, 0, $loan_amount)
-                ON DUPLICATE KEY UPDATE
-                    total_loans   = total_loans   + 1,
-                    unpaid_amount = unpaid_amount + $loan_amount
-            ");
-        }
+    $retail_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_sold WHERE product_id = $product_id");
+
+    if ($ok && $loan_amount > 0) {
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ('$product_id','$pieces_sold','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$retail_sale_id)");
+        $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) $ok = (bool)mysqli_query($conn, "
+            INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ('$customer_name', $ph_lc, 1, 0, $loan_amount)
+            ON DUPLICATE KEY UPDATE
+                id            = LAST_INSERT_ID(id),
+                total_loans   = total_loans   + 1,
+                unpaid_amount = unpaid_amount + $loan_amount
+        ");
+        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+    }
+
+    if ($ok) {
+        mysqli_commit($conn);
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
         $_SESSION['flash_success'] = "Retail sale recorded — " . implode(", ", $parts);
         $_SESSION['flash_sale_type'] = 'retail';
+    } else {
+        mysqli_rollback($conn);
+        $_SESSION['flash_error'] = "Sale could not be recorded. Please try again.";
     }
     header("Location: sales.php"); exit;
 }
@@ -379,19 +422,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['process_refund'])) {
     // Remove any loans tied to this sale and recompute loan_clients aggregates
     $fk_col = $sale_type . '_id'; // bulk_id | retail_id | external_id
     $related_loans = mysqli_query($conn, "
-        SELECT id, client, COALESCE(phone,'') AS phone FROM loans WHERE $fk_col = $sale_id
+        SELECT id, client_id FROM loans WHERE $fk_col = $sale_id
     ");
-    $affected_clients = []; // ['client||phone' => ['name'=>.., 'phone'=>..]]
+    $affected_client_ids = [];
     while ($rl = mysqli_fetch_assoc($related_loans)) {
-        $key = $rl['client'] . '||' . $rl['phone'];
-        $affected_clients[$key] = ['name' => $rl['client'], 'phone' => $rl['phone']];
+        if ($rl['client_id']) $affected_client_ids[(int)$rl['client_id']] = true;
         mysqli_query($conn, "DELETE FROM loan_payments WHERE loan_id = {$rl['id']}");
         mysqli_query($conn, "DELETE FROM loans WHERE id = {$rl['id']}");
     }
     // Recompute aggregates from scratch for each affected client
-    foreach ($affected_clients as $cd) {
-        $cn = mysqli_real_escape_string($conn, $cd['name']);
-        $cp = mysqli_real_escape_string($conn, $cd['phone']);
+    foreach (array_keys($affected_client_ids) as $cid) {
         mysqli_query($conn, "
             UPDATE loan_clients lc
             JOIN (
@@ -401,12 +441,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['process_refund'])) {
                 FROM loans l
                 LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
                        ON lp_s.loan_id = l.id
-                WHERE l.client = '$cn' AND COALESCE(l.phone,'') = '$cp'
+                WHERE l.client_id = $cid
             ) agg
             SET lc.total_loans   = agg.cnt,
                 lc.paid_amount   = agg.paid_sum,
                 lc.unpaid_amount = agg.loaned - agg.paid_sum
-            WHERE lc.name = '$cn' AND COALESCE(lc.phone,'') = '$cp'
+            WHERE lc.id = $cid
         ");
     }
 
@@ -706,7 +746,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
               <?php
                 $active_tab = in_array($last_sale_type, ['bulk','retail','external'])
                     ? $last_sale_type
-                    : (in_array($_GET['tab'] ?? '', ['bulk','retail','external']) ? $_GET['tab'] : 'bulk');
+                    : (in_array($_GET['tab'] ?? '', ['bulk','retail','external']) ? $_GET['tab'] : 'retail');
                 ?>
             <div class="recent-sales">
                 <h2>Recent Sales</h2>
