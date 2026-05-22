@@ -43,6 +43,8 @@ $nav = [
     ],
 ];
 ?>
+<button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle navigation">&#9776;</button>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
 <div class="sidebar">
     <div class="sidebar-brand">
         <div class="sidebar-brand-icon">SS</div>
@@ -189,9 +191,77 @@ $nav = [
 /* Adjust main content margin */
 .main-content { margin-left: 240px; }
 
+/* Slide-in transition for mobile */
+.sidebar { transition: transform 0.3s ease; }
+
+/* Hamburger toggle button (hidden on desktop) */
+.sidebar-toggle {
+    display: none;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 1001;
+    background: #0f172a;
+    color: #f1f5f9;
+    border: none;
+    border-radius: 8px;
+    width: 42px;
+    height: 42px;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35);
+    line-height: 1;
+}
+
+/* Dark overlay behind open sidebar */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,.55);
+    z-index: 999;
+    backdrop-filter: blur(2px);
+}
+.sidebar-overlay.is-open { display: block; }
+
 @media (max-width: 768px) {
-    .sidebar { width: 100%; height: auto; position: relative; flex-direction: column; }
-    .sidebar-nav { max-height: 60vh; }
+    .sidebar {
+        z-index: 1000;
+        transform: translateX(-100%);
+    }
+    .sidebar.is-open {
+        transform: translateX(0);
+    }
+    .sidebar-toggle { display: flex; }
     .main-content { margin-left: 0; }
 }
 </style>
+
+<script>
+(function () {
+    var toggle  = document.getElementById('sidebarToggle');
+    var sidebar = document.querySelector('.sidebar');
+    var overlay = document.getElementById('sidebarOverlay');
+    if (!toggle || !sidebar || !overlay) return;
+
+    toggle.addEventListener('click', function () {
+        sidebar.classList.toggle('is-open');
+        overlay.classList.toggle('is-open');
+    });
+    overlay.addEventListener('click', function () {
+        sidebar.classList.remove('is-open');
+        overlay.classList.remove('is-open');
+    });
+    // Close sidebar on nav link click (mobile)
+    sidebar.querySelectorAll('.nav-item').forEach(function (link) {
+        link.addEventListener('click', function () {
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('is-open');
+                overlay.classList.remove('is-open');
+            }
+        });
+    });
+})();
+</script>

@@ -634,30 +634,87 @@ canvas {
 
 /* Responsive Design */
 @media (max-width: 768px) {
-    .sidebar {
-        width: 100%;
-        height: auto;
-        position: relative;
-        border-right: none;
-        border-bottom: 1px solid var(--gray-200);
-    }
-    
     .main-content {
         margin-left: 0;
+        padding: 16px;
+        padding-top: 68px; /* clear the fixed hamburger button */
     }
-    
+
     .sales-container {
         grid-template-columns: 1fr;
     }
-    
+
     .stats-grid {
         grid-template-columns: 1fr;
     }
-    
+
+    /* action bars wrap on small screens */
+    .action-bar {
+        flex-wrap: wrap;
+    }
+
+    /* date filter stacks vertically */
+    .date-filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .date-filter-bar .filter-group input[type="date"] {
+        width: 100%;
+    }
+
+    /* modals fit small screens */
+    .modal-content {
+        margin: 16px;
+        padding: 20px;
+        max-width: calc(100% - 32px);
+        border-radius: 14px;
+    }
+
+    /* tables get horizontal scroll */
+    .table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .table th,
+    .table td {
+        padding: 10px 12px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    /* reduce hero number size */
+    .stat-number {
+        font-size: 24px;
+    }
+
+    /* login box padding */
+    .login-box {
+        padding: 24px 20px;
+    }
+
     .user-info {
         position: static;
         width: calc(100% - 48px);
         margin: 24px auto 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .main-content {
+        padding: 12px;
+        padding-top: 68px;
+    }
+
+    .btn {
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+
+    .modal-content {
+        margin: 8px;
+        max-width: calc(100% - 16px);
     }
 }
 
