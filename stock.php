@@ -135,23 +135,32 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
         <?php include 'sidebar.php'; ?>
         
         <div class="main-content">
-            <h1>Stock Management</h1>
-            
+            <div class="page-header">
+                <div>
+                    <h1>Stock Management</h1>
+                    <p class="page-subtitle">Manage warehouse and retail inventory</p>
+                </div>
+            </div>
+
             <?php if (isset($success)): ?>
                 <div class="alert alert-success"><?php echo $success; ?></div>
             <?php endif; ?>
-            
             <?php if (isset($error)): ?>
                 <div class="alert alert-danger"><?php echo $error; ?></div>
             <?php endif; ?>
-            
-            <div class="stock-container">
-                <div class="stock-section">
-                    <h2 class="collapsible-header" onclick="toggleSection(this)">
-                        Main Warehouse Stock
-                        <span class="collapse-icon">&#9660;</span>
-                    </h2>
-                    <div class="collapsible-body">
+
+            <div class="stock-card">
+                <div class="stock-tabs">
+                    <button class="stock-tab active" onclick="switchTab('tab-warehouse', this)">
+                        <span class="tab-icon">⊞</span> Warehouse Stock
+                    </button>
+                    <button class="stock-tab" onclick="switchTab('tab-retail', this)">
+                        <span class="tab-icon">◫</span> Retail Shop
+                    </button>
+                </div>
+
+                <div class="tab-body">
+                <div class="tab-panel" id="tab-warehouse">
                     <div class="table-responsive">
                         <table class="table" id="tblStock">
                             <thead>
@@ -195,17 +204,11 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                             </tbody>
                         </table>
                     </div>
-                    </div>
                 </div>
 
-                <div class="stock-section">
-                    <h2 class="collapsible-header collapsed" onclick="toggleSection(this)">
-                        Retail Shop Stock
-                        <span class="collapse-icon">&#9660;</span>
-                    </h2>
-                    <div class="collapsible-body collapsed">
+                <div class="tab-panel" id="tab-retail" style="display:none;">
                     <div class="table-responsive">
-                        <table class="table"id="tblRetail">
+                        <table class="table" id="tblRetail">
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -235,9 +238,9 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                             </tbody>
                         </table>
                     </div>
-                    </div>
                 </div>
-            </div>
+                </div><!-- /.tab-body -->
+            </div><!-- /.stock-card -->
         </div>
     </div>
 
@@ -354,15 +357,94 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
         </div>
     </div>
 
+    <style>
+/* Page header */
+.page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 28px;
+}
+.page-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--dark);
+    margin: 0;
+}
+.page-subtitle {
+    font-size: 14px;
+    color: var(--secondary);
+    margin-top: 4px;
+}
+
+/* Tab card */
+.stock-card {
+    background: var(--white);
+    border-radius: 20px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--gray-200);
+    overflow: visible;
+}
+
+/* Tab bar */
+.stock-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--gray-200);
+    background: var(--gray-100);
+    padding: 0 20px;
+}
+.stock-tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 13px 18px;
+    border: none;
+    background: none;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+    white-space: nowrap;
+}
+.stock-tab:hover { color: var(--dark); }
+.stock-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    font-weight: 600;
+}
+.tab-icon { font-size: 15px; opacity: .8; }
+
+/* Tab body */
+.tab-body { padding: 0; }
+
+/* Each panel scrolls independently */
+.tab-panel {
+    background: none;
+    box-shadow: none;
+    border: none;
+    padding: 24px;
+    height: calc(100vh - 220px);
+    min-height: 320px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+.tab-panel .table { margin-top: 0; }
+.tab-panel .table-responsive { overflow-x: auto; }
+    </style>
     <script src="script.js"></script>
     <script>
 createAdvancedTableSearch('txtSearchStock', 'tblStock', []);
 createAdvancedTableSearch('txtSearchRetail', 'tblRetail', []);
 
-function toggleSection(header) {
-    const body = header.nextElementSibling;
-    header.classList.toggle('collapsed');
-    body.classList.toggle('collapsed');
+function switchTab(panelId, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.stock-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById(panelId).style.display = '';
+    btn.classList.add('active');
 }
 
 function openEditStock(productId, name, qty, piecesPerPkg, packagePrice, retailPrice) {
