@@ -1,12 +1,30 @@
 
--- Link loans to loan_clients by id (replaces string-match joins)
-ALTER TABLE `loans` ADD COLUMN IF NOT EXISTS `client_id` INT DEFAULT NULL AFTER `phone`;
-ALTER TABLE `loans` ADD INDEX IF NOT EXISTS `idx_loans_client_id` (`client_id`);
+-- ============================================================
+-- Screen Stock — incremental DB updates
+-- Run these once on any existing installation.
+-- All statements use IF NOT EXISTS / IF EXISTS so they are
+-- safe to re-run without errors.
+-- ============================================================
 
--- Backfill client_id on all existing loans
-UPDATE `loans` l
-JOIN `loan_clients` lc ON lc.name = l.client
-    AND COALESCE(lc.phone,'') = COALESCE(l.phone,'')
-SET l.client_id = lc.id
-WHERE l.client_id IS NULL;
 
+-- ── purchase_levels ──────────────────────────────────────────────────────────
+-- Stores the multi-level packaging chain for every purchase.
+-- Created inline in new-purchase.php; listed here for reference / fresh installs.
+CREATE TABLE IF NOT EXISTS `purchase_levels` (
+    `id`             INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `purchase_id`    INT          NOT NULL,
+    `level_order`    TINYINT      NOT NULL,
+    `level_name`     VARCHAR(100) NOT NULL,
+    `qty_per_parent` INT          NOT NULL DEFAULT 1,
+    `selling_price`  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    INDEX `idx_purchase_id` (`purchase_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+
+
+-- ── sales_bulk.level_divisor ─────────────────────────────────────────────────
+-- Tracks which packaging level was sold so profit reports can correctly
+-- convert sub-level quantities back to top-level package cost.
+-- DEFAULT 1 = full-package sale (backward compatible with old rows).
+ALTER TABLE `sales_bulk` ADD COLUMN IF NOT EXISTS `level_divisor` INT NOT NULL DEFAULT 1 AFTER `quantity`;

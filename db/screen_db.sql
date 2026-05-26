@@ -475,6 +475,32 @@ CREATE TABLE `sales_external` (
 
 -- --------------------------------------------------------
 
+-- ── loan_clients ─────────────────────────────────────────────────────────────
+-- One row per unique client (name + phone). Aggregates loan totals so the
+-- loans list can show per-client balances without scanning all loans rows.
+CREATE TABLE IF NOT EXISTS `loan_clients` (
+    `id`           INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `name`         VARCHAR(100)  NOT NULL,
+    `phone`        VARCHAR(20)   DEFAULT NULL,
+    `total_loans`  INT           NOT NULL DEFAULT 0,
+    `paid_amount`  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `unpaid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `updated_at`   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_client_name_phone` (`name`, `phone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- ── loans.client_id ──────────────────────────────────────────────────────────
+-- Link loans to loan_clients by id (replaces string-match joins).
+ALTER TABLE `loans` ADD COLUMN IF NOT EXISTS `client_id` INT DEFAULT NULL AFTER `phone`;
+ALTER TABLE `loans` ADD INDEX  IF NOT EXISTS `idx_loans_client_id` (`client_id`);
+
+-- Backfill client_id on all existing loans
+UPDATE `loans` l
+JOIN `loan_clients` lc ON lc.name = l.client
+    AND COALESCE(lc.phone,'') = COALESCE(l.phone,'')
+SET l.client_id = lc.id
+WHERE l.client_id IS NULL;
 --
 -- Table structure for table `sales_retail`
 --

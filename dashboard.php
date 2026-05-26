@@ -121,16 +121,16 @@ $today_profit_query = mysqli_query($conn, "
     SELECT 
         -- Bulk sales profit
         COALESCE((
-            SELECT SUM(sb.total_amount - (pu.cost_price * sb.quantity))
+            SELECT SUM(sb.total_amount - (pu.cost_price * sb.quantity / COALESCE(NULLIF(sb.level_divisor, 0), 1)))
             FROM sales_bulk sb
             JOIN purchases pu ON pu.product_id = sb.product_id
             WHERE sb.sale_date = '$today'
             AND sb.refunded = 0
             AND sb.has_loan = 0
             AND pu.id = (
-                SELECT id FROM purchases p2 
-                WHERE p2.product_id = sb.product_id 
-                AND p2.purchase_date <= sb.sale_date 
+                SELECT id FROM purchases p2
+                WHERE p2.product_id = sb.product_id
+                AND p2.purchase_date <= sb.sale_date
                 ORDER BY p2.purchase_date DESC LIMIT 1
             )
         ), 0) +

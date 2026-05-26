@@ -190,6 +190,13 @@ $purchases = mysqli_query($conn, "
     <title>Purchases - Small Stock Management</title>
     <link rel="stylesheet" href="css/style.css">
     <style>
+        .lv-chain { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 2px; }
+        .lv-node  { display: inline-flex; flex-direction: column; font-size: 12px; }
+        .lv-name  { font-weight: 600; color: var(--dark); }
+        .lv-name em { font-style: normal; color: var(--secondary); font-weight: 400; }
+        .lv-price { color: var(--primary); font-weight: 700; font-size: 11px; }
+        .lv-arrow { color: var(--gray-300); font-size: 14px; padding: 2px 1px; align-self: center; }
+
         .searchable-select {
             position: relative;
         }
@@ -248,7 +255,7 @@ $purchases = mysqli_query($conn, "
             <h1>Purchase Management</h1>
             
             <div class="action-bar">
-                <button onclick="openModal('addPurchaseModal')" class="btn btn-primary">New Purchase</button>
+                <a href="new-purchase.php" class="btn btn-primary">New Purchase</a>
                 <a href="suppliers.php" class="btn btn-secondary">Manage Suppliers</a>
             </div>
 
@@ -286,12 +293,9 @@ $purchases = mysqli_query($conn, "
                     <thead>
                         <tr>
                             <th>Product</th>
-                        
-                            <th>Quantity</th>
-                            <th>Pieces/Qty</th>
+                            <th>Qty</th>
                             <th>Cost Price</th>
-                            <th>Package Price</th>
-                            <th>Detaye Price</th>
+                            <th>Packaging &amp; Prices</th>
                             <th>Supplier</th>
                             <th>Actions</th>
                         </tr>
@@ -312,6 +316,14 @@ $purchases = mysqli_query($conn, "
                             $date_totals[$d] += $row['cost_price'] * $row['quantity'];
                         }
 
+                        // Pre-fetch packaging levels for all listed purchases
+                        $levels_map = [];
+                        if (!empty($rows)) {
+                            $pids = implode(',', array_map(fn($r) => (int)$r['id'], $rows));
+                            $lq   = mysqli_query($conn, "SELECT * FROM purchase_levels WHERE purchase_id IN ($pids) ORDER BY purchase_id, level_order");
+                            if ($lq) while ($l = mysqli_fetch_assoc($lq)) $levels_map[$l['purchase_id']][] = $l;
+                        }
+
                         foreach ($rows as $i => $row):
                             $row_date = date('Y-m-d', strtotime($row['purchase_date']));
                             $row_cost_total = $row['cost_price'] * $row['quantity'];
@@ -321,8 +333,8 @@ $purchases = mysqli_query($conn, "
                                 if ($current_date !== ''):
                         ?>
                         <tr class="date-subtotal" data-group="<?php echo $group_index; ?>">
-                            <td colspan="4"><strong>Subtotal</strong></td>
-                            <td colspan="4"><strong>RWF <?php echo number_format($day_total, 0); ?></strong></td>
+                            <td colspan="3"><strong>Subtotal</strong></td>
+                            <td colspan="3"><strong>RWF <?php echo number_format($day_total, 0); ?></strong></td>
                         </tr>
                         <?php
                                     $group_index++;
@@ -332,21 +344,33 @@ $purchases = mysqli_query($conn, "
                                 $is_first = ($group_index === 0);
                         ?>
                         <tr class="date-group-header <?php echo $is_first ? 'active' : ''; ?>" data-toggle="<?php echo $group_index; ?>" data-date="<?php echo $row_date; ?>" onclick="toggleDateGroup(this)">
-                            <td colspan="5">
+                            <td colspan="4">
                                 <span class="toggle-icon"><?php echo $is_first ? '&#9660;' : '&#9654;'; ?></span>
                                 <?php echo date('D, M d Y', strtotime($row_date)); ?>
                             </td>
-                            <td colspan="3" class="header-total">RWF <?php echo number_format($date_totals[$row_date], 0); ?></td>
+                            <td colspan="2" class="header-total">RWF <?php echo number_format($date_totals[$row_date], 0); ?></td>
                         </tr>
                         <?php endif; ?>
                         <tr class="date-group-row" data-group="<?php echo $group_index; ?>" <?php if ($group_index > 0): ?>style="display:none"<?php endif; ?>>
                             <td><?=++$i; ?>. &nbsp; <?php echo htmlspecialchars($row['product_name']); ?></td>
-
                             <td><?php echo $row['quantity']; ?></td>
-                            <td><?php echo $row['pieces_per_qty']; ?></td>
                             <td>RWF <?php echo number_format($row['cost_price'], 0); ?></td>
-                            <td>RWF <?php echo number_format($row['package_price'], 0); ?></td>
-                            <td>RWF <?php echo number_format($row['retail_price'], 0); ?></td>
+                            <td>
+                                <?php if (!empty($levels_map[$row['id']])): ?>
+                                    <div class="lv-chain">
+                                    <?php foreach ($levels_map[$row['id']] as $j => $lvl): ?>
+                                        <?php if ($j > 0): ?><span class="lv-arrow">→</span><?php endif; ?>
+                                        <span class="lv-node">
+                                            <span class="lv-name"><?= htmlspecialchars($lvl['level_name']) ?><?php if ($lvl['qty_per_parent'] > 1): ?> <em>×<?= $lvl['qty_per_parent'] ?></em><?php endif; ?></span>
+                                            <span class="lv-price">RWF <?= number_format($lvl['selling_price'], 0) ?></span>
+                                        </span>
+                                    <?php endforeach; ?>
+                                    </div>
+                                <?php else: ?>
+                                    Bulk: RWF <?= number_format($row['package_price'], 0) ?><br>
+                                    <small>Retail: RWF <?= number_format($row['retail_price'], 0) ?></small>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo htmlspecialchars($row['supplier_name'] ?? 'N/A'); ?></td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-secondary"
@@ -372,15 +396,15 @@ $purchases = mysqli_query($conn, "
                         if ($current_date !== ''):
                         ?>
                         <tr class="date-subtotal" data-group="<?php echo $group_index; ?>" <?php if ($group_index > 0): ?>style="display:none"<?php endif; ?>>
-                            <td colspan="4"><strong>Subtotal</strong></td>
-                            <td colspan="4"><strong>RWF <?php echo number_format($day_total, 0); ?></strong></td>
+                            <td colspan="3"><strong>Subtotal</strong></td>
+                            <td colspan="3"><strong>RWF <?php echo number_format($day_total, 0); ?></strong></td>
                         </tr>
                         <?php endif; ?>
                     </tbody>
                     <tfoot>
                         <tr class="grand-total">
-                            <td colspan="4"><strong>Grand Total</strong></td>
-                            <td colspan="4"><strong>RWF <?php echo number_format($grand_total, 0); ?></strong></td>
+                            <td colspan="3"><strong>Grand Total</strong></td>
+                            <td colspan="3"><strong>RWF <?php echo number_format($grand_total, 0); ?></strong></td>
                         </tr>
                     </tfoot>
                 </table>

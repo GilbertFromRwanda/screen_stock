@@ -104,11 +104,30 @@ if (isset($_SESSION['flash_error'])) {
 
 // Get main stock with product details
 $main_stock = mysqli_query($conn, "
-    SELECT s.*, p.name, p.category, p.reorder_level 
+    SELECT s.*, p.name, p.category, p.reorder_level
     FROM stock s
     JOIN products p ON s.product_id = p.id
     WHERE s.quantity > 0
 ");
+
+// Pre-fetch packaging levels for all stocked products
+$stock_rows_tmp = [];
+$tmp = mysqli_query($conn, "
+    SELECT s.product_id, pl.level_order, pl.level_name, pl.qty_per_parent, pl.selling_price
+    FROM stock s
+    JOIN products p ON s.product_id = p.id
+    JOIN purchases pu ON pu.product_id = s.product_id
+        AND pu.id = (SELECT MAX(id) FROM purchases WHERE product_id = s.product_id)
+    JOIN purchase_levels pl ON pl.purchase_id = pu.id
+    WHERE s.quantity > 0
+    ORDER BY s.product_id, pl.level_order
+");
+$stock_levels = [];
+if ($tmp) {
+    while ($r = mysqli_fetch_assoc($tmp)) {
+        $stock_levels[$r['product_id']][] = $r;
+    }
+}
 
 // Get retail stock
 $retail_stock = mysqli_query($conn, "
@@ -168,11 +187,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                     <th>#</th>
                                     <th>Product</th>
                                     <th>Category</th>
-                                    <th>Packages</th>
-                                    <th>Pieces/Package</th>
-                                    <th>Total Pieces/KG</th>
-                                    <th>Kuranguza Price</th>
-                                    <th>Detaye Price </th>
+                                    <th>Stock &amp; Levels</th>
                                     <th>Status</th>
                                     <th>Action</th>
                                 </tr>
@@ -182,16 +197,35 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                     $total_pieces = $row['quantity'] * $row['pieces_per_package'];
                                     $status = $row['quantity'] <= $row['reorder_level'] ? 'Low Stock' : 'In Stock';
                                     $status_class = $row['quantity'] <= $row['reorder_level'] ? 'danger' : 'success';
+                                    $lvls = $stock_levels[$row['product_id']] ?? [];
                                 ?>
                                 <tr>
                                     <td style="color:var(--secondary);"><?php echo ++$main_i; ?></td>
                                     <td><?php echo htmlspecialchars($row['name']); ?></td>
                                     <td><?php echo htmlspecialchars($row['category']); ?></td>
-                                    <td><?php echo $row['quantity']; ?></td>
-                                    <td><?php echo $row['pieces_per_package']; ?></td>
-                                    <td><?php echo $total_pieces; ?></td>
-                                    <td>RWF <?php echo number_format($row['package_price'], 0); ?></td>
-                                    <td>RWF <?php echo number_format($row['retail_price'], 0); ?></td>
+                                    <td>
+                                        <?php if (!empty($lvls)):
+                                            $running = (int)$row['quantity'];
+                                        ?>
+                                        <div class="stk-chain">
+                                            <?php foreach ($lvls as $li => $lvl):
+                                                if ($li > 0) $running = $running * (int)$lvl['qty_per_parent'];
+                                            ?>
+                                            <?php if ($li > 0): ?><span class="stk-arrow">→</span><?php endif; ?>
+                                            <span class="stk-node">
+                                                <span class="stk-name"><?= htmlspecialchars($lvl['level_name']) ?></span>
+                                                <span class="stk-qty"><?= number_format($running) ?></span>
+                                                <span class="stk-price">RWF <?= number_format($lvl['selling_price'], 0) ?></span>
+                                            </span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <?php else: ?>
+                                        <div class="stk-fallback">
+                                            <span><?= $row['quantity'] ?> pkgs × <?= $row['pieces_per_package'] ?> = <strong><?= number_format($total_pieces) ?></strong></span>
+                                            <span class="stk-prices">Bulk: RWF <?= number_format($row['package_price'], 0) ?> &nbsp;|&nbsp; Retail: RWF <?= number_format($row['retail_price'], 0) ?></span>
+                                        </div>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><span class="badge badge-<?php echo $status_class; ?>"><?php echo $status; ?></span></td>
                                     <td style="white-space:nowrap;">
                                         <button onclick="openMoveModal(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $total_pieces; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['quantity']; ?>)"
@@ -420,6 +454,61 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
 
 /* Tab body */
 .tab-body { padding: 0; }
+
+/* Stock level chain */
+.stk-chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 4px;
+}
+.stk-arrow {
+    color: #94a3b8;
+    font-size: 14px;
+    align-self: center;
+    padding: 0 2px;
+}
+.stk-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 5px 10px;
+    min-width: 72px;
+    text-align: center;
+}
+.stk-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+}
+.stk-qty {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1.2;
+}
+.stk-price {
+    font-size: 10px;
+    color: #3b82f6;
+    font-weight: 500;
+    margin-top: 1px;
+}
+.stk-fallback {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 13px;
+    color: #334155;
+}
+.stk-prices {
+    font-size: 11.5px;
+    color: #64748b;
+}
 
 /* Each panel scrolls independently */
 .tab-panel {

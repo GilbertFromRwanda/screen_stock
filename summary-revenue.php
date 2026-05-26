@@ -17,7 +17,7 @@ $bulk = mysqli_fetch_assoc(mysqli_query($conn, "
             (SELECT pu.cost_price FROM purchases pu
              WHERE pu.product_id = sb.product_id
                AND pu.purchase_date <= sb.sale_date
-             ORDER BY pu.purchase_date DESC LIMIT 1) * sb.quantity
+             ORDER BY pu.purchase_date DESC LIMIT 1) * sb.quantity / COALESCE(NULLIF(sb.level_divisor, 0), 1)
         ), 0)                                                                        AS cost
     FROM sales_bulk sb
     WHERE sb.sale_date BETWEEN '$from' AND '$to'

@@ -5,6 +5,11 @@ if (!isLoggedIn()) {
     redirect('login.php');
 }
 
+// Auto-add level_divisor column to sales_bulk if missing (backward-compatible)
+if (mysqli_num_rows(mysqli_query($conn, "SHOW COLUMNS FROM sales_bulk LIKE 'level_divisor'")) == 0) {
+    mysqli_query($conn, "ALTER TABLE sales_bulk ADD COLUMN level_divisor INT NOT NULL DEFAULT 1 AFTER quantity");
+}
+
 // ── DELETE Bulk Sale ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
     $id = (int)$_POST['sale_id'];
@@ -221,7 +226,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
     $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
     $phone         = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
+    $level_divisor = max(1, (int)($_POST['level_divisor'] ?? 1));
     $total_amount  = $quantity * $selling_price;
+    // Convert sold quantity to top-level packages for stock deduction
+    $packages_to_deduct = (int)ceil($quantity / $level_divisor);
 
     if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
         $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
@@ -232,7 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         header("Location: sales.php"); exit;
     }
     $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id"));
-    if (!$stock || $stock['quantity'] < $quantity) {
+    if (!$stock || $stock['quantity'] < $packages_to_deduct) {
         $_SESSION['flash_error'] = "Insufficient stock available";
         header("Location: sales.php"); exit;
     }
@@ -244,11 +252,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     mysqli_begin_transaction($conn);
     $ok = true;
 
-    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                   VALUES ($product_id, $quantity, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
+    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, level_divisor, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+                   VALUES ($product_id, $quantity, $level_divisor, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
     $bulk_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $quantity WHERE product_id = $product_id");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_deduct WHERE product_id = $product_id");
 
     if ($ok && $loan_amount > 0) {
         $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$bulk_sale_id)");
@@ -282,15 +290,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
 
 // Handle Retail Sale (with split payment: Cash + Momo + Loan)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
-    $product_id    = (int)$_POST['product_id'];
-    $pieces_sold   = (int)$_POST['pieces_sold'];
-    $selling_price = (float)$_POST['selling_price'];
-    $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
-    $cash_amount   = max(0, (float)($_POST['cash_amount'] ?? 0));
-    $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
-    $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
-    $phone         = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
-    $total_amount  = $pieces_sold * $selling_price;
+    $product_id       = (int)$_POST['product_id'];
+    $qty_sold         = max(1, (int)$_POST['pieces_sold']);  // user-entered qty in selected level units
+    $selling_price    = (float)$_POST['selling_price'];
+    $customer_name    = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
+    $cash_amount      = max(0, (float)($_POST['cash_amount'] ?? 0));
+    $momo_amount      = max(0, (float)($_POST['momo_amount'] ?? 0));
+    $loan_amount      = max(0, (float)($_POST['loan_amount'] ?? 0));
+    $phone            = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
+    $level_multiplier = max(1, (int)($_POST['level_multiplier'] ?? 1));
+    $pieces_to_deduct = $qty_sold * $level_multiplier;   // actual pieces removed from retail_stock
+    $total_amount     = $qty_sold * $selling_price;
 
     if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
         $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
@@ -301,7 +311,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         header("Location: sales.php"); exit;
     }
     $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $product_id"));
-    if (!$retail || $retail['pieces_quantity'] < $pieces_sold) {
+    if (!$retail || $retail['pieces_quantity'] < $pieces_to_deduct) {
         $_SESSION['flash_error'] = "Insufficient retail stock available";
         header("Location: sales.php"); exit;
     }
@@ -313,14 +323,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     mysqli_begin_transaction($conn);
     $ok = true;
 
+    // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
     $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                   VALUES ($product_id, $pieces_sold, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
+                   VALUES ($product_id, $pieces_to_deduct, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
     $retail_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_sold WHERE product_id = $product_id");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_to_deduct WHERE product_id = $product_id");
 
     if ($ok && $loan_amount > 0) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ('$product_id','$pieces_sold','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$retail_sale_id)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ('$product_id','$pieces_to_deduct','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$retail_sale_id)");
         $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) $ok = (bool)mysqli_query($conn, "
             INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
@@ -696,6 +707,20 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         }
         .split-remaining-row.valid  { background: #ecfdf5; color: #059669; }
         .split-remaining-row.invalid { background: #fef2f2; color: #dc2626; }
+        .lvl-btn {
+            display: inline-flex; flex-direction: column; align-items: center;
+            padding: 8px 14px; border: 1.5px solid var(--gray-300);
+            border-radius: var(--radius); cursor: pointer; background: var(--white);
+            transition: all .15s; min-width: 100px; gap: 2px;
+        }
+        .lvl-btn:hover { border-color: var(--primary); background: #eff6ff; }
+        .lvl-btn.active { border-color: var(--primary); background: #eff6ff; }
+        .lvl-btn-name  { font-size: 13px; font-weight: 700; color: var(--dark); }
+        .lvl-btn-stock { font-size: 11px; color: var(--secondary); }
+        .lvl-btn-price { font-size: 14px; font-weight: 700; color: var(--primary); }
+        .lvl-btn.active .lvl-btn-name,
+        .lvl-btn.active .lvl-btn-stock { color: var(--primary); }
+
         .sales-tab-nav {
             display: flex;
             gap: 4px;
@@ -856,16 +881,18 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             $retail_grand_total += $row['total_amount'];
                             $default_price_query = mysqli_query($conn, "SELECT retail_price FROM retail_stock WHERE product_id = {$row['product_id']}");
                             $default_price = mysqli_fetch_assoc($default_price_query)['retail_price'];
-                            $price_diff = $row['retail_price'] - $default_price;
-                            $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
+                            // Normalize to per-piece so middle-level sales compare correctly
+                            $actual_per_piece = $row['pieces_sold'] > 0 ? ($row['total_amount'] / $row['pieces_sold']) : $row['retail_price'];
+                            $price_diff = $actual_per_piece - $default_price;
+                            $diff_class = $price_diff > 0.005 ? 'text-danger' : ($price_diff < -0.005 ? 'text-success' : '');
                         ?>
                         <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php endif; ?>>
                             <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
                             <td><?php echo htmlspecialchars($row['name']); ?></td>
                             <td><?php echo $row['pieces_sold']; ?></td>
-                            <td><strong>RWF <?php echo number_format($row['retail_price'], 0); ?></strong></td>
+                            <td><strong>RWF <?php echo number_format($actual_per_piece, 0); ?></strong></td>
                             <td>RWF <?php echo number_format($default_price, 0); ?></td>
-                            <td class="<?php echo $diff_class; ?>"><?php echo $price_diff != 0 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
+                            <td class="<?php echo $diff_class; ?>"><?php echo abs($price_diff) > 0.005 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
@@ -1062,8 +1089,14 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     <span id="bulk_product_info"></span>
                 </div>
 
+                <!-- Level selector -->
+                <div id="bulk_level_selector" style="display:none;margin-bottom:16px;">
+                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
+                    <div id="bulk_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+                </div>
+
                 <div class="form-group">
-                    <label for="bulk_quantity">Quantity (Packages)*</label>
+                    <label for="bulk_quantity" id="bulk_qty_label">Quantity (Packages)*</label>
                     <input type="text" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
                     <small id="bulk_stock_info" class="field-hint"></small>
                     <small id="bulk_qty_error" class="field-error"></small>
@@ -1145,6 +1178,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     <div class="summary-row summary-total"><span>Total Amount</span><strong id="bulk_sum_total"></strong></div>
                 </div>
 
+                <input type="hidden" id="bulk_level_divisor" name="level_divisor" value="1">
                 <button type="button" name="bulk_sale" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()">Save Bulk Sale</button>
             </form>
         </div>
@@ -1198,8 +1232,14 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     <span id="retail_product_info"></span>
                 </div>
 
+                <!-- Level selector -->
+                <div id="retail_level_selector" style="display:none;margin-bottom:16px;">
+                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
+                    <div id="retail_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+                </div>
+
                 <div class="form-group">
-                    <label for="pieces_sold">Number of Pieces*</label>
+                    <label for="pieces_sold" id="retail_qty_label">Number of Pieces*</label>
                     <input type="text" id="pieces_sold" name="pieces_sold" required min="1" oninput="calculateRetailTotal()">
                     <small id="retail_stock_info" class="field-hint"></small>
                     <small id="retail_qty_error" class="field-error"></small>
@@ -1281,6 +1321,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     <div class="summary-row summary-total"><span>Total Amount</span><strong id="retail_sum_total"></strong></div>
                 </div>
 
+                <input type="hidden" id="retail_level_multiplier" name="level_multiplier" value="1">
                 <button type="button" name="retail_sale" id="retail_submit_btn" class="btn btn-primary" disabled onclick="handleRetailSubmit()">Save Retail Sale</button>
             </form>
         </div>
@@ -1670,8 +1711,13 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 document.getElementById('bulk_stock_info').innerHTML = '';
                 document.getElementById('bulk_selling_price').value = '';
                 document.getElementById('bulk_quantity').value = '';
+                document.getElementById('bulk_quantity').max = '';
                 document.getElementById('bulk_summary').style.display = 'none';
                 document.getElementById('bulk_payment_section').style.display = 'none';
+                document.getElementById('bulk_level_selector').style.display = 'none';
+                document.getElementById('bulk_level_buttons').innerHTML = '';
+                document.getElementById('bulk_qty_label').textContent = 'Quantity (Packages)*';
+                document.getElementById('bulk_level_divisor').value = 1;
                 document.getElementById('bulk_submit_btn').disabled = true;
                 return;
             }
@@ -1691,14 +1737,65 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             document.getElementById('bulk_loan_split').value = 0;
             document.getElementById('bulk_payment_section').style.display = 'none';
             calculateBulkTotal();
+
+            // Fetch packaging levels
+            document.getElementById('bulk_level_divisor').value = 1;
+            fetch('ajax_levels.php?product_id=' + opt.value)
+                .then(function(r){ return r.json(); })
+                .then(function(data) {
+                    var sel  = document.getElementById('bulk_level_selector');
+                    var btns = document.getElementById('bulk_level_buttons');
+                    btns.innerHTML = '';
+                    if (data.ok && data.levels && data.levels.length > 0) {
+                        var running  = parseInt(data.stock_qty) || 0;
+                        var divisor  = 1;
+                        data.levels.forEach(function(lvl, i) {
+                            if (i > 0) {
+                                divisor *= (parseInt(lvl.qty_per_parent) || 1);
+                                running  *= (parseInt(lvl.qty_per_parent) || 1);
+                            }
+                            var btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'lvl-btn';
+                            btn.innerHTML =
+                                '<span class="lvl-btn-name">' + lvl.level_name + '</span>' +
+                                '<span class="lvl-btn-stock">' + running.toLocaleString() + ' avail.</span>' +
+                                '<span class="lvl-btn-price">RWF ' + parseInt(lvl.selling_price).toLocaleString() + '</span>';
+                            btn.dataset.price   = lvl.selling_price;
+                            btn.dataset.stock   = running;
+                            btn.dataset.name    = lvl.level_name;
+                            btn.dataset.divisor = divisor;
+                            btn.onclick = function() {
+                                btns.querySelectorAll('.lvl-btn').forEach(function(b){ b.classList.remove('active'); });
+                                this.classList.add('active');
+                                document.getElementById('bulk_selling_price').value = this.dataset.price;
+                                document.getElementById('bulk_quantity').max = this.dataset.stock;
+                                document.getElementById('bulk_level_divisor').value = this.dataset.divisor;
+                                document.getElementById('bulk_stock_info').innerHTML = 'Available: ' + parseInt(this.dataset.stock).toLocaleString() + ' ' + this.dataset.name;
+                                document.getElementById('bulk_qty_label').textContent = 'Quantity (' + this.dataset.name + ')*';
+                                calculateBulkTotal();
+                            };
+                            btns.appendChild(btn);
+                        });
+                        // Auto-select first level
+                        btns.querySelector('.lvl-btn') && btns.querySelector('.lvl-btn').click();
+                        sel.style.display = 'block';
+                    } else {
+                        sel.style.display = 'none';
+                    }
+                })
+                .catch(function(){ document.getElementById('bulk_level_selector').style.display = 'none'; });
         }
 
         function setBulkDefaultPrice() {
-            const opt = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
-            if (opt.value) {
-                document.getElementById('bulk_selling_price').value = opt.dataset.price;
-                calculateBulkTotal();
+            var activeBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
+            if (activeBtn) {
+                document.getElementById('bulk_selling_price').value = activeBtn.dataset.price;
+            } else {
+                const opt = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
+                if (opt.value) document.getElementById('bulk_selling_price').value = opt.dataset.price;
             }
+            calculateBulkTotal();
         }
 
         function calculateBulkTotal() {
@@ -1706,8 +1803,10 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             const opt = select.options[select.selectedIndex];
             if (!opt.value) return;
 
-            const stock = parseInt(opt.dataset.stock) || 0;
-            const defaultPrice = parseFloat(opt.dataset.price) || 0;
+            const qtyInput = document.getElementById('bulk_quantity');
+            const stock = parseInt(qtyInput.max) > 0 ? parseInt(qtyInput.max) : (parseInt(opt.dataset.stock) || 0);
+            var activeBulkBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
+            const defaultPrice = activeBulkBtn ? (parseFloat(activeBulkBtn.dataset.price) || 0) : (parseFloat(opt.dataset.price) || 0);
             const qty = parseInt(document.getElementById('bulk_quantity').value) || 0;
             const price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
             const total = qty * price;
@@ -1801,24 +1900,28 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 
         function confirmBulkSale() {
             var opt = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
-            var qty = document.getElementById('bulk_quantity').value;
+            var qty = parseInt(document.getElementById('bulk_quantity').value) || 0;
             var price = parseFloat(document.getElementById('bulk_selling_price').value);
             var total = qty * price;
             var cash = parseFloat(document.getElementById('bulk_cash').value) || 0;
             var momo = parseFloat(document.getElementById('bulk_momo').value) || 0;
             var loan = parseFloat(document.getElementById('bulk_loan_split').value) || 0;
+            var divisor = parseInt(document.getElementById('bulk_level_divisor').value) || 1;
+            var pkgsDeducted = Math.ceil(qty / divisor);
+            var activeBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
+            var levelName = activeBtn ? activeBtn.dataset.name : 'Package';
             var parts = [];
             if (cash > 0) parts.push('Cash: RWF ' + cash.toLocaleString());
             if (momo > 0) parts.push('Momo: RWF ' + momo.toLocaleString());
             if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
             return confirm(
-                'Confirm Bulk Sale?\n\n' +
+                'Confirm Sale?\n\n' +
                 'Product: ' + opt.dataset.productName + '\n' +
-                'Packages: ' + qty + '\n' +
-                'Price/Package: RWF ' + price.toLocaleString() + '\n' +
+                'Qty: ' + qty + ' ' + levelName + '\n' +
+                'Price/' + levelName + ': RWF ' + price.toLocaleString() + '\n' +
                 'Total: RWF ' + total.toLocaleString() + '\n' +
                 'Payment: ' + parts.join(' | ') + '\n\n' +
-                'This will deduct ' + qty + ' package(s) from warehouse stock.'
+                'Stock deduction: ' + pkgsDeducted + ' package(s) from warehouse.'
             );
         }
 
@@ -1833,8 +1936,13 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 document.getElementById('retail_stock_info').innerHTML = '';
                 document.getElementById('retail_selling_price').value = '';
                 document.getElementById('pieces_sold').value = '';
+                document.getElementById('pieces_sold').max = '';
                 document.getElementById('retail_summary').style.display = 'none';
                 document.getElementById('retail_payment_section').style.display = 'none';
+                document.getElementById('retail_level_selector').style.display = 'none';
+                document.getElementById('retail_level_buttons').innerHTML = '';
+                document.getElementById('retail_qty_label').textContent = 'Number of Pieces*';
+                document.getElementById('retail_level_multiplier').value = 1;
                 document.getElementById('retail_submit_btn').disabled = true;
                 return;
             }
@@ -1854,14 +1962,70 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             document.getElementById('retail_loan_split').value = 0;
             document.getElementById('retail_payment_section').style.display = 'none';
             calculateRetailTotal();
+
+            // Fetch packaging levels for level selector
+            var retail_pieces = parseInt(opt.dataset.stock) || 0;
+            document.getElementById('retail_level_multiplier').value = 1;
+            fetch('ajax_levels.php?product_id=' + opt.value)
+                .then(function(r){ return r.json(); })
+                .then(function(data) {
+                    var sel  = document.getElementById('retail_level_selector');
+                    var btns = document.getElementById('retail_level_buttons');
+                    btns.innerHTML = '';
+                    if (data.ok && data.levels && data.levels.length > 0) {
+                        // Build multipliers from last level upward
+                        // mults[i] = how many retail pieces equal one unit of level i
+                        var mults = new Array(data.levels.length).fill(1);
+                        for (var i = data.levels.length - 1; i >= 1; i--) {
+                            mults[i - 1] = mults[i] * (parseInt(data.levels[i].qty_per_parent) || 1);
+                        }
+                        data.levels.forEach(function(lvl, i) {
+                            var available = Math.floor(retail_pieces / mults[i]);
+                            var btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'lvl-btn';
+                            btn.innerHTML =
+                                '<span class="lvl-btn-name">' + lvl.level_name + '</span>' +
+                                '<span class="lvl-btn-stock">' + available.toLocaleString() + ' avail.</span>' +
+                                '<span class="lvl-btn-price">RWF ' + parseInt(lvl.selling_price).toLocaleString() + '</span>';
+                            btn.dataset.price      = lvl.selling_price;
+                            btn.dataset.available  = available;
+                            btn.dataset.multiplier = mults[i];
+                            btn.dataset.name       = lvl.level_name;
+                            btn.onclick = function() {
+                                btns.querySelectorAll('.lvl-btn').forEach(function(b){ b.classList.remove('active'); });
+                                this.classList.add('active');
+                                document.getElementById('retail_selling_price').value = this.dataset.price;
+                                document.getElementById('pieces_sold').max = this.dataset.available;
+                                document.getElementById('retail_level_multiplier').value = this.dataset.multiplier;
+                                document.getElementById('retail_stock_info').innerHTML =
+                                    'Available: ' + parseInt(this.dataset.available).toLocaleString() + ' ' + this.dataset.name;
+                                document.getElementById('retail_qty_label').textContent =
+                                    'Quantity (' + this.dataset.name + ')*';
+                                calculateRetailTotal();
+                            };
+                            btns.appendChild(btn);
+                        });
+                        // Auto-select last level (smallest unit) by default
+                        var allBtns = btns.querySelectorAll('.lvl-btn');
+                        allBtns[allBtns.length - 1] && allBtns[allBtns.length - 1].click();
+                        sel.style.display = 'block';
+                    } else {
+                        sel.style.display = 'none';
+                    }
+                })
+                .catch(function() { document.getElementById('retail_level_selector').style.display = 'none'; });
         }
 
         function setRetailDefaultPrice() {
-            const opt = document.getElementById('retail_product_id').options[document.getElementById('retail_product_id').selectedIndex];
-            if (opt.value) {
-                document.getElementById('retail_selling_price').value = opt.dataset.price;
-                calculateRetailTotal();
+            var activeBtn = document.querySelector('#retail_level_buttons .lvl-btn.active');
+            if (activeBtn) {
+                document.getElementById('retail_selling_price').value = activeBtn.dataset.price;
+            } else {
+                const opt = document.getElementById('retail_product_id').options[document.getElementById('retail_product_id').selectedIndex];
+                if (opt.value) document.getElementById('retail_selling_price').value = opt.dataset.price;
             }
+            calculateRetailTotal();
         }
 
         function calculateRetailTotal() {
@@ -1869,8 +2033,10 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             const opt = select.options[select.selectedIndex];
             if (!opt.value) return;
 
-            const stock = parseInt(opt.dataset.stock) || 0;
-            const defaultPrice = parseFloat(opt.dataset.price) || 0;
+            const piecesInput = document.getElementById('pieces_sold');
+            const stock = parseInt(piecesInput.max) > 0 ? parseInt(piecesInput.max) : (parseInt(opt.dataset.stock) || 0);
+            var activeRetailBtn = document.querySelector('#retail_level_buttons .lvl-btn.active');
+            const defaultPrice = activeRetailBtn ? (parseFloat(activeRetailBtn.dataset.price) || 0) : (parseFloat(opt.dataset.price) || 0);
             const qty = parseInt(document.getElementById('pieces_sold').value) || 0;
             const price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
             const total = qty * price;

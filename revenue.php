@@ -23,13 +23,14 @@ function updateWeeklyRevenue($conn) {
     
     // Calculate bulk sales with cost analysis
     $bulk_query = mysqli_query($conn, "
-        SELECT 
+        SELECT
             sb.*,
             p.name as product_name,
-            (SELECT cost_price FROM purchases 
-             WHERE product_id = sb.product_id 
+            (SELECT cost_price FROM purchases
+             WHERE product_id = sb.product_id
              ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
-            (SELECT package_price FROM stock WHERE product_id = sb.product_id) as default_price
+            (SELECT package_price FROM stock WHERE product_id = sb.product_id) as default_price,
+            COALESCE(NULLIF(sb.level_divisor, 0), 1) as effective_divisor
         FROM sales_bulk sb
         JOIN products p ON sb.product_id = p.id
         WHERE sb.sale_date BETWEEN '$week_start' AND '$week_end'
@@ -43,7 +44,7 @@ function updateWeeklyRevenue($conn) {
     
     while ($sale = mysqli_fetch_assoc($bulk_query)) {
         $bulk_total += $sale['total_amount'];
-        $cost = ($sale['last_cost_price'] ?? 0) * $sale['quantity'];
+        $cost = ($sale['last_cost_price'] ?? 0) * $sale['quantity'] / ($sale['effective_divisor'] ?? 1);
         $bulk_cost_total += $cost;
         $bulk_profit += ($sale['total_amount'] - $cost);
     }

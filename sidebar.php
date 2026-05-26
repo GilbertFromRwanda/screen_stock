@@ -9,7 +9,15 @@ $nav = [
             ['href' => 'dashboard.php',  'icon' => '▣',  'label' => 'Dashboard'],
             ['href' => 'products.php',   'icon' => '◫',  'label' => 'Products'],
             ['href' => 'stock.php',      'icon' => '⊞',  'label' => 'Stock'],
-            ['href' => 'purchases.php',  'icon' => '⤵',  'label' => 'Purchases'],
+            [
+                'href'    => 'purchases.php',
+                'icon'    => '⤵',
+                'label'   => 'Purchases',
+                'submenu' => [
+                    ['href' => 'purchases.php',    'label' => 'View All'],
+                    ['href' => 'new-purchase.php', 'label' => 'New Purchase'],
+                ],
+            ],
             ['href' => 'sales.php',      'icon' => '⤴',  'label' => 'Sales'],
             // ['href' => 'suppliers.php',  'icon' => '⊙',  'label' => 'Suppliers'],
         ]
@@ -61,13 +69,45 @@ $nav = [
             <?php foreach ($section['items'] as $item): ?>
                 <?php
                 if (isset($item['roles_item']) && !in_array($role, $item['roles_item'])) continue;
-                $active = $current_page === $item['href'];
+
+                if (!empty($item['submenu'])):
+                    $sub_active = false;
+                    foreach ($item['submenu'] as $sub) {
+                        if ($current_page === $sub['href']) { $sub_active = true; break; }
+                    }
+                    $group_open = $sub_active;
+                ?>
+                <div class="nav-item-group<?php echo $group_open ? ' open' : ''; ?>">
+                    <button type="button"
+                            class="nav-item nav-item-toggle<?php echo $group_open ? ' active' : ''; ?>"
+                            onclick="toggleSubmenu(this)">
+                        <span class="nav-icon"><?php echo $item['icon']; ?></span>
+                        <span class="nav-label"><?php echo $item['label']; ?></span>
+                        <span class="nav-chevron">&#8250;</span>
+                    </button>
+                    <div class="nav-submenu">
+                        <?php foreach ($item['submenu'] as $sub):
+                            $sub_is_active = $current_page === $sub['href'];
+                        ?>
+                        <a href="<?php echo $sub['href']; ?>"
+                           class="nav-subitem<?php echo $sub_is_active ? ' active' : ''; ?>">
+                            <span class="nav-sub-dot"></span>
+                            <?php echo $sub['label']; ?>
+                            <?php if ($sub_is_active): ?><span class="nav-active-dot"></span><?php endif; ?>
+                        </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <?php else:
+                    $active = $current_page === $item['href'];
                 ?>
                 <a href="<?php echo $item['href']; ?>" class="nav-item<?php echo $active ? ' active' : ''; ?>">
                     <span class="nav-icon"><?php echo $item['icon']; ?></span>
                     <span class="nav-label"><?php echo $item['label']; ?></span>
                     <?php if ($active): ?><span class="nav-active-dot"></span><?php endif; ?>
                 </a>
+                <?php endif; ?>
             <?php endforeach; ?>
         <?php endforeach; ?>
     </nav>
@@ -155,6 +195,38 @@ $nav = [
     flex-shrink: 0; opacity: .85;
 }
 .nav-label { flex: 1; }
+/* Submenu */
+.nav-item-toggle {
+    width: 100%; background: none; border: none; cursor: pointer; font-family: inherit;
+}
+.nav-chevron {
+    font-size: 18px; margin-left: auto; color: #475569;
+    transition: transform .2s; line-height: 1; flex-shrink: 0;
+}
+.nav-item-group.open .nav-chevron { transform: rotate(90deg); }
+
+.nav-submenu {
+    overflow: hidden; max-height: 0;
+    transition: max-height .25s ease;
+}
+.nav-item-group.open .nav-submenu { max-height: 200px; }
+
+.nav-subitem {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px 7px 34px;
+    font-size: 13px; font-weight: 500; color: #64748b;
+    text-decoration: none; border-radius: 8px; margin-bottom: 2px;
+    transition: background .15s, color .15s; position: relative;
+}
+.nav-subitem:hover { background: rgba(255,255,255,.06); color: #f1f5f9; }
+.nav-subitem.active { color: #93c5fd; }
+.nav-sub-dot {
+    width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    background: #334155; transition: background .15s;
+}
+.nav-subitem:hover .nav-sub-dot,
+.nav-subitem.active .nav-sub-dot { background: #3b82f6; }
+
 .nav-active-dot {
     width: 6px; height: 6px; border-radius: 50%;
     background: #3b82f6; flex-shrink: 0;
@@ -255,7 +327,7 @@ $nav = [
         overlay.classList.remove('is-open');
     });
     // Close sidebar on nav link click (mobile)
-    sidebar.querySelectorAll('.nav-item').forEach(function (link) {
+    sidebar.querySelectorAll('.nav-item, .nav-subitem').forEach(function (link) {
         link.addEventListener('click', function () {
             if (window.innerWidth <= 768) {
                 sidebar.classList.remove('is-open');
@@ -264,4 +336,8 @@ $nav = [
         });
     });
 })();
+
+function toggleSubmenu(btn) {
+    btn.closest('.nav-item-group').classList.toggle('open');
+}
 </script>
