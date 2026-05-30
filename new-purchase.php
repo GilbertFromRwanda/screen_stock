@@ -349,7 +349,13 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                     <div class="form-group">
                         <label>Cost Price per unit (RWF) *</label>
                         <input type="text" name="cost_price" id="cost_price" min="0" step="1"
-                               placeholder="0" oninput="updateSummary()">
+                               placeholder="0" oninput="updateSummary();suggestPrices()">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="suggest_rate">Markup Rate <small style="color:var(--secondary);font-weight:400;">(e.g. 1.05 = 5% profit)</small></label>
+                        <input type="text" id="suggest_rate" value="1.05" style="max-width:120px;"
+                               oninput="suggestPrices()">
                     </div>
                 </div>
 
@@ -544,12 +550,12 @@ function addLevel() {
 
         '<div class="form-group qty-group"' + (isFirst ? ' style="visibility:hidden"' : '') + '>' +
             '<label class="qty-label">Qty per level above</label>' +
-            '<input type="text" name="level_qty[]" min="1" value="1" oninput="updateSummary()">' +
+            '<input type="text" name="level_qty[]" min="1" value="1" oninput="updateSummary();suggestPrices()">' +
         '</div>' +
 
         '<div class="form-group">' +
-            '<label>Selling Price (RWF)</label>' +
-            '<input type="text" name="level_price[]" min="0" step="1" value="0">' +
+            '<label>Selling Price (RWF) <small class="level-price-hint" style="color:var(--secondary);font-weight:400;"></small></label>' +
+            '<input type="text" name="level_price[]" min="0" step="1" value="0" data-edited="0" oninput="this.dataset.edited=\'1\'">' +
         '</div>' +
 
         '<button type="button" class="btn-remove" onclick="removeLevel(this)"' +
@@ -599,6 +605,30 @@ function updateLabels() {
         var topName = rows[0].querySelector('input[name="level_name[]"]').value.trim() || 'top-level unit';
         document.getElementById('qty-label').textContent = 'Quantity Purchased (' + topName + 's) *';
     }
+}
+
+// ── Price suggestion (rate read from #suggest_rate input) ────────────────────
+function suggestPrices() {
+    var cost = parseFloat(document.getElementById('cost_price').value) || 0;
+    if (cost <= 0) return;
+    var rate = parseFloat(document.getElementById('suggest_rate').value) || 1;
+    if (rate <= 0) return;
+    var rows = document.getElementById('levelsContainer').querySelectorAll('.level-row');
+    var divisor = 1;
+    rows.forEach(function(row, i) {
+        if (i > 0) {
+            var q = parseInt(row.querySelector('input[name="level_qty[]"]').value) || 1;
+            divisor *= q;
+        }
+        var priceInput = row.querySelector('input[name="level_price[]"]');
+        if (priceInput && priceInput.dataset.edited === '0') {
+            priceInput.value = Math.round(cost / divisor * rate);
+        }
+    });
+    var pct = Math.round((rate - 1) * 100);
+    document.querySelectorAll('.level-price-hint').forEach(function(el) {
+        el.textContent = '×' + rate.toFixed(2) + ' (' + (pct >= 0 ? '+' : '') + pct + '%)';
+    });
 }
 
 function updateSummary() {
@@ -690,6 +720,7 @@ function loadPreset(key, btn) {
 
     updateSummary();
     updateLabels();
+    suggestPrices();
 }
 
 addLevel();
