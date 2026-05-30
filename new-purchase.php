@@ -600,7 +600,7 @@ function addLevel() {
 
         '<div class="form-group">' +
             '<label>Selling Price (RWF) <small class="level-price-hint" style="color:var(--secondary);font-weight:400;"></small></label>' +
-            '<input type="text" name="level_price[]" min="0" step="1" value="0" data-edited="0" oninput="this.dataset.edited=\'1\'">' +
+            '<input type="text" name="level_price[]" min="0" step="1" value="0" data-edited="0" oninput="this.dataset.edited=\'1\';updateSummary()">' +
         '</div>' +
 
         '<button type="button" class="btn-remove" onclick="removeLevel(this)"' +
@@ -804,7 +804,7 @@ addLevel();
             if (qInput) qInput.value = lvl.qty_per_parent;
         }
         var pInput = row.querySelector('input[name="level_price[]"]');
-        if (pInput) { pInput.value = lvl.selling_price; pInput.dataset.edited = '1'; }
+        if (pInput) { pInput.value = lvl.selling_price; pInput.dataset.edited = '0'; }
     });
 
     updateSummary();
