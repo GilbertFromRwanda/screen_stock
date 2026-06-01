@@ -2,7 +2,7 @@
 require_once 'config.php';
 
 if (!isLoggedIn()) { redirect('login.php'); }
-if (($_SESSION['role'] ?? '') !== 'admin') {
+if (($_SESSION['role'] ?? '') !== 'admin' && ($_SESSION['role'] ?? '') !== 'superadmin') {
     die('<p style="font-family:sans-serif;color:red;padding:40px;">Access denied — admins only.</p>');
 }
 

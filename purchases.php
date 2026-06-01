@@ -11,7 +11,7 @@ $products_arr = [];
 while ($p = mysqli_fetch_assoc($products_query)) {
     $products_arr[] = $p;
 }
-$suppliers_query = mysqli_query($conn, "SELECT id, name FROM suppliers ORDER BY name");
+$suppliers_query = mysqli_query($conn, "SELECT id, name FROM suppliers " . cidWhere() . " ORDER BY name");
 $suppliers_arr = [];
 while ($s = mysqli_fetch_assoc($suppliers_query)) {
     $suppliers_arr[] = $s;
@@ -37,19 +37,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_purchase'])) {
     $purchase_date = mysqli_real_escape_string($conn, $_POST['purchase_date']);
 
     // Insert purchase
+    $cid_sql = cidSql(); $cid_and = cidAnd();
     $query = "
         INSERT INTO purchases (
-            product_id, supplier_id, quantity, pieces_per_qty,
+            company_id, product_id, supplier_id, quantity, pieces_per_qty,
             cost_price, package_price, retail_price, purchase_date
         ) VALUES (
-            '$product_id', $supplier_id, '$quantity', '$pieces_per_qty',
+            $cid_sql, '$product_id', $supplier_id, '$quantity', '$pieces_per_qty',
             '$cost_price', '$package_price', '$retail_price', '$purchase_date'
         )
     ";
 
     if (mysqli_query($conn, $query)) {
 
-        $check_stock = mysqli_query($conn, "SELECT * FROM stock WHERE product_id = $product_id");
+        $check_stock = mysqli_query($conn, "SELECT * FROM stock WHERE product_id = $product_id $cid_and");
 
         if (mysqli_num_rows($check_stock) > 0) {
             $update = "
@@ -58,15 +59,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_purchase'])) {
                     pieces_per_package = $pieces_per_qty,
                     package_price = $package_price,
                     retail_price = $retail_price
-                WHERE product_id = $product_id
+                WHERE product_id = $product_id $cid_and
             ";
         } else {
             $update = "
                 INSERT INTO stock (
-                    product_id, quantity, pieces_per_package,
+                    company_id, product_id, quantity, pieces_per_package,
                     package_price, retail_price
                 ) VALUES (
-                    '$product_id', '$quantity', '$pieces_per_qty',
+                    $cid_sql, '$product_id', '$quantity', '$pieces_per_qty',
                     '$package_price', '$retail_price'
                 )
             ";
@@ -120,17 +121,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
 
             if ($old['product_id'] != $product_id) {
                 // Product changed: revert old product stock, apply to new
-                mysqli_query($conn, "UPDATE stock SET quantity = quantity - $old_qty WHERE product_id = {$old['product_id']}");
-                $check = mysqli_query($conn, "SELECT * FROM stock WHERE product_id = $product_id");
+                mysqli_query($conn, "UPDATE stock SET quantity = quantity - $old_qty WHERE product_id = {$old['product_id']} $cid_and");
+                $check = mysqli_query($conn, "SELECT * FROM stock WHERE product_id = $product_id $cid_and");
                 if (mysqli_num_rows($check) > 0) {
-                    mysqli_query($conn, "UPDATE stock SET quantity = quantity + $quantity, pieces_per_package = $pieces_per_qty, package_price = $package_price, retail_price = $retail_price WHERE product_id = $product_id");
+                    mysqli_query($conn, "UPDATE stock SET quantity = quantity + $quantity, pieces_per_package = $pieces_per_qty, package_price = $package_price, retail_price = $retail_price WHERE product_id = $product_id $cid_and");
                 } else {
-                    mysqli_query($conn, "INSERT INTO stock (product_id, quantity, pieces_per_package, package_price, retail_price) VALUES ('$product_id', '$quantity', '$pieces_per_qty', '$package_price', '$retail_price')");
+                    mysqli_query($conn, "INSERT INTO stock (company_id, product_id, quantity, pieces_per_package, package_price, retail_price) VALUES ($cid_sql, '$product_id', '$quantity', '$pieces_per_qty', '$package_price', '$retail_price')");
                 }
             } else {
                 // Same product: adjust by difference
                 $qty_diff = $quantity - $old_qty;
-                mysqli_query($conn, "UPDATE stock SET quantity = quantity + ($qty_diff), pieces_per_package = $pieces_per_qty, package_price = $package_price, retail_price = $retail_price WHERE product_id = $product_id");
+                mysqli_query($conn, "UPDATE stock SET quantity = quantity + ($qty_diff), pieces_per_package = $pieces_per_qty, package_price = $package_price, retail_price = $retail_price WHERE product_id = $product_id $cid_and");
             }
 
             $_SESSION['flash_success'] = "Purchase updated successfully and stock adjusted";
@@ -158,17 +159,18 @@ if (isset($_SESSION['flash_error'])) {
 $date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($conn, $_GET['date_from']) : '';
 $date_to = isset($_GET['date_to']) ? mysqli_real_escape_string($conn, $_GET['date_to']) : '';
 
-$where_clause = "";
+$cid_and = cidAndFor('p');
+$where_clause = "WHERE 1=1 $cid_and";
 $limit=" limit 50";
 if ($date_from && $date_to) {
     $limit=" ";
-    $where_clause = "WHERE p.purchase_date BETWEEN '$date_from' AND '$date_to'";
+    $where_clause .= " AND p.purchase_date BETWEEN '$date_from' AND '$date_to'";
 } elseif ($date_from) {
-     $limit=" ";
-    $where_clause = "WHERE p.purchase_date >= '$date_from'";
+    $limit=" ";
+    $where_clause .= " AND p.purchase_date >= '$date_from'";
 } elseif ($date_to) {
-     $limit=" ";
-    $where_clause = "WHERE p.purchase_date <= '$date_to'";
+    $limit=" ";
+    $where_clause .= " AND p.purchase_date <= '$date_to'";
 }
 
 // Fetch all purchases with details

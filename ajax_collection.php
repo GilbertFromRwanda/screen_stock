@@ -15,6 +15,7 @@ if ($_SESSION['role'] !== 'admin') {
     $user_id = max(0, (int)($_GET['user_id'] ?? 0));
 }
 
+$cid_and = cidAnd();
 $user_where_bulk     = $user_id > 0 ? "AND sold_by = $user_id" : "";
 $user_where_retail   = $user_id > 0 ? "AND sold_by = $user_id" : "";
 $user_where_external = $user_id > 0 ? "AND sold_by = $user_id" : "";
@@ -26,16 +27,16 @@ $row = mysqli_fetch_assoc(mysqli_query($conn, "
         COALESCE(SUM(momo_amount), 0) as momo_total,
         COALESCE(SUM(loan_amount), 0) as loan_total
     FROM (
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_bulk     WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $user_where_bulk
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_bulk     WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $cid_and $user_where_bulk
         UNION ALL
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_retail   WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $user_where_retail
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_retail   WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $cid_and $user_where_retail
         UNION ALL
-        SELECT cash_amount, momo_amount, loan_amount FROM sales_external WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $user_where_external
+        SELECT cash_amount, momo_amount, loan_amount FROM sales_external WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $cid_and $user_where_external
     ) as combined
 "));
 
 $outstanding = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE(SUM(amount), 0) as total FROM loans WHERE 1=1 $user_where_loans
+    SELECT COALESCE(SUM(amount), 0) as total FROM loans WHERE 1=1 $cid_and $user_where_loans
 "))['total'] ?? 0;
 
 echo json_encode([

@@ -8,7 +8,7 @@ if ($product_id < 1) { echo json_encode(['ok' => false, 'levels' => []]); exit; 
 
 // Most recent purchase for this product
 $purchase = mysqli_fetch_assoc(mysqli_query($conn,
-    "SELECT id FROM purchases WHERE product_id = $product_id ORDER BY id DESC LIMIT 1"
+    "SELECT id FROM purchases WHERE product_id = $product_id " . cidAnd() . " ORDER BY id DESC LIMIT 1"
 ));
 
 if (!$purchase) {
@@ -24,7 +24,7 @@ $lq     = mysqli_query($conn,
 $levels = [];
 while ($l = mysqli_fetch_assoc($lq)) $levels[] = $l;
 
-$stock     = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id"));
+$stock     = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id " . cidAnd()));
 $stock_qty = $stock ? (int)$stock['quantity'] : 0;
 
 echo json_encode(['ok' => true, 'levels' => $levels, 'stock_qty' => $stock_qty]);

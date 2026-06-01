@@ -1,6 +1,7 @@
 <?php
 $current_page = basename($_SERVER['PHP_SELF']);
 $role = $_SESSION['role'] ?? 'staff';
+$_is_super = ($role === 'superadmin');
 
 $nav = [
     'main' => [
@@ -34,7 +35,7 @@ $nav = [
     ],
     'reports' => [
         'label' => 'Reports',
-        'roles' => ['admin', 'manager'],
+        'roles' => ['admin', 'manager', 'superadmin'],
         'items' => [
             ['href' => 'summary-revenue.php','icon' => '◈', 'label' => 'Revenue Summary'],
             ['href' => 'revenue.php',        'icon' => '◉', 'label' => 'Profit Analysis'],
@@ -42,11 +43,12 @@ $nav = [
     ],
     'admin' => [
         'label' => 'Admin',
-        'roles' => ['admin', 'manager'],
+        'roles' => ['admin', 'manager', 'superadmin'],
         'items' => [
-            ['href' => 'users.php',    'icon' => '◎', 'label' => 'Users',    'roles_item' => ['admin','manager']],
-            ['href' => 'run_update.php', 'icon' => '⚙', 'label' => 'Run Updates', 'roles_item' => ['admin']],
-            ['href' => 'database.php', 'icon' => '⊗', 'label' => 'Database', 'roles_item' => ['admin']],
+            ['href' => 'companies.php', 'icon' => '◫', 'label' => 'Companies', 'roles_item' => ['superadmin']],
+            ['href' => 'users.php',     'icon' => '◎', 'label' => 'Users',     'roles_item' => ['admin','manager','superadmin']],
+            ['href' => 'run_update.php','icon' => '⚙', 'label' => 'Run Updates','roles_item' => ['admin','superadmin']],
+            ['href' => 'database.php',  'icon' => '⊗', 'label' => 'Database',  'roles_item' => ['admin','superadmin']],
         ]
     ],
 ];
@@ -117,7 +119,7 @@ $nav = [
             <div class="sidebar-avatar"><?php echo strtoupper(substr($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'U', 0, 1)); ?></div>
             <div class="sidebar-user-info">
                 <div class="sidebar-user-name"><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']); ?></div>
-                <div class="sidebar-user-role"><?php echo ucfirst($role); ?></div>
+                <div class="sidebar-user-role"><?php echo $role === 'superadmin' ? 'Super Admin' : ucfirst($role); ?></div>
             </div>
         </div>
         <a href="logout.php" class="sidebar-logout" title="Logout">⏻</a>
@@ -194,7 +196,7 @@ $nav = [
     font-size: 15px; width: 20px; text-align: center;
     flex-shrink: 0; opacity: .85;
 }
-.nav-label { flex: 1; }
+.nav-label { flex: 0; }
 /* Submenu */
 .nav-item-toggle {
     width: 100%; background: none; border: none; cursor: pointer; font-family: inherit;

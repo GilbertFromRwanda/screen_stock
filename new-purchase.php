@@ -89,10 +89,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     mysqli_begin_transaction($conn);
     $ok = true;
 
+    $cid_sql = cidSql(); $cid_and = cidAnd();
     $ok = (bool)mysqli_query($conn, "
-        INSERT INTO purchases (product_id, supplier_id, quantity, pieces_per_qty,
+        INSERT INTO purchases (company_id, product_id, supplier_id, quantity, pieces_per_qty,
             cost_price, package_price, retail_price, purchase_date)
-        VALUES ($product_id, $supplier_id, $quantity, $pieces_per_qty,
+        VALUES ($cid_sql, $product_id, $supplier_id, $quantity, $pieces_per_qty,
             $cost_price, $package_price, $retail_price, '$purchase_date')
     ");
     $purchase_id = $ok ? (int)mysqli_insert_id($conn) : 0;
@@ -101,15 +102,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($levels as $lvl) {
             $n  = mysqli_real_escape_string($conn, $lvl['name']);
             $ok = (bool)mysqli_query($conn, "
-                INSERT INTO purchase_levels (purchase_id, level_order, level_name, qty_per_parent, selling_price)
-                VALUES ($purchase_id, {$lvl['order']}, '$n', {$lvl['qty_per_parent']}, {$lvl['price']})
+                INSERT INTO purchase_levels (company_id, purchase_id, level_order, level_name, qty_per_parent, selling_price)
+                VALUES ($cid_sql, $purchase_id, {$lvl['order']}, '$n', {$lvl['qty_per_parent']}, {$lvl['price']})
             ");
             if (!$ok) break;
         }
     }
 
     if ($ok) {
-        $check = mysqli_query($conn, "SELECT id FROM stock WHERE product_id = $product_id");
+        $check = mysqli_query($conn, "SELECT id FROM stock WHERE product_id = $product_id $cid_and");
         if (mysqli_num_rows($check) > 0) {
             mysqli_query($conn, "
                 UPDATE stock SET
@@ -117,12 +118,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     pieces_per_package = $pieces_per_qty,
                     package_price      = $package_price,
                     retail_price       = $retail_price
-                WHERE product_id = $product_id
+                WHERE product_id = $product_id $cid_and
             ");
         } else {
             mysqli_query($conn, "
-                INSERT INTO stock (product_id, quantity, pieces_per_package, package_price, retail_price)
-                VALUES ($product_id, $quantity, $pieces_per_qty, $package_price, $retail_price)
+                INSERT INTO stock (company_id, product_id, quantity, pieces_per_package, package_price, retail_price)
+                VALUES ($cid_sql, $product_id, $quantity, $pieces_per_qty, $package_price, $retail_price)
             ");
         }
         mysqli_commit($conn);
@@ -139,7 +140,7 @@ $products_r = mysqli_query($conn, "SELECT id, name, category FROM products WHERE
 $products   = [];
 while ($r = mysqli_fetch_assoc($products_r)) $products[] = $r;
 
-$suppliers_r = mysqli_query($conn, "SELECT id, name FROM suppliers ORDER BY name");
+$suppliers_r = mysqli_query($conn, "SELECT id, name FROM suppliers " . cidWhere() . " ORDER BY name");
 $suppliers   = [];
 while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 ?>

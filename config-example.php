@@ -28,4 +28,22 @@ function redirect($url) {
     header("Location: $url");
     exit();
 }
+
+// Returns the session company_id as int, or null for superadmin
+function cid(): ?int {
+    return isset($_SESSION['company_id']) && $_SESSION['company_id'] !== null
+        ? (int)$_SESSION['company_id'] : null;
+}
+// Returns company_id for SQL INSERT values ("5" or "NULL")
+function cidSql(): string {
+    $c = cid(); return $c !== null ? (string)$c : 'NULL';
+}
+// Returns "AND company_id = X" or "" (superadmin sees all)
+function cidAnd(): string {
+    $c = cid(); return $c !== null ? "AND company_id = $c" : '';
+}
+// Returns "WHERE company_id = X" or "" (superadmin sees all)
+function cidWhere(): string {
+    $c = cid(); return $c !== null ? "WHERE company_id = $c" : '';
+}
 ?>

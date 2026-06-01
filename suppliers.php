@@ -13,8 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_supplier'])) {
     $email = mysqli_real_escape_string($conn, $_POST['email']);
     $address = mysqli_real_escape_string($conn, $_POST['address']);
     
-    $query = "INSERT INTO suppliers (name, contact_person, phone, email, address) 
-              VALUES ('$name', '$contact_person', '$phone', '$email', '$address')";
+    $query = "INSERT INTO suppliers (company_id, name, contact_person, phone, email, address)
+              VALUES (" . cidSql() . ", '$name', '$contact_person', '$phone', '$email', '$address')";
     
     if (mysqli_query($conn, $query)) {
         $success = "Supplier added successfully";
@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_supplier'])) {
 }
 
 // Fetch all suppliers
-$suppliers = mysqli_query($conn, "SELECT * FROM suppliers ORDER BY name");
+$suppliers = mysqli_query($conn, "SELECT * FROM suppliers " . cidWhere() . " ORDER BY name");
 ?>
 
 <!DOCTYPE html>

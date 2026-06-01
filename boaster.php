@@ -33,8 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_boaster'])) {
     }
 
     $ins = mysqli_query($conn, "
-        INSERT INTO boaster (giver, amount, date, description, phone)
-        VALUES ('$giver', '$amount', '$date', '$description', '$phone')
+        INSERT INTO boaster (company_id, giver, amount, date, description, phone)
+        VALUES (" . cidSql() . ", '$giver', '$amount', '$date', '$description', '$phone')
     ");
     
     if ($ins) {
@@ -67,7 +67,8 @@ $date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($conn, $_GET[
 $date_to   = isset($_GET['date_to'])   ? mysqli_real_escape_string($conn, $_GET['date_to'])   : '';
 $giver_filter = isset($_GET['giver']) ? mysqli_real_escape_string($conn, trim($_GET['giver'])) : '';
 
-$where_parts = [];
+$cid_and = cidAnd();
+$where_parts = ["1=1 $cid_and"];
 if ($date_from && $date_to) {
     $where_parts[] = "date BETWEEN '$date_from' AND '$date_to'";
 } elseif ($date_from) {
@@ -79,7 +80,7 @@ if ($giver_filter) {
     $where_parts[] = "giver LIKE '%$giver_filter%'";
 }
 
-$where = $where_parts ? "WHERE " . implode(" AND ", $where_parts) : "";
+$where = "WHERE " . implode(" AND ", $where_parts);
 $limit = ($date_from || $date_to || $giver_filter) ? "" : " LIMIT 100";
 
 $records = mysqli_query($conn, "
@@ -91,11 +92,11 @@ $records = mysqli_query($conn, "
 
 // ── Summary Stats ───────────────────────────────────────────────────────────────
 $stats = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT 
+    SELECT
         COUNT(*) AS total_entries,
         COUNT(DISTINCT giver) AS unique_givers,
         COALESCE(SUM(amount), 0) AS total_amount
-    FROM boaster
+    FROM boaster WHERE 1=1 $cid_and
 "));
 
 $filtered_stats = ['total_amount' => 0, 'total_entries' => 0];

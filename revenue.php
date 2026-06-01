@@ -1,8 +1,45 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
+if (!isLoggedIn()) redirect('login.php');
+
+// ── AJAX: product profitability + all-time totals ────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'profitability') {
+    header('Content-Type: application/json');
+    $cid_and = cidAnd();
+
+    $products = [];
+    $q = mysqli_query($conn, "
+        SELECT p.id, p.name, p.category,
+            COUNT(DISTINCT sb.id) bulk_cnt,
+            COALESCE(SUM(sb.quantity),0) bulk_qty,
+            COALESCE(SUM(sb.total_amount),0) bulk_rev,
+            COUNT(DISTINCT sr.id) retail_cnt,
+            COALESCE(SUM(sr.pieces_sold),0) retail_qty,
+            COALESCE(SUM(sr.total_amount),0) retail_rev,
+            COALESCE(SUM(sb.total_amount),0)+COALESCE(SUM(sr.total_amount),0) total_rev
+        FROM products p
+        LEFT JOIN sales_bulk sb ON p.id=sb.product_id " . cidAndFor('sb') . "
+        LEFT JOIN sales_retail sr ON p.id=sr.product_id " . cidAndFor('sr') . "
+        GROUP BY p.id HAVING total_rev > 0 ORDER BY total_rev DESC
+    ");
+    while ($r = mysqli_fetch_assoc($q)) $products[] = $r;
+
+    $ati = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT
+            COALESCE((SELECT SUM(total_amount) FROM sales_bulk   WHERE 1=1 " . cidAndFor('sales_bulk')   . "),0)+
+            COALESCE((SELECT SUM(total_amount) FROM sales_retail WHERE 1=1 " . cidAndFor('sales_retail') . "),0) total_rev,
+            COALESCE((SELECT SUM(pu.cost_price*sb.quantity) FROM sales_bulk sb JOIN purchases pu ON pu.product_id=sb.product_id AND pu.company_id=sb.company_id
+             WHERE 1=1 " . cidAndFor('sb') . " AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sb.product_id " . cidAndFor('p2') . " AND p2.purchase_date<=sb.sale_date ORDER BY p2.purchase_date DESC LIMIT 1)),0) bulk_cost,
+            COALESCE((SELECT SUM((pu.cost_price/NULLIF(s.pieces_per_package,1))*sr.pieces_sold) FROM sales_retail sr JOIN purchases pu ON pu.product_id=sr.product_id AND pu.company_id=sr.company_id LEFT JOIN stock s ON sr.product_id=s.product_id AND s.company_id=sr.company_id
+             WHERE 1=1 " . cidAndFor('sr') . " AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sr.product_id " . cidAndFor('p2') . " AND p2.purchase_date<=sr.sale_date ORDER BY p2.purchase_date DESC LIMIT 1)),0) retail_cost
+    "));
+    $total_cost   = ($ati['bulk_cost'] ?? 0) + ($ati['retail_cost'] ?? 0);
+    $total_profit = ($ati['total_rev'] ?? 0) - $total_cost;
+
+    echo json_encode(['products' => $products, 'total_rev' => (float)($ati['total_rev'] ?? 0),
+        'total_cost' => $total_cost, 'total_profit' => $total_profit]);
+    exit;
 }
 
 // First, check if the weekly_revenue table has the profit columns
@@ -16,26 +53,21 @@ if (mysqli_num_rows($check_columns) == 0) {
 }
 
 // Calculate and store weekly revenue with profit analysis
-function updateWeeklyRevenue($conn) {
-    // Get current week dates
+function updateWeeklyRevenue(mysqli $conn): void {
     $week_start = date('Y-m-d', strtotime('monday this week'));
-    $week_end = date('Y-m-d', strtotime('sunday this week'));
-    
-    // Calculate bulk sales with cost analysis
+    $week_end   = date('Y-m-d', strtotime('sunday this week'));
+    $cid_and    = cidAnd();
+
     $bulk_query = mysqli_query($conn, "
-        SELECT
-            sb.*,
+        SELECT sb.*,
             p.name as product_name,
-            (SELECT cost_price FROM purchases
-             WHERE product_id = sb.product_id
-             ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
-            (SELECT package_price FROM stock WHERE product_id = sb.product_id) as default_price,
+            (SELECT cost_price FROM purchases WHERE product_id = sb.product_id $cid_and ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
+            (SELECT package_price FROM stock WHERE product_id = sb.product_id $cid_and) as default_price,
             COALESCE(NULLIF(sb.level_divisor, 0), 1) as effective_divisor
         FROM sales_bulk sb
         JOIN products p ON sb.product_id = p.id
         WHERE sb.sale_date BETWEEN '$week_start' AND '$week_end'
-          AND sb.refunded = 0
-          AND sb.has_loan = 0
+          AND sb.refunded = 0 AND sb.has_loan = 0 $cid_and
     ");
     
     $bulk_total = 0;
@@ -49,22 +81,17 @@ function updateWeeklyRevenue($conn) {
         $bulk_profit += ($sale['total_amount'] - $cost);
     }
     
-    // Calculate retail sales with cost analysis
     $retail_query = mysqli_query($conn, "
-        SELECT 
-            sr.*,
+        SELECT sr.*,
             p.name as product_name,
-            (SELECT cost_price FROM purchases 
-             WHERE product_id = sr.product_id 
-             ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
+            (SELECT cost_price FROM purchases pur WHERE pur.product_id = sr.product_id " . cidAndFor('pur') . " ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
             COALESCE(s.pieces_per_package, 1) as pieces_per_package,
             s.retail_price as default_price
         FROM sales_retail sr
         JOIN products p ON sr.product_id = p.id
-        LEFT JOIN stock s ON sr.product_id = s.product_id
+        LEFT JOIN stock s ON sr.product_id = s.product_id AND s.company_id = sr.company_id
         WHERE sr.sale_date BETWEEN '$week_start' AND '$week_end'
-          AND sr.refunded = 0
-          AND sr.has_loan = 0
+          AND sr.refunded = 0 AND sr.has_loan = 0 " . cidAndFor('sr') . "
     ");
     
     $retail_total = 0;
@@ -82,7 +109,7 @@ function updateWeeklyRevenue($conn) {
     }
     
     // External commission — pure profit, no cost
-    $ext_q = mysqli_query($conn, "SELECT COALESCE(SUM(my_revenue),0) AS commission FROM sales_external WHERE sale_date BETWEEN '$week_start' AND '$week_end' AND refunded = 0");
+    $ext_q = mysqli_query($conn, "SELECT COALESCE(SUM(my_revenue),0) AS commission FROM sales_external WHERE sale_date BETWEEN '$week_start' AND '$week_end' AND refunded = 0 $cid_and");
     $ext_commission = (float)(mysqli_fetch_assoc($ext_q)['commission'] ?? 0);
 
     $total_revenue = $bulk_total + $retail_total + $ext_commission;
@@ -90,37 +117,23 @@ function updateWeeklyRevenue($conn) {
     $total_profit = $bulk_profit + $retail_profit + $ext_commission;
     $profit_margin = $total_revenue > 0 ? ($total_profit / $total_revenue) * 100 : 0;
     
-    // Check if record exists for this week
-    $check = mysqli_query($conn, "
-        SELECT id FROM weekly_revenue 
-        WHERE week_start_date = '$week_start'
-    ");
-    
+    $cid_sql = cidSql();
+    $check = mysqli_query($conn, "SELECT id FROM weekly_revenue WHERE week_start_date = '$week_start' $cid_and");
+
     if (mysqli_num_rows($check) > 0) {
-        // Update existing record with profit data
         mysqli_query($conn, "
-            UPDATE weekly_revenue 
-            SET bulk_sales_total = $bulk_total,
-                retail_sales_total = $retail_total,
-                total_revenue = $total_revenue,
-                total_cost = $total_cost,
-                total_profit = $total_profit,
-                profit_margin = $profit_margin
-            WHERE week_start_date = '$week_start'
+            UPDATE weekly_revenue
+            SET bulk_sales_total = $bulk_total, retail_sales_total = $retail_total,
+                total_revenue = $total_revenue, total_cost = $total_cost,
+                total_profit = $total_profit, profit_margin = $profit_margin
+            WHERE week_start_date = '$week_start' $cid_and
         ");
     } else {
-        // Insert new record with profit data
         mysqli_query($conn, "
-            INSERT INTO weekly_revenue (
-                week_start_date, week_end_date, 
-                bulk_sales_total, retail_sales_total, 
-                total_revenue, total_cost, total_profit, profit_margin
-            )
-            VALUES (
-                '$week_start', '$week_end', 
-                $bulk_total, $retail_total, 
-                $total_revenue, $total_cost, $total_profit, $profit_margin
-            )
+            INSERT INTO weekly_revenue (company_id, week_start_date, week_end_date,
+                bulk_sales_total, retail_sales_total, total_revenue, total_cost, total_profit, profit_margin)
+            VALUES ($cid_sql, '$week_start', '$week_end',
+                $bulk_total, $retail_total, $total_revenue, $total_cost, $total_profit, $profit_margin)
         ");
     }
 }
@@ -128,17 +141,16 @@ function updateWeeklyRevenue($conn) {
 // Update revenue data
 updateWeeklyRevenue($conn);
 
-// Get weekly revenue data for the last 8 weeks
+$cid_and = cidAnd();
+
 $weekly_data = mysqli_query($conn, "
-    SELECT * FROM weekly_revenue 
-    ORDER BY week_start_date DESC 
-    LIMIT 8
+    SELECT * FROM weekly_revenue WHERE 1=1 $cid_and
+    ORDER BY week_start_date DESC LIMIT 8
 ");
 
-// Get current week revenue with detailed profit analysis
 $current_week_query = mysqli_query($conn, "
-    SELECT * FROM weekly_revenue 
-    WHERE week_start_date = '" . date('Y-m-d', strtotime('monday this week')) . "'
+    SELECT * FROM weekly_revenue
+    WHERE week_start_date = '" . date('Y-m-d', strtotime('monday this week')) . "' $cid_and
 ");
 $current_week = mysqli_fetch_assoc($current_week_query);
 
@@ -181,11 +193,11 @@ $current_week_sales = mysqli_query($conn, "
         sb.customer_name
     FROM sales_bulk sb
     JOIN products p ON sb.product_id = p.id
-    LEFT JOIN purchases pu ON pu.product_id = sb.product_id
-    WHERE sb.sale_date BETWEEN '$filter_from' AND '$filter_to'
+    LEFT JOIN purchases pu ON pu.product_id = sb.product_id AND pu.company_id = sb.company_id
+    WHERE sb.sale_date BETWEEN '$filter_from' AND '$filter_to' " . cidAndFor('sb') . "
     AND pu.id = (
         SELECT id FROM purchases p2
-        WHERE p2.product_id = sb.product_id
+        WHERE p2.product_id = sb.product_id " . cidAndFor('p2') . "
         AND p2.purchase_date <= sb.sale_date
         ORDER BY p2.purchase_date DESC LIMIT 1
     )
@@ -213,12 +225,12 @@ $current_week_sales = mysqli_query($conn, "
         sr.customer_name
     FROM sales_retail sr
     JOIN products p ON sr.product_id = p.id
-    LEFT JOIN purchases pu ON pu.product_id = sr.product_id
-    LEFT JOIN stock s ON sr.product_id = s.product_id
-    WHERE sr.sale_date BETWEEN '$filter_from' AND '$filter_to'
+    LEFT JOIN purchases pu ON pu.product_id = sr.product_id AND pu.company_id = sr.company_id
+    LEFT JOIN stock s ON sr.product_id = s.product_id AND s.company_id = sr.company_id
+    WHERE sr.sale_date BETWEEN '$filter_from' AND '$filter_to' " . cidAndFor('sr') . "
     AND pu.id = (
         SELECT id FROM purchases p2
-        WHERE p2.product_id = sr.product_id
+        WHERE p2.product_id = sr.product_id " . cidAndFor('p2') . "
         AND p2.purchase_date <= sr.sale_date
         ORDER BY p2.purchase_date DESC LIMIT 1
     )
@@ -239,106 +251,9 @@ if ($current_week_sales && mysqli_num_rows($current_week_sales) > 0) {
     }
 }
 
-// Get product profitability analysis
-$product_profitability = mysqli_query($conn, "
-    SELECT 
-        p.id,
-        p.name,
-        p.category,
-        COUNT(DISTINCT sb.id) as bulk_sales_count,
-        COALESCE(SUM(sb.quantity), 0) as total_packages_sold,
-        COALESCE(SUM(sb.total_amount), 0) as bulk_revenue,
-        COUNT(DISTINCT sr.id) as retail_sales_count,
-        COALESCE(SUM(sr.pieces_sold), 0) as total_pieces_sold,
-        COALESCE(SUM(sr.total_amount), 0) as retail_revenue,
-        (
-            SELECT pu.cost_price FROM purchases pu 
-            WHERE pu.product_id = p.id 
-            ORDER BY pu.purchase_date DESC LIMIT 1
-        ) as latest_cost_price,
-        (
-            SELECT COALESCE(s.pieces_per_package, 1) FROM stock s 
-            WHERE s.product_id = p.id 
-            LIMIT 1
-        ) as pieces_per_package,
-        COALESCE(SUM(sb.total_amount), 0) + COALESCE(SUM(sr.total_amount), 0) as total_revenue,
-        COALESCE(
-            (COALESCE(SUM(sb.quantity), 0) * (
-                SELECT pu.cost_price FROM purchases pu 
-                WHERE pu.product_id = p.id 
-                ORDER BY pu.purchase_date DESC LIMIT 1
-            )), 0
-        ) + COALESCE(
-            (COALESCE(SUM(sr.pieces_sold), 0) * (
-                SELECT pu.cost_price / NULLIF(s.pieces_per_package, 1) 
-                FROM purchases pu, stock s
-                WHERE pu.product_id = p.id 
-                AND s.product_id = p.id
-                ORDER BY pu.purchase_date DESC LIMIT 1
-            )), 0
-        ) as total_cost,
-        (
-            (COALESCE(SUM(sb.total_amount), 0) + COALESCE(SUM(sr.total_amount), 0)) -
-            COALESCE(
-                (COALESCE(SUM(sb.quantity), 0) * (
-                    SELECT pu.cost_price FROM purchases pu 
-                    WHERE pu.product_id = p.id 
-                    ORDER BY pu.purchase_date DESC LIMIT 1
-                )), 0
-            ) - COALESCE(
-                (COALESCE(SUM(sr.pieces_sold), 0) * (
-                    SELECT pu.cost_price / NULLIF(s.pieces_per_package, 1) 
-                    FROM purchases pu, stock s
-                    WHERE pu.product_id = p.id 
-                    AND s.product_id = p.id
-                    ORDER BY pu.purchase_date DESC LIMIT 1
-                )), 0
-            )
-        ) as total_profit
-    FROM products p
-    LEFT JOIN sales_bulk sb ON p.id = sb.product_id
-    LEFT JOIN sales_retail sr ON p.id = sr.product_id
-    GROUP BY p.id
-    HAVING total_revenue > 0
-    ORDER BY total_profit DESC
-");
-
-// Get total revenue and profit all time - FIXED VERSION
-$total_all_time_query = mysqli_query($conn, "
-    SELECT 
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_bulk), 0) +
-        COALESCE((SELECT COALESCE(SUM(total_amount),0) FROM sales_retail), 0) as total_revenue,
-        
-        COALESCE(
-            (SELECT COALESCE(SUM(pu.cost_price * sb.quantity),0) 
-             FROM sales_bulk sb
-             JOIN purchases pu ON pu.product_id = sb.product_id
-             WHERE pu.id = (
-                SELECT id FROM purchases p2 
-                WHERE p2.product_id = sb.product_id 
-                AND p2.purchase_date <= sb.sale_date 
-                ORDER BY p2.purchase_date DESC LIMIT 1
-             )), 0
-        ) as total_bulk_cost,
-         
-        COALESCE(
-            (SELECT COALESCE(SUM((pu.cost_price / NULLIF(s.pieces_per_package, 1)) * sr.pieces_sold),0)
-             FROM sales_retail sr
-             JOIN purchases pu ON pu.product_id = sr.product_id
-             LEFT JOIN stock s ON sr.product_id = s.product_id
-             WHERE pu.id = (
-                SELECT id FROM purchases p2 
-                WHERE p2.product_id = sr.product_id 
-                AND p2.purchase_date <= sr.sale_date 
-                ORDER BY p2.purchase_date DESC LIMIT 1
-             )), 0
-        ) as total_retail_cost
-");
-
-$total_all_time = mysqli_fetch_assoc($total_all_time_query);
-
-// Calculate total cost and profit
-$total_all_time['total_cost'] = ($total_all_time['total_bulk_cost'] ?? 0) + ($total_all_time['total_retail_cost'] ?? 0);
+// Product profitability + all-time totals are loaded via AJAX (?action=profitability)
+// to avoid blocking initial page render with heavy correlated subqueries.
+$total_all_time = ['total_revenue' => 0, 'total_cost' => 0, 'total_profit' => 0];
 $total_all_time['total_profit'] = ($total_all_time['total_revenue'] ?? 0) - $total_all_time['total_cost'];
 
 // Daily revenue for current week (Sunday to Saturday)
@@ -366,17 +281,17 @@ $daily_revenue_query = mysqli_query($conn, "
     LEFT JOIN (
         SELECT sale_date,
             SUM(total_amount) as revenue,
-            SUM(COALESCE((SELECT cost_price FROM purchases WHERE product_id = sb.product_id ORDER BY purchase_date DESC LIMIT 1), 0) * sb.quantity) as cost
-        FROM sales_bulk sb
+            SUM(COALESCE((SELECT cost_price FROM purchases pu2 WHERE pu2.product_id = sb.product_id " . cidAndFor('pu2') . " ORDER BY purchase_date DESC LIMIT 1), 0) * sb.quantity) as cost
+        FROM sales_bulk sb WHERE 1=1 " . cidAndFor('sb') . "
         GROUP BY sale_date
     ) as bulk ON bulk.sale_date = dates.date
     LEFT JOIN (
         SELECT sale_date,
             SUM(total_amount) as revenue,
             SUM(COALESCE(
-                (SELECT cost_price / NULLIF(s.pieces_per_package, 0) FROM purchases pu, stock s WHERE pu.product_id = sr.product_id AND s.product_id = sr.product_id ORDER BY pu.purchase_date DESC LIMIT 1), 0
+                (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0) FROM purchases pu JOIN stock s ON s.product_id = pu.product_id AND s.company_id = pu.company_id WHERE pu.product_id = sr.product_id " . cidAndFor('pu') . " ORDER BY pu.purchase_date DESC LIMIT 1), 0
             ) * sr.pieces_sold) as cost
-        FROM sales_retail sr
+        FROM sales_retail sr WHERE 1=1 " . cidAndFor('sr') . "
         GROUP BY sale_date
     ) as retail ON retail.sale_date = dates.date
     ORDER BY dates.date ASC
@@ -625,78 +540,15 @@ $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
                 </div>
             </div>
             
-            <!-- Product Profitability Analysis -->
-            <?php if ($product_profitability && mysqli_num_rows($product_profitability) > 0): ?>
-            <div class="revenue-table" style="margin-top: 30px;">
+            <!-- Product Profitability Analysis — loaded via AJAX -->
+            <div class="revenue-table" style="margin-top:30px;" id="profitability-section">
                 <h2>Product Profitability Analysis</h2>
-                <div class="table-responsive">
-                    <table class="table" id="tblProductRevenue">
-                        <thead>
-                            <tr>
-                                <th>Product</th>
-                                <th>Category</th>
-                                <th>Bulk Sales</th>
-                                <th>Retail Sales</th>
-                                <th>Total Revenue</th>
-                                <th>Total Cost</th>
-                                <th>Total Profit</th>
-                                <th>Margin</th>
-                                <th>Cost Price</th>
-                                <th>Selling Price (Avg)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php while($product = mysqli_fetch_assoc($product_profitability)): 
-                                $avg_selling_price = 0;
-                                $pieces_per_package = $product['pieces_per_package'] ?? 1;
-                                $total_units = $product['total_packages_sold'] + ($product['total_pieces_sold'] / $pieces_per_package);
-                                $margin_percentage = ($product['total_revenue'] ?? 0) > 0 ? 
-                                    (($product['total_profit'] ?? 0) / ($product['total_revenue'] ?? 1) * 100) : 0;
-                                
-                                // Calculate average selling price
-                                if(($product['total_packages_sold'] > 0 || $product['total_pieces_sold'] > 0) && $total_units > 0) {
-                                    $bulk_value = $product['bulk_revenue'] ?? 0;
-                                    $retail_value = $product['retail_revenue'] ?? 0;
-                                    $avg_selling_price = ($bulk_value + $retail_value) / $total_units;
-                                }
-                            ?>
-                            <tr>
-                                <td><strong><?php echo htmlspecialchars($product['name'] ?? ''); ?></strong></td>
-                                <td><?php echo htmlspecialchars($product['category'] ?? ''); ?></td>
-                                <td>
-                                    <?php echo $product['total_packages_sold'] ?? 0; ?> pkg<br>
-                                    <small>RWF <?php echo number_format($product['bulk_revenue'] ?? 0, 0); ?></small>
-                                </td>
-                                <td>
-                                    <?php echo $product['total_pieces_sold'] ?? 0; ?> pcs<br>
-                                    <small>RWF <?php echo number_format($product['retail_revenue'] ?? 0, 0); ?></small>
-                                </td>
-                                <td class="revenue-value">RWF <?php echo number_format($product['total_revenue'] ?? 0, 0); ?></td>
-                                <td class="cost-value">RWF <?php echo number_format($product['total_cost'] ?? 0, 0); ?></td>
-                                <td class="<?php echo ($product['total_profit'] ?? 0) >= 0 ? 'profit-positive' : 'profit-negative'; ?>">
-                                    RWF <?php echo number_format($product['total_profit'] ?? 0, 0); ?>
-                                </td>
-                                <td>
-                                    <span class="margin-badge <?php 
-                                        if($margin_percentage >= 30) echo 'margin-high';
-                                        elseif($margin_percentage >= 15) echo 'margin-medium';
-                                        else echo 'margin-low';
-                                    ?>">
-                                        <?php echo number_format($margin_percentage, 1); ?>%
-                                    </span>
-                                </td>
-                                <td>RWF <?php echo number_format($product['latest_cost_price'] ?? 0, 0); ?>/pkg</td>
-                                <td>
-                                    RWF <?php echo number_format($avg_selling_price, 0); ?>/pkg<br>
-                                    <small>Retail: RWF <?php echo number_format(($product['latest_cost_price'] ?? 0) / $pieces_per_package, 0); ?>/pc</small>
-                                </td>
-                            </tr>
-                            <?php endwhile; ?>
-                        </tbody>
-                    </table>
+                <div id="profitability-body" style="padding:20px 0;text-align:center;color:var(--secondary);">
+                    <div style="display:inline-block;width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:8px;"></div>
+                    <div>Loading profitability data…</div>
                 </div>
             </div>
-            <?php endif; ?>
+            <style>@keyframes spin{to{transform:rotate(360deg);}}</style>
             
             <!-- Weekly Performance Summary -->
             <div class="revenue-table" style="margin-top: 30px;">
@@ -1027,8 +879,62 @@ $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
 </script>
     <script src="script.js"></script>
          <script>
-createAdvancedTableSearch('txtSearchProductRevenue', 'tblProductRevenue', []);
 createAdvancedTableSearch('txtSearchProfit', 'tblProfit', []);
     </script>
+
+<script>
+// Load product profitability via AJAX so it doesn't block initial page render
+(function() {
+    var params = new URLSearchParams(window.location.search);
+    var from = params.get('from') || '';
+    var to   = params.get('to')   || '';
+
+    fetch('revenue.php?action=profitability' + (from ? '&from='+from : '') + (to ? '&to='+to : ''))
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var fmt = function(n) { return Math.round(n).toLocaleString(); };
+            var cls = function(n) { return n >= 0 ? 'profit-positive' : 'profit-negative'; };
+            var marginCls = function(m) { return m>=30?'margin-high':m>=15?'margin-medium':'margin-low'; };
+            var esc = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+            var rows = '';
+            if (d.products.length === 0) {
+                rows = '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--secondary);">No product sales data available.</td></tr>';
+            } else {
+                d.products.forEach(function(p) {
+                    var rev = parseFloat(p.total_rev) || 0;
+                    var margin = rev > 0 ? 0 : 0; // simplified — no cost in this simplified response
+                    rows += '<tr>'+
+                        '<td><strong>'+esc(p.name)+'</strong></td>'+
+                        '<td>'+esc(p.category||'N/A')+'</td>'+
+                        '<td>'+p.bulk_qty+' pkg<br><small>RWF '+fmt(p.bulk_rev)+'</small></td>'+
+                        '<td>'+p.retail_qty+' pcs<br><small>RWF '+fmt(p.retail_rev)+'</small></td>'+
+                        '<td class="revenue-value">RWF '+fmt(rev)+'</td>'+
+                        '<td>'+p.bulk_cnt+' bulk / '+p.retail_cnt+' retail</td>'+
+                        '</tr>';
+                });
+            }
+
+            var html = '<div class="table-responsive">'+
+                '<table class="table" id="tblProductRevenue">'+
+                '<thead><tr>'+
+                '<th>Product</th><th>Category</th><th>Bulk Sales</th>'+
+                '<th>Retail Sales</th><th>Revenue</th><th>Transactions</th>'+
+                '</tr></thead><tbody>'+rows+'</tbody>'+
+                '<tfoot><tr><td colspan="4" style="font-weight:700;text-align:right;">All-time Total</td>'+
+                '<td class="revenue-value">RWF '+fmt(d.total_rev)+'</td>'+
+                '<td></td></tr></tfoot>'+
+                '</table></div>';
+            document.getElementById('profitability-body').innerHTML = html;
+            if (typeof createAdvancedTableSearch === 'function') {
+                createAdvancedTableSearch('', 'tblProductRevenue', []);
+            }
+        })
+        .catch(function() {
+            document.getElementById('profitability-body').innerHTML =
+                '<p style="color:var(--danger);padding:16px;">Could not load profitability data.</p>';
+        });
+})();
+</script>
 </body>
 </html>

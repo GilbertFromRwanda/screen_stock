@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_stock'])) {
             pieces_per_package = $pieces_per_pkg,
             package_price = $package_price,
             retail_price  = $retail_price
-        WHERE product_id = $product_id
+        WHERE product_id = $product_id " . cidAnd() . "
     ");
     $_SESSION['flash_success'] = "Warehouse stock updated.";
     header("Location: stock.php"); exit;
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_stock'])) 
         UPDATE retail_stock
         SET pieces_quantity = $pieces_qty,
             retail_price    = $retail_price
-        WHERE product_id = $product_id
+        WHERE product_id = $product_id " . cidAnd() . "
     ");
     $_SESSION['flash_success'] = "Retail stock updated.";
     header("Location: stock.php"); exit;
@@ -62,25 +62,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['move_to_retail'])) {
     }
 
     if ($pieces_to_move > 0 && $pieces_to_move <= $available_pieces) {
-        mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_remove WHERE product_id = $product_id");
+        mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_remove WHERE product_id = $product_id " . cidAnd());
 
-        $retail_check = mysqli_query($conn, "SELECT * FROM retail_stock WHERE product_id = $product_id");
+        $retail_check = mysqli_query($conn, "SELECT * FROM retail_stock WHERE product_id = $product_id " . cidAnd());
 
         if (mysqli_num_rows($retail_check) > 0) {
             mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $pieces_to_move,
                                  retail_price = {$stock['retail_price']}
-                                 WHERE product_id = $product_id");
+                                 WHERE product_id = $product_id " . cidAnd());
         } else {
-            mysqli_query($conn, "INSERT INTO retail_stock (product_id, pieces_quantity, retail_price)
-                                 VALUES ($product_id, $pieces_to_move, {$stock['retail_price']})");
+            mysqli_query($conn, "INSERT INTO retail_stock (company_id, product_id, pieces_quantity, retail_price)
+                                 VALUES (" . cidSql() . ", $product_id, $pieces_to_move, {$stock['retail_price']})");
         }
 
         $note = $move_type === 'packages'
             ? "Moved $packages_to_remove package(s) = $pieces_to_move pieces to retail shop"
             : "Moved $pieces_to_move pieces to retail shop";
         $note = mysqli_real_escape_string($conn, $note);
-        mysqli_query($conn, "INSERT INTO stock_movements (product_id, pieces_moved, moved_date, notes)
-                             VALUES ($product_id, $pieces_to_move, CURDATE(), '$note')");
+        mysqli_query($conn, "INSERT INTO stock_movements (company_id, product_id, pieces_moved, moved_date, notes)
+                             VALUES (" . cidSql() . ", $product_id, $pieces_to_move, CURDATE(), '$note')");
 
         $_SESSION['flash_success'] = $move_type === 'packages'
             ? "Moved $packages_to_remove package(s) ($pieces_to_move pieces) to retail shop successfully"
@@ -102,12 +102,14 @@ if (isset($_SESSION['flash_error'])) {
     unset($_SESSION['flash_error']);
 }
 
+$cid_and = cidAnd();
+
 // Get main stock with product details
 $main_stock = mysqli_query($conn, "
     SELECT s.*, p.name, p.category, p.reorder_level
     FROM stock s
     JOIN products p ON s.product_id = p.id
-    WHERE s.quantity > 0
+    WHERE s.quantity > 0 $cid_and
 ");
 
 // Pre-fetch packaging levels for all stocked products
@@ -117,9 +119,9 @@ $tmp = mysqli_query($conn, "
     FROM stock s
     JOIN products p ON s.product_id = p.id
     JOIN purchases pu ON pu.product_id = s.product_id
-        AND pu.id = (SELECT MAX(id) FROM purchases WHERE product_id = s.product_id)
+        AND pu.id = (SELECT MAX(id) FROM purchases pu2 WHERE pu2.product_id = s.product_id " . cidAndFor('pu2') . ")
     JOIN purchase_levels pl ON pl.purchase_id = pu.id
-    WHERE s.quantity > 0
+    WHERE s.quantity > 0 " . cidAndFor('s') . "
     ORDER BY s.product_id, pl.level_order
 ");
 $stock_levels = [];
@@ -131,10 +133,10 @@ if ($tmp) {
 
 // Get retail stock
 $retail_stock = mysqli_query($conn, "
-    SELECT r.*, p.name, p.category 
+    SELECT r.*, p.name, p.category
     FROM retail_stock r
     JOIN products p ON r.product_id = p.id
-    WHERE r.pieces_quantity > 0
+    WHERE r.pieces_quantity > 0 $cid_and
 ");
 
 // Get products for dropdown

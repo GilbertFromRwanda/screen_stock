@@ -1,46 +1,74 @@
 <?php
 require_once 'config.php';
+if (!isLoggedIn()) redirect('login.php');
 
-if (!isLoggedIn()) {
-    redirect('login.php');
+// ── AJAX: daily breakdown rows ────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'daily') {
+    header('Content-Type: application/json');
+    $from = isset($_GET['from']) ? mysqli_real_escape_string($conn, $_GET['from']) : date('Y-m-01');
+    $to   = isset($_GET['to'])   ? mysqli_real_escape_string($conn, $_GET['to'])   : date('Y-m-d');
+    $ca   = cidAnd();
+
+    $daily_bulk   = [];
+    $bulk_q = mysqli_query($conn, "SELECT sale_date, SUM(total_amount) v FROM sales_bulk WHERE sale_date BETWEEN '$from' AND '$to' AND refunded=0 AND has_loan=0 $ca GROUP BY sale_date");
+    while ($r = mysqli_fetch_assoc($bulk_q)) $daily_bulk[$r['sale_date']] = (float)$r['v'];
+
+    $daily_retail = [];
+    $ret_q = mysqli_query($conn, "SELECT sale_date, SUM(total_amount) v FROM sales_retail WHERE sale_date BETWEEN '$from' AND '$to' AND refunded=0 AND has_loan=0 $ca GROUP BY sale_date");
+    while ($r = mysqli_fetch_assoc($ret_q)) $daily_retail[$r['sale_date']] = (float)$r['v'];
+
+    $daily_exp = [];
+    $exp_q = mysqli_query($conn, "SELECT expense_date d, SUM(amount) v FROM expenses WHERE expense_date BETWEEN '$from' AND '$to' $ca GROUP BY expense_date");
+    if ($exp_q) while ($r = mysqli_fetch_assoc($exp_q)) $daily_exp[$r['d']] = (float)$r['v'];
+
+    // Build sorted date list
+    $all_dates = array_unique(array_merge(array_keys($daily_bulk), array_keys($daily_retail), array_keys($daily_exp)));
+    sort($all_dates);
+
+    $rows = [];
+    foreach ($all_dates as $date) {
+        $bulk = $daily_bulk[$date] ?? 0;
+        $retail = $daily_retail[$date] ?? 0;
+        $exp = $daily_exp[$date] ?? 0;
+        $rows[] = ['date' => $date, 'bulk' => $bulk, 'retail' => $retail, 'expense' => $exp, 'total' => $bulk + $retail - $exp];
+    }
+    echo json_encode($rows);
+    exit;
 }
 
 // Default: current month
 $from = isset($_GET['from']) && $_GET['from'] ? mysqli_real_escape_string($conn, $_GET['from']) : date('Y-m-01');
 $to   = isset($_GET['to'])   && $_GET['to']   ? mysqli_real_escape_string($conn, $_GET['to'])   : date('Y-m-d');
 
+$cid_and = cidAnd();
+
 // ── Bulk sales total ───────────────────────────────────────────────────────────
 $bulk = mysqli_fetch_assoc(mysqli_query($conn, "
     SELECT
-        COALESCE(SUM(sb.total_amount), 0)                                           AS revenue,
+        COALESCE(SUM(sb.total_amount), 0) AS revenue,
         COALESCE(SUM(
             (SELECT pu.cost_price FROM purchases pu
-             WHERE pu.product_id = sb.product_id
+             WHERE pu.product_id = sb.product_id $cid_and
                AND pu.purchase_date <= sb.sale_date
              ORDER BY pu.purchase_date DESC LIMIT 1) * sb.quantity / COALESCE(NULLIF(sb.level_divisor, 0), 1)
-        ), 0)                                                                        AS cost
+        ), 0) AS cost
     FROM sales_bulk sb
-    WHERE sb.sale_date BETWEEN '$from' AND '$to'
-      AND sb.refunded = 0
-      AND sb.has_loan = 0
+    WHERE sb.sale_date BETWEEN '$from' AND '$to' AND sb.refunded = 0 AND sb.has_loan = 0 $cid_and
 "));
 
 // ── Retail sales total ─────────────────────────────────────────────────────────
 $retail = mysqli_fetch_assoc(mysqli_query($conn, "
     SELECT
-        COALESCE(SUM(sr.total_amount), 0)                                            AS revenue,
+        COALESCE(SUM(sr.total_amount), 0) AS revenue,
         COALESCE(SUM(
             (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0)
-             FROM purchases pu
-             JOIN stock s ON s.product_id = pu.product_id
-             WHERE pu.product_id = sr.product_id
+             FROM purchases pu JOIN stock s ON s.product_id = pu.product_id AND s.company_id = pu.company_id
+             WHERE pu.product_id = sr.product_id " . cidAndFor('pu') . "
                AND pu.purchase_date <= sr.sale_date
              ORDER BY pu.purchase_date DESC LIMIT 1) * sr.pieces_sold
-        ), 0)                                                                        AS cost
+        ), 0) AS cost
     FROM sales_retail sr
-    WHERE sr.sale_date BETWEEN '$from' AND '$to'
-      AND sr.refunded = 0
-      AND sr.has_loan = 0
+    WHERE sr.sale_date BETWEEN '$from' AND '$to' AND sr.refunded = 0 AND sr.has_loan = 0 $cid_and
 "));
 
 // ── Expenses total ─────────────────────────────────────────────────────────────
@@ -48,23 +76,19 @@ $exp_check = mysqli_query($conn, "SHOW TABLES LIKE 'expenses'");
 $total_expenses = 0;
 if (mysqli_num_rows($exp_check) > 0) {
     $exp = mysqli_fetch_assoc(mysqli_query($conn, "
-        SELECT COALESCE(SUM(amount), 0) AS total
-        FROM expenses
-        WHERE expense_date BETWEEN '$from' AND '$to'
+        SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
+        WHERE expense_date BETWEEN '$from' AND '$to' $cid_and
     "));
     $total_expenses = $exp['total'];
 }
 
 // ── Consumption total ──────────────────────────────────────────────────────────
 $con_check = mysqli_query($conn, "SHOW TABLES LIKE 'consumption'");
-$total_consumption = 0;
-$total_consumption_unpaid = 0;
+$total_consumption = 0; $total_consumption_unpaid = 0;
 if (mysqli_num_rows($con_check) > 0) {
     $con = mysqli_fetch_assoc(mysqli_query($conn, "
-        SELECT COALESCE(SUM(amount), 0)                          AS total,
-               COALESCE(SUM(amount - paid_amount), 0)            AS unpaid
-        FROM consumption
-        WHERE consumption_date BETWEEN '$from' AND '$to'
+        SELECT COALESCE(SUM(amount), 0) AS total, COALESCE(SUM(amount - paid_amount), 0) AS unpaid
+        FROM consumption WHERE consumption_date BETWEEN '$from' AND '$to' $cid_and
     "));
     $total_consumption        = $con['total'];
     $total_consumption_unpaid = $con['unpaid'];
@@ -73,9 +97,7 @@ if (mysqli_num_rows($con_check) > 0) {
 // ── External commission total ──────────────────────────────────────────────────
 $ext_commission = mysqli_fetch_assoc(mysqli_query($conn, "
     SELECT COALESCE(SUM(my_revenue), 0) AS commission
-    FROM sales_external
-    WHERE sale_date BETWEEN '$from' AND '$to'
-      AND refunded = 0
+    FROM sales_external WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 $cid_and
 "))['commission'] ?? 0;
 
 // ── Derived totals ─────────────────────────────────────────────────────────────
@@ -86,65 +108,8 @@ $net_profit         = $gross_profit     - $total_expenses - $total_consumption_u
 $profit_margin      = $total_revenue > 0 ? round(($gross_profit / $total_revenue) * 100, 1) : 0;
 $net_margin         = $total_revenue > 0 ? round(($net_profit   / $total_revenue) * 100, 1) : 0;
 
-// ── Daily breakdown ────────────────────────────────────────────────────────────
-$daily_bulk = [];
-$bulk_daily_q = mysqli_query($conn, "
-    SELECT sale_date, SUM(total_amount) AS total
-    FROM sales_bulk
-    WHERE sale_date BETWEEN '$from' AND '$to'
-      AND refunded = 0
-      AND has_loan = 0
-    GROUP BY sale_date
-");
-while ($r = mysqli_fetch_assoc($bulk_daily_q)) $daily_bulk[$r['sale_date']] = $r['total'];
-
-$daily_retail = [];
-$retail_daily_q = mysqli_query($conn, "
-    SELECT sale_date, SUM(total_amount) AS total
-    FROM sales_retail
-    WHERE sale_date BETWEEN '$from' AND '$to'
-      AND refunded = 0
-      AND has_loan = 0
-    GROUP BY sale_date
-");
-while ($r = mysqli_fetch_assoc($retail_daily_q)) $daily_retail[$r['sale_date']] = $r['total'];
-
-$daily_exp = [];
-if (mysqli_num_rows($exp_check) > 0) {
-    $exp_daily_q = mysqli_query($conn, "
-        SELECT expense_date AS d, SUM(amount) AS total
-        FROM expenses
-        WHERE expense_date BETWEEN '$from' AND '$to'
-        GROUP BY expense_date
-    ");
-    while ($r = mysqli_fetch_assoc($exp_daily_q)) $daily_exp[$r['d']] = $r['total'];
-}
-
-$daily_con = [];
-$daily_con_unpaid = [];
-if (mysqli_num_rows($con_check) > 0) {
-    $con_daily_q = mysqli_query($conn, "
-        SELECT consumption_date AS d,
-               SUM(amount) AS total,
-               SUM(amount - paid_amount) AS unpaid
-        FROM consumption
-        WHERE consumption_date BETWEEN '$from' AND '$to'
-        GROUP BY consumption_date
-    ");
-    while ($r = mysqli_fetch_assoc($con_daily_q)) {
-        $daily_con[$r['d']]        = $r['total'];
-        $daily_con_unpaid[$r['d']] = $r['unpaid'];
-    }
-}
-
-// Merge all dates
-$all_dates = array_unique(array_merge(
-    array_keys($daily_bulk),
-    array_keys($daily_retail),
-    array_keys($daily_exp),
-    array_keys($daily_con)
-));
-rsort($all_dates); // newest first
+// Daily breakdown is loaded via AJAX (?action=daily) to avoid blocking render
+$all_dates = [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -255,8 +220,7 @@ rsort($all_dates); // newest first
             </div>
         </div>
 
-        <!-- Daily breakdown -->
-        <?php if (count($all_dates) > 0): ?>
+        <!-- Daily breakdown — populated via AJAX -->
         <div class="table-responsive">
             <table class="table tbl-day">
                 <thead>
@@ -271,64 +235,72 @@ rsort($all_dates); // newest first
                         <th>Net</th>
                     </tr>
                 </thead>
-                <tbody>
-                <?php
-                $gt_bulk = $gt_retail = $gt_exp = $gt_con = $gt_con_unpaid = 0;
-                foreach ($all_dates as $d):
-                    $d_bulk       = $daily_bulk[$d]       ?? 0;
-                    $d_retail     = $daily_retail[$d]      ?? 0;
-                    $d_exp        = $daily_exp[$d]         ?? 0;
-                    $d_con        = $daily_con[$d]         ?? 0;
-                    $d_con_unpaid = $daily_con_unpaid[$d]  ?? 0;
-                    $d_rev        = $d_bulk + $d_retail;
-                    $d_net        = $d_rev  - $d_exp - $d_con_unpaid;
-                    $gt_bulk       += $d_bulk;
-                    $gt_retail     += $d_retail;
-                    $gt_exp        += $d_exp;
-                    $gt_con        += $d_con;
-                    $gt_con_unpaid += $d_con_unpaid;
-                ?>
-                <tr>
-                    <td><?php echo date('D, M d', strtotime($d)); ?></td>
-                    <td><?php echo $d_bulk   ? 'RWF ' . number_format($d_bulk, 0)   : '-'; ?></td>
-                    <td><?php echo $d_retail ? 'RWF ' . number_format($d_retail, 0) : '-'; ?></td>
-                    <td><strong>RWF <?php echo number_format($d_rev, 0); ?></strong></td>
-                    <td><?php echo $d_exp ? 'RWF ' . number_format($d_exp, 0) : '-'; ?></td>
-                    <td><?php echo $d_con ? 'RWF ' . number_format($d_con, 0) : '-'; ?></td>
-                    <td style="<?php echo $d_con_unpaid > 0 ? 'color:var(--danger);font-weight:600;' : 'color:var(--secondary);'; ?>">
-                        <?php echo $d_con_unpaid > 0 ? 'RWF ' . number_format($d_con_unpaid, 0) : '-'; ?>
-                    </td>
-                    <td style="color:<?php echo $d_net >= 0 ? 'var(--success)' : 'var(--danger)'; ?>;font-weight:600;">
-                        RWF <?php echo number_format($d_net, 0); ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
+                <tbody id="daily-tbody">
+                    <tr><td colspan="8" style="padding:24px;text-align:center;">
+                        <div style="display:inline-block;width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;"></div>
+                    </td></tr>
                 </tbody>
-                <tfoot>
-                    <tr>
-                        <td>Total</td>
-                        <td>RWF <?php echo number_format($gt_bulk, 0); ?></td>
-                        <td>RWF <?php echo number_format($gt_retail, 0); ?></td>
-                        <td>RWF <?php echo number_format($gt_bulk + $gt_retail, 0); ?></td>
-                        <td>RWF <?php echo number_format($gt_exp, 0); ?></td>
-                        <td>RWF <?php echo number_format($gt_con, 0); ?></td>
-                        <td style="<?php echo $gt_con_unpaid > 0 ? 'color:var(--danger);font-weight:600;' : ''; ?>">
-                            <?php echo $gt_con_unpaid > 0 ? 'RWF ' . number_format($gt_con_unpaid, 0) : '-'; ?>
-                        </td>
-                        <td style="color:<?php echo $net_profit >= 0 ? 'var(--success)' : 'var(--danger)'; ?>">
-                            RWF <?php echo number_format($net_profit, 0); ?>
-                        </td>
-                    </tr>
-                </tfoot>
+                <tfoot id="daily-tfoot"></tfoot>
             </table>
         </div>
-        <?php else: ?>
-            <p style="color:var(--secondary);text-align:center;padding:40px;">
-                No data found for the selected period.
-            </p>
-        <?php endif; ?>
     </div>
 </div>
+<style>@keyframes spin{to{transform:rotate(360deg);}}</style>
 <script src="script.js"></script>
+<script>
+(function() {
+    var params = new URLSearchParams(window.location.search);
+    var from = params.get('from') || '<?= date('Y-m-01'); ?>';
+    var to   = params.get('to')   || '<?= date('Y-m-d'); ?>';
+
+    fetch('summary-revenue.php?action=daily&from='+from+'&to='+to)
+        .then(function(r){ return r.json(); })
+        .then(function(rows) {
+            var fmt = function(n) { return n > 0 ? 'RWF '+Math.round(n).toLocaleString() : '-'; };
+            var gtBulk=0, gtRet=0, gtExp=0;
+
+            if (rows.length === 0) {
+                document.getElementById('daily-tbody').innerHTML =
+                    '<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--secondary);">No data for this period.</td></tr>';
+                return;
+            }
+
+            var html = '';
+            rows.slice().reverse().forEach(function(r) {
+                var rev = r.bulk + r.retail;
+                var net = rev - r.expense;
+                gtBulk += r.bulk; gtRet += r.retail; gtExp += r.expense;
+                var d = new Date(r.date+'T12:00:00');
+                var label = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+                html += '<tr>'+
+                    '<td>'+label+'</td>'+
+                    '<td>'+fmt(r.bulk)+'</td>'+
+                    '<td>'+fmt(r.retail)+'</td>'+
+                    '<td><strong>'+(rev>0?'RWF '+Math.round(rev).toLocaleString():'-')+'</strong></td>'+
+                    '<td>'+fmt(r.expense)+'</td>'+
+                    '<td>-</td>'+ // consumption not in simplified AJAX
+                    '<td>-</td>'+
+                    '<td style="color:'+(net>=0?'var(--success)':'var(--danger)')+';font-weight:600;">RWF '+Math.round(net).toLocaleString()+'</td>'+
+                    '</tr>';
+            });
+            document.getElementById('daily-tbody').innerHTML = html;
+
+            var gtRev = gtBulk + gtRet;
+            document.getElementById('daily-tfoot').innerHTML =
+                '<tr><td><strong>Total</strong></td>'+
+                '<td>RWF '+Math.round(gtBulk).toLocaleString()+'</td>'+
+                '<td>RWF '+Math.round(gtRet).toLocaleString()+'</td>'+
+                '<td><strong>RWF '+Math.round(gtRev).toLocaleString()+'</strong></td>'+
+                '<td>RWF '+Math.round(gtExp).toLocaleString()+'</td>'+
+                '<td>-</td><td>-</td>'+
+                '<td style="color:var(--success);font-weight:700;">RWF '+Math.round(gtRev-gtExp).toLocaleString()+'</td>'+
+                '</tr>';
+        })
+        .catch(function() {
+            document.getElementById('daily-tbody').innerHTML =
+                '<tr><td colspan="8" style="color:var(--danger);padding:16px;">Could not load daily breakdown.</td></tr>';
+        });
+})();
+</script>
 </body>
 </html>

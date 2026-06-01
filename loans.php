@@ -25,17 +25,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
     mysqli_begin_transaction($conn);
     $ok = true;
 
+    $cid_sql = cidSql(); $cid_and = cidAnd();
     $ok = (bool)mysqli_query($conn, "
-        INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by)
-        VALUES ('$product_id','$qty','$amount','$client','$phone','$loan_date',$given_by)
+        INSERT INTO loans (company_id, product_id, qty, amount, client, phone, loan_date, given_by)
+        VALUES ($cid_sql, '$product_id','$qty','$amount','$client','$phone','$loan_date',$given_by)
     ");
     $loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id $cid_and");
 
     if ($ok) $ok = (bool)mysqli_query($conn, "
-        INSERT INTO loan_clients (name, phone, total_loans, unpaid_amount)
-        VALUES ('$client', $ph, 1, '$amount')
+        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount)
+        VALUES ($cid_sql, '$client', $ph, 1, '$amount')
         ON DUPLICATE KEY UPDATE
             id            = LAST_INSERT_ID(id),
             total_loans   = total_loans + 1,
@@ -118,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_loan_pa
     $client_filter = mysqli_real_escape_string($conn, trim($_POST['client_filter'] ?? ''));
 
     $having = "balance > 0";
+    $cid_and = cidAnd();
     $client_where = $client_filter ? "AND l.client LIKE '%$client_filter%'" : "";
 
     $unpaid = mysqli_query($conn, "
@@ -130,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_loan_pa
         FROM loans l
         LEFT JOIN products p ON p.id = l.product_id
         LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_sum ON lp_sum.loan_id = l.id
-        WHERE l.amount > COALESCE(lp_sum.paid, 0) $client_where
+        WHERE l.amount > COALESCE(lp_sum.paid, 0) $cid_and $client_where
         ORDER BY l.loan_date ASC, l.id ASC
     ");
 
@@ -162,6 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
     $total         = (float)mysqli_real_escape_string($conn, $_POST['total_amount']);
     $client_filter = mysqli_real_escape_string($conn, trim($_POST['client_filter'] ?? ''));
     $payment_date  = date('Y-m-d');
+    $cid_and       = cidAnd();
 
     if ($total <= 0) {
         header('Content-Type: application/json');
@@ -178,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
                (l.amount - COALESCE(lp_sum.paid, 0)) AS balance
         FROM loans l
         LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_sum ON lp_sum.loan_id = l.id
-        WHERE l.amount > COALESCE(lp_sum.paid, 0) $client_where
+        WHERE l.amount > COALESCE(lp_sum.paid, 0) $cid_and $client_where
         ORDER BY l.loan_date ASC, l.id ASC
     ");
 
@@ -308,7 +311,7 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
         $ok = true;
 
         if ($loan['product_id']) {
-            $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$loan['qty']} WHERE product_id = {$loan['product_id']}");
+            $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$loan['qty']} WHERE product_id = {$loan['product_id']} " . cidAnd());
         }
         if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loan_payments WHERE loan_id = $del_id");
         if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loans WHERE id = $del_id");
@@ -338,13 +341,15 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
 // Flash messages
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 
+$cid_and = cidAnd();
+
 // All loan clients — direct read from cached aggregate columns, no joins needed
 $clients_qr = mysqli_query($conn, "
     SELECT id AS client_id, name, phone, created_at AS registered_at,
            total_loans AS loan_count,
            paid_amount + unpaid_amount AS total_loaned,
            paid_amount AS total_paid
-    FROM loan_clients
+    FROM loan_clients WHERE 1=1 $cid_and
     ORDER BY updated_at DESC
 ");
 $clients_data = [];
@@ -356,8 +361,8 @@ $products_query = mysqli_query($conn, "
         COALESCE(rs.retail_price, s.retail_price, 0) AS retail_price,
         COALESCE(rs.pieces_quantity, 0) AS stock_qty
     FROM products p
-    LEFT JOIN retail_stock rs ON rs.product_id = p.id
-    LEFT JOIN stock s ON s.product_id = p.id
+    LEFT JOIN retail_stock rs ON rs.product_id = p.id " . cidAndFor('rs') . "
+    LEFT JOIN stock s ON s.product_id = p.id " . cidAndFor('s') . "
     WHERE p.deleted = 0 ORDER BY p.name
 ");
 $products_arr = [];
@@ -366,7 +371,7 @@ while ($p = mysqli_fetch_assoc($products_query)) $products_arr[] = $p;
 // Registered clients (distinct, ordered by most recent)
 $clients_query = mysqli_query($conn, "
     SELECT client, phone, MAX(loan_date) AS last_visit, COUNT(*) AS visits
-    FROM loans
+    FROM loans WHERE 1=1 $cid_and
     GROUP BY client, phone
     ORDER BY last_visit DESC
 ");
@@ -384,6 +389,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
     LEFT JOIN (
         SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id
     ) lp_sum ON lp_sum.loan_id = l.id
+    WHERE 1=1 $cid_and
 "));
 $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 ?>
@@ -530,7 +536,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
             <div class="form-group" style="flex:1;min-width:160px;margin-bottom:0;">
                 <label>Amount to Pay (RWF)*</label>
-                <input type="number" id="gloan_amount" min="1" step="1" placeholder="Enter amount..."
+                <input type="text" id="gloan_amount" min="1" step="1" placeholder="Enter amount..."
                     oninput="scheduleLoanPreview()">
             </div>
             <div class="form-group" style="flex:1;min-width:160px;margin-bottom:0;">
@@ -633,7 +639,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             </div>
             <div class="form-group">
                 <label>Quantity*</label>
-                <input type="number" id="loan_qty" name="qty" min="1" required value="1">
+                <input type="text" id="loan_qty" name="qty" min="1" required value="1">
             </div>
             <div class="form-group">
                 <label>Amount (RWF)*</label>
@@ -688,7 +694,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             </div>
             <div class="form-group">
                 <label>Amount Paid (RWF)*</label>
-                <input type="number" id="pay_amount" name="amount_paid" min="1" step="1" required>
+                <input type="text" id="pay_amount" name="amount_paid" min="1" step="1" required>
             </div>
             <button type="submit" name="add_payment" class="btn btn-primary">Save Payment</button>
         </form>

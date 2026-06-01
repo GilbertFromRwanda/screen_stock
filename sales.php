@@ -5,6 +5,8 @@ if (!isLoggedIn()) {
     redirect('login.php');
 }
 
+$cid_sql = cidSql(); $cid_and = cidAnd();
+
 // Auto-add level_divisor column to sales_bulk if missing (backward-compatible)
 if (mysqli_num_rows(mysqli_query($conn, "SHOW COLUMNS FROM sales_bulk LIKE 'level_divisor'")) == 0) {
     mysqli_query($conn, "ALTER TABLE sales_bulk ADD COLUMN level_divisor INT NOT NULL DEFAULT 1 AFTER quantity");
@@ -15,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
     $id = (int)$_POST['sale_id'];
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_bulk WHERE id=$id"));
     if ($row) {
-        mysqli_query($conn, "UPDATE stock SET quantity = quantity + {$row['quantity']} WHERE product_id = {$row['product_id']}");
+        mysqli_query($conn, "UPDATE stock SET quantity = quantity + {$row['quantity']} WHERE product_id = {$row['product_id']} $cid_and");
         if ($row['loan_amount'] > 0) {
             $client_e = mysqli_real_escape_string($conn, $row['customer_name']);
             mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
@@ -42,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
     if ($old) {
         $qty_diff = $old['quantity'] - $new_qty;
         if ($qty_diff !== 0) {
-            mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty_diff WHERE product_id = {$old['product_id']}");
+            mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
         mysqli_query($conn, "UPDATE sales_bulk SET quantity=$new_qty, package_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         $_SESSION['flash_success'] = "Bulk sale updated.";
@@ -55,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale']))
     $id = (int)$_POST['sale_id'];
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_retail WHERE id=$id"));
     if ($row) {
-        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$row['pieces_sold']} WHERE product_id = {$row['product_id']}");
+        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$row['pieces_sold']} WHERE product_id = {$row['product_id']} $cid_and");
         if ($row['loan_amount'] > 0) {
             $client_e = mysqli_real_escape_string($conn, $row['customer_name']);
             mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
@@ -82,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
     if ($old) {
         $qty_diff = $old['pieces_sold'] - $new_qty;
         if ($qty_diff !== 0) {
-            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty_diff WHERE product_id = {$old['product_id']}");
+            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
         mysqli_query($conn, "UPDATE sales_retail SET pieces_sold=$new_qty, retail_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         $_SESSION['flash_success'] = "Retail sale updated.";
@@ -152,6 +154,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
         header("Location: sales.php"); exit;
     }
+    if ($loan_amount > 0 && empty($customer_name)) {
+        $_SESSION['flash_error'] = "Client name is required when loan amount is set.";
+        header("Location: sales.php"); exit;
+    }
     if ($loan_amount > 0 && empty($phone)) {
         $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
         header("Location: sales.php"); exit;
@@ -178,20 +184,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     $ok = true;
 
     if ($need_new_owner) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO product_owners (name, phone) VALUES ('$owner_name', $op)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO product_owners (company_id, name, phone) VALUES ($cid_sql, '$owner_name', $op)");
         if ($ok) $owner_id_val = (int)mysqli_insert_id($conn);
     }
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
-                   VALUES ('$product_name', $owner_id_val, $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by)");
+    if ($ok) $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
+                   VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by)");
     $ext_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
     if ($ok && $loan_amount > 0) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, product_name, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($loan_product_id, '$product_name', $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($cid_sql, $loan_product_id, '$product_name', $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
         $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ('$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
@@ -235,11 +241,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
         header("Location: sales.php"); exit;
     }
+    if ($loan_amount > 0 && empty($customer_name)) {
+        $_SESSION['flash_error'] = "Client name is required when loan amount is set.";
+        header("Location: sales.php"); exit;
+    }
     if ($loan_amount > 0 && empty($phone)) {
         $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
         header("Location: sales.php"); exit;
     }
-    $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id"));
+    $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id $cid_and"));
     if (!$stock || $stock['quantity'] < $packages_to_deduct) {
         $_SESSION['flash_error'] = "Insufficient stock available";
         header("Location: sales.php"); exit;
@@ -252,18 +262,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     mysqli_begin_transaction($conn);
     $ok = true;
 
-    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (product_id, quantity, level_divisor, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                   VALUES ($product_id, $quantity, $level_divisor, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
+    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+                   VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
     $bulk_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_deduct WHERE product_id = $product_id");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_deduct WHERE product_id = $product_id $cid_and");
 
     if ($ok && $loan_amount > 0) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ('$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$bulk_sale_id)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ($cid_sql, '$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$bulk_sale_id)");
         $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ('$customer_name', $ph_lc, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
@@ -306,11 +316,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
         header("Location: sales.php"); exit;
     }
+    if ($loan_amount > 0 && empty($customer_name)) {
+        $_SESSION['flash_error'] = "Client name is required when loan amount is set.";
+        header("Location: sales.php"); exit;
+    }
     if ($loan_amount > 0 && empty($phone)) {
         $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
         header("Location: sales.php"); exit;
     }
-    $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $product_id"));
+    $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $product_id $cid_and"));
     if (!$retail || $retail['pieces_quantity'] < $pieces_to_deduct) {
         $_SESSION['flash_error'] = "Insufficient retail stock available";
         header("Location: sales.php"); exit;
@@ -324,18 +338,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     $ok = true;
 
     // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
-    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                   VALUES ($product_id, $pieces_to_deduct, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
+    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+                   VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
     $retail_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_to_deduct WHERE product_id = $product_id");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_to_deduct WHERE product_id = $product_id $cid_and");
 
     if ($ok && $loan_amount > 0) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (product_id, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ('$product_id','$pieces_to_deduct','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$retail_sale_id)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ($cid_sql, '$product_id','$pieces_to_deduct','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$retail_sale_id)");
         $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ('$customer_name', $ph_lc, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
@@ -417,16 +431,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['process_refund'])) {
     $rsn_sql  = $reason !== '' ? "'$reason'" : 'NULL';
 
     $ins = mysqli_query($conn, "
-        INSERT INTO refunds (sale_type, sale_id, product_id, product_name, quantity, refund_amount, loss_amount, reason, back_to_stock, refund_date, processed_by)
-        VALUES ('$sale_type', $sale_id, $pid_sql, '$pname_e', $qty, 0, $loss_sql, $rsn_sql, $back_to_stock, '$refund_date', $processed_by)
+        INSERT INTO refunds (company_id, sale_type, sale_id, product_id, product_name, quantity, refund_amount, loss_amount, reason, back_to_stock, refund_date, processed_by)
+        VALUES ($cid_sql, '$sale_type', $sale_id, $pid_sql, '$pname_e', $qty, 0, $loss_sql, $rsn_sql, $back_to_stock, '$refund_date', $processed_by)
     ");
     if (!$ins) { header('Content-Type: application/json'); echo json_encode(['success'=>false,'message'=>mysqli_error($conn)]); exit; }
 
     if ($back_to_stock && $product_id) {
         if ($sale_type === 'bulk') {
-            mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty WHERE product_id = $product_id");
+            mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty WHERE product_id = $product_id $cid_and");
         } elseif ($sale_type === 'retail') {
-            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty WHERE product_id = $product_id");
+            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty WHERE product_id = $product_id $cid_and");
         }
     }
 
@@ -486,7 +500,7 @@ $bulk_products = mysqli_query($conn, "
     SELECT s.*, p.name, p.unit_measure ,p.category
     FROM stock s
     JOIN products p ON s.product_id = p.id
-    WHERE s.quantity > 0
+    WHERE s.quantity > 0 $cid_and
 ");
 
 // Get products for retail sale
@@ -494,7 +508,7 @@ $retail_products = mysqli_query($conn, "
     SELECT r.*, p.name, p.unit_measure,p.category
     FROM retail_stock r
     JOIN products p ON r.product_id = p.id
-    WHERE r.pieces_quantity > 0
+    WHERE r.pieces_quantity > 0 $cid_and
 ");
 
 $highlight_sale_id  = (int)($_GET['highlight'] ?? 0);
@@ -551,7 +565,7 @@ if ($highlight_sale_id > 0 && $highlight_sale_tab !== '') {
         FROM sales_bulk sb
         JOIN products p ON sb.product_id = p.id
         LEFT JOIN users u ON sb.sold_by = u.id
-        WHERE sb.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
+        WHERE sb.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' $cid_and
         ORDER BY sb.created_at DESC
     ");
 
@@ -560,7 +574,7 @@ if ($highlight_sale_id > 0 && $highlight_sale_tab !== '') {
         FROM sales_retail sr
         JOIN products p ON sr.product_id = p.id
         LEFT JOIN users u ON sr.sold_by = u.id
-        WHERE sr.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
+        WHERE sr.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' $cid_and
         ORDER BY sr.created_at DESC
     ");
 
@@ -571,7 +585,7 @@ if ($highlight_sale_id > 0 && $highlight_sale_tab !== '') {
         FROM sales_external se
         LEFT JOIN users u ON se.sold_by = u.id
         LEFT JOIN product_owners po ON se.owner_id = po.id
-        WHERE se.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe'
+        WHERE se.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' $cid_and
         $ext_owner_where
         ORDER BY se.created_at DESC
     ");
@@ -583,8 +597,8 @@ $all_products_query = mysqli_query($conn, "
            COALESCE(s.package_price, 0) as bulk_price,
            COALESCE(r.retail_price, 0)  as retail_price
     FROM products p
-    LEFT JOIN stock s        ON s.product_id = p.id
-    LEFT JOIN retail_stock r ON r.product_id = p.id
+    LEFT JOIN stock s        ON s.product_id = p.id " . cidAndFor('s') . "
+    LEFT JOIN retail_stock r ON r.product_id = p.id " . cidAndFor('r') . "
     ORDER BY p.category, p.name
 ");
 $all_products_arr = [];
@@ -821,8 +835,8 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     <tbody>
                         <?php $bulk_grand_total = 0; while($row = mysqli_fetch_assoc($recent_bulk_sales)):
                             $bulk_grand_total += $row['total_amount'];
-                            $default_price_query = mysqli_query($conn, "SELECT package_price FROM stock WHERE product_id = {$row['product_id']}");
-                            $default_price = mysqli_fetch_assoc($default_price_query)['package_price'];
+                            $default_price_query = mysqli_query($conn, "SELECT package_price FROM stock WHERE product_id = {$row['product_id']} $cid_and");
+                            $default_price = mysqli_fetch_assoc($default_price_query)['package_price'] ?? 0;
                             $price_diff = $row['package_price'] - $default_price;
                             $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
                         ?>

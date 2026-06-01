@@ -16,10 +16,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
     if (mysqli_num_rows($result) == 1) {
         $user = mysqli_fetch_assoc($result);
         if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id']   = $user['id'];
-            $_SESSION['username']  = $user['username'];
-            $_SESSION['full_name'] = $user['full_name'];
-            $_SESSION['role']      = $user['role'];
+            // Block inactive users
+            if (($user['status'] ?? 'active') !== 'active') {
+                echo json_encode(['success' => false, 'error' => 'Your account has been deactivated. Contact your administrator.']);
+                exit;
+            }
+            // Block users whose company is inactive (superadmin with NULL company_id is exempt)
+            if (!empty($user['company_id'])) {
+                $company = mysqli_fetch_assoc(mysqli_query($conn,
+                    "SELECT status FROM companies WHERE id = " . (int)$user['company_id']
+                ));
+                if (!$company || $company['status'] !== 'active') {
+                    echo json_encode(['success' => false, 'error' => 'Your company account is inactive. Please contact support.']);
+                    exit;
+                }
+            }
+            $_SESSION['user_id']    = $user['id'];
+            $_SESSION['username']   = $user['username'];
+            $_SESSION['full_name']  = $user['full_name'];
+            $_SESSION['role']       = $user['role'];
+            $_SESSION['company_id'] = $user['company_id'] ?? null;
             mysqli_query($conn, "UPDATE users SET last_login = NOW() WHERE id = " . $user['id']);
             echo json_encode(['success' => true, 'redirect' => 'dashboard.php']);
         } else {

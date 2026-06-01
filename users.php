@@ -5,8 +5,38 @@ if (!isLoggedIn()) {
     redirect('login.php');
 }
 
+$is_super = isSuperAdmin();
+
+// If filtering by company (superadmin feature)
+$filter_company_id = isset($_GET['company_id']) ? (int)$_GET['company_id'] : null;
+
+// Fetch companies for superadmin dropdowns
+$all_companies    = [];
+$filter_companies = [];
+$filter_company_name = '';
+if ($is_super) {
+    $res_c = mysqli_query($conn, "SELECT id, name FROM companies WHERE status='active' ORDER BY name");
+    while ($row = mysqli_fetch_assoc($res_c)) $all_companies[] = $row;
+
+    $res_fc = mysqli_query($conn, "SELECT id, name FROM companies ORDER BY name");
+    while ($row = mysqli_fetch_assoc($res_fc)) $filter_companies[] = $row;
+
+    if ($filter_company_id) {
+        $fcr = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM companies WHERE id=$filter_company_id"));
+        $filter_company_name = $fcr['name'] ?? '';
+    }
+}
+
 // Handle Create/Update/Delete/Toggle/Bulk
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+
+    // Determine company_id for new/edited user
+    if ($is_super) {
+        $post_company_id = isset($_POST['company_id']) && $_POST['company_id'] !== ''
+            ? (int)$_POST['company_id'] : null;
+    } else {
+        $post_company_id = $_SESSION['company_id'] ?? null;
+    }
 
     // Add / Edit
     if (isset($_POST['modal_action']) && in_array($_POST['modal_action'], ['add_user','edit_user'])) {
@@ -15,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $full_name = mysqli_real_escape_string($conn, $_POST['full_name']);
         $role      = mysqli_real_escape_string($conn, $_POST['role']);
         $status    = isset($_POST['status']) ? mysqli_real_escape_string($conn, $_POST['status']) : 'active';
+        $cid_sql   = $post_company_id !== null ? (int)$post_company_id : 'NULL';
 
         if ($_POST['modal_action'] === 'add_user') {
             $password     = password_hash($_POST['password'], PASSWORD_DEFAULT);
@@ -22,8 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (mysqli_num_rows($check_result) > 0) {
                 $error = "Username or email already exists!";
             } else {
-                $q = "INSERT INTO users (username,password,email,full_name,role,status,created_at)
-                      VALUES ('$username','$password','$email','$full_name','$role','$status',NOW())";
+                $q = "INSERT INTO users (company_id,username,password,email,full_name,role,status,created_at)
+                      VALUES ($cid_sql,'$username','$password','$email','$full_name','$role','$status',NOW())";
                 if (mysqli_query($conn, $q)) {
                     $success = "User added successfully!";
                     logActivity($conn, $_SESSION['user_id'], 'Add User', "Added user: $username");
@@ -37,10 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (mysqli_num_rows($check_result) > 0) {
                 $error = "Username or email already exists!";
             } else {
-                $q = "UPDATE users SET username='$username',email='$email',full_name='$full_name',role='$role',status='$status' WHERE id=$user_id";
+                $q = "UPDATE users SET company_id=$cid_sql,username='$username',email='$email',full_name='$full_name',role='$role',status='$status' WHERE id=$user_id";
                 if (!empty($_POST['password'])) {
                     $pw = password_hash($_POST['password'], PASSWORD_DEFAULT);
-                    $q  = "UPDATE users SET username='$username',password='$pw',email='$email',full_name='$full_name',role='$role',status='$status' WHERE id=$user_id";
+                    $q  = "UPDATE users SET company_id=$cid_sql,username='$username',password='$pw',email='$email',full_name='$full_name',role='$role',status='$status' WHERE id=$user_id";
                 }
                 if (mysqli_query($conn, $q)) {
                     $success = "User updated successfully!";
@@ -114,9 +145,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Fetch users
+// Fetch users — superadmin sees all (optionally filtered), others see own company only
 $all_users = [];
-$res = mysqli_query($conn, "SELECT * FROM users ORDER BY created_at DESC");
+if ($is_super) {
+    if ($filter_company_id) {
+        $res = mysqli_query($conn, "SELECT u.*, c.name AS company_name FROM users u LEFT JOIN companies c ON c.id=u.company_id WHERE u.company_id=$filter_company_id ORDER BY u.created_at DESC");
+    } else {
+        $res = mysqli_query($conn, "SELECT u.*, c.name AS company_name FROM users u LEFT JOIN companies c ON c.id=u.company_id ORDER BY u.created_at DESC");
+    }
+} else {
+    $my_company = (int)($_SESSION['company_id'] ?? 0);
+    $res = mysqli_query($conn, "SELECT u.*, c.name AS company_name FROM users u LEFT JOIN companies c ON c.id=u.company_id WHERE u.company_id=$my_company ORDER BY u.created_at DESC");
+}
 while ($row = mysqli_fetch_assoc($res)) $all_users[] = $row;
 
 $total_users    = count($all_users);
@@ -213,15 +253,35 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
         <div class="user-table-container">
             <div class="user-table-header">
                 <div class="uth-left">
-                    <h2>Users <span class="count-pill"><?php echo $total_users; ?> total</span></h2>
+                    <h2>
+                        Users <span class="count-pill"><?php echo $total_users; ?> total</span>
+                        <?php if ($is_super && $filter_company_name): ?>
+                            <span style="font-size:13px;font-weight:500;color:var(--primary);margin-left:8px;">
+                                — <?php echo htmlspecialchars($filter_company_name); ?>
+                                <a href="users.php" style="font-size:11px;color:var(--gray-400);margin-left:6px;">&times; clear</a>
+                            </span>
+                        <?php endif; ?>
+                    </h2>
                 </div>
                 <div class="table-actions">
                     <div class="search-box">
                         <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                         <input type="text" id="txtSearchusersTable" placeholder="Search users…">
                     </div>
+                    <?php if ($is_super): ?>
+                    <select class="filter-dropdown" id="companyFilter" onchange="filterByCompany(this.value)">
+                        <option value="">All Companies</option>
+                        <?php foreach ($filter_companies as $fc): ?>
+                            <option value="<?php echo $fc['id']; ?>"
+                                <?php echo $filter_company_id == $fc['id'] ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($fc['name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php endif; ?>
                     <select class="filter-dropdown" id="roleFilter" onchange="filterUsers()">
                         <option value="all">All Roles</option>
+                        <?php if ($is_super): ?><option value="superadmin">Superadmin</option><?php endif; ?>
                         <option value="admin">Admin</option>
                         <option value="manager">Manager</option>
                         <option value="user">User</option>
@@ -242,6 +302,7 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                             <tr>
                                 <th width="40"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"></th>
                                 <th>User</th>
+                                <?php if ($is_super): ?><th>Company</th><?php endif; ?>
                                 <th>Role</th>
                                 <th>Status</th>
                                 <th>Joined</th>
@@ -258,12 +319,13 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                             }
                             $av_color   = avatarColor($user['full_name']);
                             $search_val = strtolower($user['full_name'] . ' ' . $user['username'] . ' ' . $user['email']);
-                            $data_attrs = 'data-id="'        . $user['id']                         . '"'
-                                        . ' data-fullname="' . htmlspecialchars($user['full_name']) . '"'
-                                        . ' data-username="' . htmlspecialchars($user['username'])  . '"'
-                                        . ' data-email="'    . htmlspecialchars($user['email'])     . '"'
-                                        . ' data-role="'     . $user['role']                        . '"'
-                                        . ' data-status="'   . $user['status']                      . '"';
+                            $data_attrs = 'data-id="'         . $user['id']                              . '"'
+                                        . ' data-fullname="'  . htmlspecialchars($user['full_name'])  . '"'
+                                        . ' data-username="'  . htmlspecialchars($user['username'])   . '"'
+                                        . ' data-email="'     . htmlspecialchars($user['email'])      . '"'
+                                        . ' data-role="'      . $user['role']                         . '"'
+                                        . ' data-status="'    . $user['status']                       . '"'
+                                        . ' data-companyid="' . ($user['company_id'] ?? '')           . '"';
                         ?>
                             <tr data-role="<?php echo $user['role']; ?>"
                                 data-status="<?php echo $user['status']; ?>"
@@ -289,6 +351,15 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                                         </div>
                                     </div>
                                 </td>
+                                <?php if ($is_super): ?>
+                                <td>
+                                    <?php if ($user['company_name']): ?>
+                                        <span style="font-size:13px;"><?php echo htmlspecialchars($user['company_name']); ?></span>
+                                    <?php else: ?>
+                                        <span style="color:var(--gray-400);font-size:13px;">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <?php endif; ?>
                                 <td><span class="role-badge <?php echo $user['role']; ?>"><?php echo ucfirst($user['role']); ?></span></td>
                                 <td><span class="status-badge <?php echo $user['status']; ?>"><?php echo ucfirst($user['status']); ?></span></td>
                                 <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
@@ -316,7 +387,7 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                             </tr>
                         <?php endforeach; ?>
                         <?php if (empty($all_users)): ?>
-                            <tr><td colspan="7" style="text-align:center;color:var(--secondary);padding:32px;">No users found.</td></tr>
+                            <tr><td colspan="<?php echo $is_super ? 8 : 7; ?>" style="text-align:center;color:var(--secondary);padding:32px;">No users found.</td></tr>
                         <?php endif; ?>
                         </tbody>
                     </table>
@@ -391,6 +462,18 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                     <p class="pw-hint" id="pwHint">Minimum 6 characters</p>
                 </div>
 
+                <?php if ($is_super): ?>
+                <div class="form-group">
+                    <label>Company</label>
+                    <select name="company_id" id="mCompanyId">
+                        <option value="">— No company (superadmin) —</option>
+                        <?php foreach ($all_companies as $co): ?>
+                            <option value="<?php echo $co['id']; ?>"><?php echo htmlspecialchars($co['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label>Role <span class="req">*</span></label>
@@ -398,6 +481,9 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                             <option value="user">User</option>
                             <option value="manager">Manager</option>
                             <option value="admin">Admin</option>
+                            <?php if ($is_super): ?>
+                            <option value="superadmin">Superadmin</option>
+                            <?php endif; ?>
                         </select>
                     </div>
                     <div class="form-group">
@@ -454,6 +540,8 @@ function openEditModal(btn) {
     document.getElementById('mEmail').value      = btn.dataset.email;
     document.getElementById('mRole').value       = btn.dataset.role;
     document.getElementById('mStatus').value     = btn.dataset.status;
+    const cmp = document.getElementById('mCompanyId');
+    if (cmp) cmp.value = btn.dataset.companyid || '';
     document.getElementById('userModal').classList.add('is-open');
     document.getElementById('mFullName').focus();
 }
@@ -531,6 +619,16 @@ function applyListFilter() {
     });
 }
 function filterUsers() { applyListFilter(); }
+
+function filterByCompany(company_id) {
+    const url = new URL(window.location.href);
+    if (company_id) {
+        url.searchParams.set('company_id', company_id);
+    } else {
+        url.searchParams.delete('company_id');
+    }
+    window.location.href = url.toString();
+}
 
 document.getElementById('txtSearchusersTable')
     .addEventListener('input', applyListFilter);

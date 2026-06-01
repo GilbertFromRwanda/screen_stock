@@ -17,16 +17,15 @@ $receivers_arr = [];
 while ($r = mysqli_fetch_assoc($receivers_query)) $receivers_arr[] = $r;
 
 // Get products with retail price
-$products_query = mysqli_query($conn, "
-    SELECT p.id, p.name, p.category,
+$products_query = mysqli_query($conn,
+    "SELECT p.id, p.name, p.category,
         COALESCE(rs.retail_price, s.retail_price, 0) AS retail_price,
         COALESCE(rs.pieces_quantity, 0) AS stock_qty
     FROM products p
-    LEFT JOIN retail_stock rs ON rs.product_id = p.id
-    LEFT JOIN stock s ON s.product_id = p.id
-    WHERE p.deleted = 0
-    ORDER BY p.name
-");
+    LEFT JOIN retail_stock rs ON rs.product_id = p.id " . cidAndFor('rs') . "
+    LEFT JOIN stock s ON s.product_id = p.id " . cidAndFor('s') . "
+    WHERE p.deleted = 0 ORDER BY p.name"
+);
 $products_arr = [];
 while ($p = mysqli_fetch_assoc($products_query)) {
     $products_arr[] = $p;
@@ -48,13 +47,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_consumption'])) {
         $_SESSION['flash_error'] = $msg;
     } else {
         $insert = mysqli_query($conn, "
-            INSERT INTO consumption (product_id, qty, amount, paid_amount, done_by, consumption_date)
-            VALUES ('$product_id', '$qty', '$amount', '$paid_amount', '$done_by', '$consumption_date')
+            INSERT INTO consumption (company_id, product_id, qty, amount, paid_amount, done_by, consumption_date)
+            VALUES (" . cidSql() . ", '$product_id', '$qty', '$amount', '$paid_amount', '$done_by', '$consumption_date')
         ");
         if ($insert) {
             mysqli_query($conn, "
                 UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty
-                WHERE product_id = $product_id
+                WHERE product_id = $product_id " . cidAnd() . "
             ");
             if ($is_ajax) { header('Content-Type: application/json'); echo json_encode(['success' => true, 'message' => 'Consumption recorded successfully.']); exit; }
             $_SESSION['flash_success'] = "Consumption recorded successfully.";
@@ -73,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_payment
     $total = (float)$_POST['total_amount'];
     $done_by_filter = mysqli_real_escape_string($conn, trim($_POST['done_by_filter'] ?? ''));
 
-    $where_filter = "paid_amount < amount";
+    $where_filter = "paid_amount < amount " . cidAnd();
     if ($done_by_filter) $where_filter .= " AND done_by LIKE '%$done_by_filter%'";
 
     $unpaid = mysqli_query($conn, "
@@ -129,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_payment'])
         exit;
     }
 
-    $where_filter = "paid_amount < amount";
+    $where_filter = "paid_amount < amount " . cidAnd();
     if ($done_by_filter) $where_filter .= " AND done_by LIKE '%$done_by_filter%'";
 
     $unpaid = mysqli_query($conn, "
@@ -207,16 +206,17 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 $date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($conn, $_GET['date_from']) : '';
 $date_to   = isset($_GET['date_to'])   ? mysqli_real_escape_string($conn, $_GET['date_to'])   : '';
 
-$where = "";
+$cid_and = cidAnd();
+$where = "WHERE 1=1 $cid_and";
 $limit = " LIMIT 100";
 if ($date_from && $date_to) {
-    $where = "WHERE c.consumption_date BETWEEN '$date_from' AND '$date_to'";
+    $where .= " AND c.consumption_date BETWEEN '$date_from' AND '$date_to'";
     $limit = "";
 } elseif ($date_from) {
-    $where = "WHERE c.consumption_date >= '$date_from'";
+    $where .= " AND c.consumption_date >= '$date_from'";
     $limit = "";
 } elseif ($date_to) {
-    $where = "WHERE c.consumption_date <= '$date_to'";
+    $where .= " AND c.consumption_date <= '$date_to'";
     $limit = "";
 }
 
@@ -236,7 +236,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
         COALESCE(SUM(paid_amount), 0)     AS total_paid,
         SUM(CASE WHEN paid_amount >= amount AND amount > 0 THEN 1 ELSE 0 END) AS total_paid_count,
         SUM(CASE WHEN paid_amount < amount THEN 1 ELSE 0 END)                 AS total_unpaid_count
-    FROM consumption
+    FROM consumption WHERE 1=1 $cid_and
 "));
 $total_balance = $stats['total_amount'] - $stats['total_paid'];
 ?>

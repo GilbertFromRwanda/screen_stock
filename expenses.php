@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_expense'])) {
         if ($is_ajax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $msg]); exit; }
         $_SESSION['flash_error'] = $msg;
     } else {
-        $ins = mysqli_query($conn, "INSERT INTO expenses (description, category, amount, expense_date) VALUES ('$description','$category','$amount','$expense_date')");
+        $ins = mysqli_query($conn, "INSERT INTO expenses (company_id, description, category, amount, expense_date) VALUES (" . cidSql() . ",'$description','$category','$amount','$expense_date')");
         if ($is_ajax) { header('Content-Type: application/json'); echo json_encode($ins ? ['success' => true] : ['success' => false, 'message' => mysqli_error($conn)]); exit; }
         $_SESSION['flash_success'] = $ins ? "Expense added." : "Error: " . mysqli_error($conn);
     }
@@ -55,10 +55,11 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 $date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($conn, $_GET['date_from']) : '';
 $date_to   = isset($_GET['date_to'])   ? mysqli_real_escape_string($conn, $_GET['date_to'])   : '';
 
-$where = ""; $limit = " LIMIT 100";
-if ($date_from && $date_to)  { $where = "WHERE expense_date BETWEEN '$date_from' AND '$date_to'"; $limit = ""; }
-elseif ($date_from)           { $where = "WHERE expense_date >= '$date_from'"; $limit = ""; }
-elseif ($date_to)             { $where = "WHERE expense_date <= '$date_to'";   $limit = ""; }
+$cid_and = cidAnd();
+$where = "WHERE 1=1 $cid_and"; $limit = " LIMIT 100";
+if ($date_from && $date_to)  { $where .= " AND expense_date BETWEEN '$date_from' AND '$date_to'"; $limit = ""; }
+elseif ($date_from)           { $where .= " AND expense_date >= '$date_from'"; $limit = ""; }
+elseif ($date_to)             { $where .= " AND expense_date <= '$date_to'";   $limit = ""; }
 
 $records = mysqli_query($conn, "SELECT * FROM expenses $where ORDER BY expense_date DESC, id DESC $limit");
 
@@ -69,7 +70,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
         COALESCE(SUM(amount), 0)                                       AS total_amount,
         COALESCE(SUM(CASE WHEN MONTH(expense_date)=MONTH(CURDATE()) AND YEAR(expense_date)=YEAR(CURDATE()) THEN amount ELSE 0 END), 0) AS this_month,
         COALESCE(SUM(CASE WHEN expense_date = CURDATE() THEN amount ELSE 0 END), 0) AS today
-    FROM expenses
+    FROM expenses WHERE 1=1 $cid_and
 "));
 ?>
 <!DOCTYPE html>

@@ -10,7 +10,8 @@ $date_from = $_GET['date_from'] ?? '';
 $date_to   = $_GET['date_to']   ?? '';
 $type_filter = in_array($_GET['type'] ?? '', ['bulk','retail','external']) ? $_GET['type'] : '';
 
-$where_parts = ["r.back_to_stock = 0"];
+$cid_and = cidAnd();
+$where_parts = ["r.back_to_stock = 0 $cid_and"];
 if ($date_from) $where_parts[] = "r.refund_date >= '" . mysqli_real_escape_string($conn, $date_from) . "'";
 if ($date_to)   $where_parts[] = "r.refund_date <= '" . mysqli_real_escape_string($conn, $date_to)   . "'";
 if ($type_filter) $where_parts[] = "r.sale_type = '" . mysqli_real_escape_string($conn, $type_filter) . "'";
@@ -24,7 +25,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
            COALESCE(SUM(CASE WHEN r.sale_type='retail'   THEN r.loss_amount ELSE 0 END),0) AS retail_loss,
            COALESCE(SUM(CASE WHEN r.sale_type='external' THEN r.loss_amount ELSE 0 END),0) AS external_loss
     FROM refunds r
-    WHERE r.back_to_stock = 0
+    WHERE r.back_to_stock = 0 $cid_and
 "));
 
 // Filtered losses
