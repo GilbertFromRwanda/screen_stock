@@ -3,8 +3,8 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 03, 2026 at 04:51 PM
--- Server version: 10.4.28-MariaDB
+-- Generation Time: Jun 01, 2026 at 05:03 PM
+-- Server version: 10.4.28-MariaDB-log
 -- PHP Version: 8.2.4
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
@@ -29,6 +29,7 @@ SET time_zone = "+00:00";
 
 CREATE TABLE `boaster` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `giver` varchar(255) NOT NULL,
   `amount` decimal(12,0) NOT NULL,
   `date` date NOT NULL,
@@ -40,11 +41,35 @@ CREATE TABLE `boaster` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `companies`
+--
+
+CREATE TABLE `companies` (
+  `id` int(11) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `phone` varchar(50) DEFAULT NULL,
+  `address` text DEFAULT NULL,
+  `status` enum('active','inactive') NOT NULL DEFAULT 'active',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `companies`
+--
+
+INSERT INTO `companies` (`id`, `name`, `email`, `phone`, `address`, `status`, `created_at`) VALUES
+(1, 'Test ltd', 'askforgilbert@gmail.com', '+250789047173', 'Remera', 'inactive', '2026-06-01 12:33:33');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `consumption`
 --
 
 CREATE TABLE `consumption` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) NOT NULL,
   `qty` int(11) NOT NULL DEFAULT 1,
   `amount` decimal(10,2) DEFAULT 0.00,
@@ -62,6 +87,7 @@ CREATE TABLE `consumption` (
 
 CREATE TABLE `expenses` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `description` varchar(255) NOT NULL,
   `category` varchar(100) DEFAULT NULL,
   `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
@@ -77,12 +103,14 @@ CREATE TABLE `expenses` (
 
 CREATE TABLE `loans` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `product_name` varchar(255) DEFAULT NULL,
   `qty` int(11) NOT NULL DEFAULT 1,
   `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `client` varchar(100) NOT NULL,
   `phone` varchar(20) DEFAULT NULL,
+  `client_id` int(11) DEFAULT NULL,
   `loan_date` date NOT NULL,
   `given_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -94,11 +122,30 @@ CREATE TABLE `loans` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `loan_clients`
+--
+
+CREATE TABLE `loan_clients` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
+  `name` varchar(100) NOT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `total_loans` int(11) NOT NULL DEFAULT 0,
+  `paid_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `unpaid_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `loan_payments`
 --
 
 CREATE TABLE `loan_payments` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `loan_id` int(11) NOT NULL,
   `amount_paid` decimal(10,2) NOT NULL DEFAULT 0.00,
   `payment_date` date NOT NULL,
@@ -388,10 +435,18 @@ INSERT INTO `products` (`id`, `name`, `category`, `reorder_level`, `unit_measure
 
 CREATE TABLE `product_owners` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `name` varchar(90) NOT NULL,
   `phone` varchar(20) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `product_owners`
+--
+
+INSERT INTO `product_owners` (`id`, `company_id`, `name`, `phone`, `created_at`) VALUES
+(1, NULL, 'mupenzi dodos', '0789047170', '2026-05-21 10:11:41');
 
 -- --------------------------------------------------------
 
@@ -401,6 +456,7 @@ CREATE TABLE `product_owners` (
 
 CREATE TABLE `purchases` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `supplier_id` int(11) DEFAULT NULL,
   `quantity` int(11) NOT NULL,
@@ -415,11 +471,59 @@ CREATE TABLE `purchases` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `purchase_levels`
+--
+
+CREATE TABLE `purchase_levels` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
+  `purchase_id` int(11) NOT NULL,
+  `level_order` tinyint(4) NOT NULL,
+  `level_name` varchar(100) NOT NULL,
+  `qty_per_parent` int(11) NOT NULL DEFAULT 1,
+  `selling_price` decimal(10,2) NOT NULL DEFAULT 0.00
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `refunds`
+--
+
+CREATE TABLE `refunds` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
+  `sale_type` enum('bulk','retail','external') NOT NULL,
+  `sale_id` int(11) NOT NULL,
+  `product_id` int(11) DEFAULT NULL,
+  `product_name` varchar(255) DEFAULT NULL,
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `refund_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `reason` varchar(255) DEFAULT NULL,
+  `back_to_stock` tinyint(1) NOT NULL DEFAULT 0,
+  `refund_date` date NOT NULL,
+  `processed_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `loss_amount` decimal(12,2) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `refunds`
+--
+
+INSERT INTO `refunds` (`id`, `company_id`, `sale_type`, `sale_id`, `product_id`, `product_name`, `quantity`, `refund_amount`, `reason`, `back_to_stock`, `refund_date`, `processed_by`, `created_at`, `loss_amount`) VALUES
+(1, NULL, 'bulk', 1, 77, '14 PRO GX', 1, 0.00, 'damaged for screen', 0, '2026-05-21', 1, '2026-05-21 09:53:46', 50000.00),
+(2, NULL, 'external', 1, NULL, 'HUAWEI & OPPO-EXPERIA 10 MARK 5 II', 1, 0.00, 'damaged screen', 0, '2026-05-21', 1, '2026-05-21 10:12:32', 70000.00);
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `retail_stock`
 --
 
 CREATE TABLE `retail_stock` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `pieces_quantity` int(11) NOT NULL DEFAULT 0,
   `retail_price` decimal(10,2) DEFAULT NULL,
@@ -434,8 +538,10 @@ CREATE TABLE `retail_stock` (
 
 CREATE TABLE `sales_bulk` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `quantity` int(11) NOT NULL,
+  `level_divisor` int(11) NOT NULL DEFAULT 1,
   `package_price` decimal(10,2) DEFAULT NULL,
   `total_amount` decimal(10,2) DEFAULT NULL,
   `sale_date` date DEFAULT NULL,
@@ -447,7 +553,8 @@ CREATE TABLE `sales_bulk` (
   `momo_amount` decimal(12,2) DEFAULT 0.00,
   `loan_amount` decimal(12,2) DEFAULT 0.00,
   `has_loan` tinyint(1) NOT NULL DEFAULT 0,
-  `amount` decimal(12,2) DEFAULT 0.00
+  `amount` decimal(12,2) DEFAULT 0.00,
+  `refunded` tinyint(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -458,6 +565,7 @@ CREATE TABLE `sales_bulk` (
 
 CREATE TABLE `sales_external` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_name` varchar(255) NOT NULL,
   `owner_id` int(11) DEFAULT NULL,
   `quantity` int(11) NOT NULL DEFAULT 1,
@@ -470,43 +578,20 @@ CREATE TABLE `sales_external` (
   `sold_by` int(11) DEFAULT NULL,
   `phone` varchar(20) DEFAULT NULL,
   `sale_date` date NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `refunded` tinyint(1) NOT NULL DEFAULT 0,
+  `my_revenue` decimal(12,2) NOT NULL DEFAULT 0.00
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
--- ── loan_clients ─────────────────────────────────────────────────────────────
--- One row per unique client (name + phone). Aggregates loan totals so the
--- loans list can show per-client balances without scanning all loans rows.
-CREATE TABLE IF NOT EXISTS `loan_clients` (
-    `id`           INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `name`         VARCHAR(100)  NOT NULL,
-    `phone`        VARCHAR(20)   DEFAULT NULL,
-    `total_loans`  INT           NOT NULL DEFAULT 0,
-    `paid_amount`  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    `unpaid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    `updated_at`   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY `uq_client_name_phone` (`name`, `phone`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
--- ── loans.client_id ──────────────────────────────────────────────────────────
--- Link loans to loan_clients by id (replaces string-match joins).
-ALTER TABLE `loans` ADD COLUMN IF NOT EXISTS `client_id` INT DEFAULT NULL AFTER `phone`;
-ALTER TABLE `loans` ADD INDEX  IF NOT EXISTS `idx_loans_client_id` (`client_id`);
-
--- Backfill client_id on all existing loans
-UPDATE `loans` l
-JOIN `loan_clients` lc ON lc.name = l.client
-    AND COALESCE(lc.phone,'') = COALESCE(l.phone,'')
-SET l.client_id = lc.id
-WHERE l.client_id IS NULL;
 --
 -- Table structure for table `sales_retail`
 --
 
 CREATE TABLE `sales_retail` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `pieces_sold` int(11) NOT NULL,
   `retail_price` decimal(10,2) DEFAULT NULL,
@@ -520,7 +605,8 @@ CREATE TABLE `sales_retail` (
   `momo_amount` decimal(12,2) DEFAULT 0.00,
   `loan_amount` decimal(12,2) DEFAULT 0.00,
   `has_loan` tinyint(1) NOT NULL DEFAULT 0,
-  `amount` decimal(12,2) DEFAULT 0.00
+  `amount` decimal(12,2) DEFAULT 0.00,
+  `refunded` tinyint(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -531,6 +617,7 @@ CREATE TABLE `sales_retail` (
 
 CREATE TABLE `stock` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `quantity` int(11) NOT NULL,
   `pieces_per_package` int(11) DEFAULT 1,
@@ -547,6 +634,7 @@ CREATE TABLE `stock` (
 
 CREATE TABLE `stock_movements` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `pieces_moved` int(11) NOT NULL,
   `moved_date` date DEFAULT NULL,
@@ -562,6 +650,7 @@ CREATE TABLE `stock_movements` (
 
 CREATE TABLE `suppliers` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `name` varchar(100) NOT NULL,
   `contact_person` varchar(100) DEFAULT NULL,
   `phone` varchar(20) DEFAULT NULL,
@@ -578,10 +667,11 @@ CREATE TABLE `suppliers` (
 
 CREATE TABLE `users` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `username` varchar(50) NOT NULL,
   `password` varchar(255) NOT NULL,
   `full_name` varchar(100) DEFAULT NULL,
-  `role` enum('admin','manager','user') DEFAULT 'user',
+  `role` enum('superadmin','admin','manager','user') NOT NULL DEFAULT 'user',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `status` enum('active','inactive','suspended','') NOT NULL,
   `last_login` datetime DEFAULT NULL,
@@ -592,8 +682,10 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `role`, `created_at`, `status`, `last_login`, `email`) VALUES
-(1, 'admin', '$2y$10$O.gB7jIXhrV2ukyPqdM5wO55h2knORR9RHUQE0lC4r5N14r9s2Lei', 'Seth', 'admin', '2026-02-11 15:05:51', 'active', '2026-05-03 16:14:19', 'seth@gmail.com');
+INSERT INTO `users` (`id`, `company_id`, `username`, `password`, `full_name`, `role`, `created_at`, `status`, `last_login`, `email`) VALUES
+(1, 1, 'admin', '$2y$10$O.gB7jIXhrV2ukyPqdM5wO55h2knORR9RHUQE0lC4r5N14r9s2Lei', 'Seth', 'admin', '2026-02-11 15:05:51', 'active', '2026-06-01 14:17:09', 'seth@gmail.com'),
+(3, NULL, 'askfor', '$2y$10$mDu5iII5oN2hVkGA.CX4NehgqxaLVEMJUBnEtHEATcjLpQa30vdcG', 'Gilbert niyonsaba', 'superadmin', '2026-06-01 10:31:50', 'active', '2026-06-01 17:02:00', 'askforgilbert@gmail.com'),
+(4, 1, 'user', '$2y$10$saxWFtpMq0lO1W2bHub0jONrVqJbUoQwVzu2IwoXtQ2n20nsP1fxy', 'muhire kevine', 'user', '2026-06-01 10:35:17', 'active', NULL, 'user@gmail.com');
 
 -- --------------------------------------------------------
 
@@ -603,6 +695,7 @@ INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `role`, `created
 
 CREATE TABLE `weekly_revenue` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `week_start_date` date DEFAULT NULL,
   `week_end_date` date DEFAULT NULL,
   `bulk_sales_total` decimal(10,2) DEFAULT 0.00,
@@ -615,13 +708,6 @@ CREATE TABLE `weekly_revenue` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Dumping data for table `weekly_revenue`
---
-
-INSERT INTO `weekly_revenue` (`id`, `week_start_date`, `week_end_date`, `bulk_sales_total`, `retail_sales_total`, `total_revenue`, `total_cost`, `total_profit`, `profit_margin`, `created_at`) VALUES
-(1, '2026-04-27', '2026-05-03', 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, '2026-04-28 14:30:57');
-
---
 -- Indexes for dumped tables
 --
 
@@ -629,6 +715,12 @@ INSERT INTO `weekly_revenue` (`id`, `week_start_date`, `week_end_date`, `bulk_sa
 -- Indexes for table `boaster`
 --
 ALTER TABLE `boaster`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `companies`
+--
+ALTER TABLE `companies`
   ADD PRIMARY KEY (`id`);
 
 --
@@ -653,7 +745,15 @@ ALTER TABLE `loans`
   ADD PRIMARY KEY (`id`),
   ADD KEY `product_id` (`product_id`),
   ADD KEY `idx_loan_date` (`loan_date`),
-  ADD KEY `idx_client` (`client`);
+  ADD KEY `idx_client` (`client`),
+  ADD KEY `idx_loans_client_id` (`client_id`);
+
+--
+-- Indexes for table `loan_clients`
+--
+ALTER TABLE `loan_clients`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_name_phone` (`name`,`phone`);
 
 --
 -- Indexes for table `loan_payments`
@@ -684,6 +784,19 @@ ALTER TABLE `purchases`
   ADD PRIMARY KEY (`id`),
   ADD KEY `product_id` (`product_id`),
   ADD KEY `idx_purchase_date` (`purchase_date`);
+
+--
+-- Indexes for table `purchase_levels`
+--
+ALTER TABLE `purchase_levels`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `purchase_id` (`purchase_id`);
+
+--
+-- Indexes for table `refunds`
+--
+ALTER TABLE `refunds`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `retail_stock`
@@ -762,6 +875,12 @@ ALTER TABLE `boaster`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `companies`
+--
+ALTER TABLE `companies`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
 -- AUTO_INCREMENT for table `consumption`
 --
 ALTER TABLE `consumption`
@@ -780,6 +899,12 @@ ALTER TABLE `loans`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `loan_clients`
+--
+ALTER TABLE `loan_clients`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `loan_payments`
 --
 ALTER TABLE `loan_payments`
@@ -795,12 +920,24 @@ ALTER TABLE `products`
 -- AUTO_INCREMENT for table `product_owners`
 --
 ALTER TABLE `product_owners`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `purchases`
 --
 ALTER TABLE `purchases`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `purchase_levels`
+--
+ALTER TABLE `purchase_levels`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `refunds`
+--
+ALTER TABLE `refunds`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
@@ -849,13 +986,13 @@ ALTER TABLE `suppliers`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `weekly_revenue`
 --
 ALTER TABLE `weekly_revenue`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- Constraints for dumped tables
