@@ -85,4 +85,28 @@ VALUES (1, 'My Company', NULL, NULL, NULL, 'active', NOW());
 -- Password is 'admin123' (bcrypt). Change immediately after first login.
 -- company_id = NULL marks this account as superadmin (no tenant scope).
 INSERT IGNORE INTO `users` (`company_id`, `username`, `password`, `full_name`, `role`, `status`)
-VALUES (NULL, 'superadmin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi4', 'Super Admin', 'superadmin', 'active');
+VALUES (NULL, 'superadmin', '$2y$10$.jJafyBL/kRUv1eQAomQQ.w5sLK2y.GZ4gsPDHfH2GqzAFPC.KsSW', 'Super Admin', 'superadmin', 'active');
+
+
+-- ── Backfill company_id = 1 on all tenant-scoped tables ──────────────────────
+-- Assigns all existing rows (company_id IS NULL) to company 1.
+-- Skip users with role='superadmin' — they intentionally stay NULL.
+UPDATE `users`           SET `company_id` = 1 WHERE `company_id` IS NULL AND `role` != 'superadmin';
+UPDATE `stock`           SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `retail_stock`    SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `purchases`       SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `purchase_levels` SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `sales_bulk`      SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `sales_retail`    SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `sales_external`  SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `loans`           SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `loan_clients`    SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `loan_payments`   SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `expenses`        SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `suppliers`       SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `product_owners`  SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `refunds`         SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `boaster`         SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `consumption`     SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `stock_movements` SET `company_id` = 1 WHERE `company_id` IS NULL;
+UPDATE `weekly_revenue`  SET `company_id` = 1 WHERE `company_id` IS NULL;
