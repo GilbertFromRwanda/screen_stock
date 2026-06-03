@@ -28,7 +28,15 @@ $nav = [
         'items' => [
             // ['href' => 'consumption.php','icon' => '⌂',  'label' => 'Home Consumption'],
             ['href' => 'expenses.php',   'icon' => '−',  'label' => 'Expenses'],
-            ['href' => 'loans.php',      'icon' => '⇄',  'label' => 'Loans'],
+            [
+                'href'    => 'loans.php',
+                'icon'    => '⇄',
+                'label'   => 'Loans',
+                'submenu' => [
+                    ['href' => 'loans.php',     'label' => 'Loan Clients'],
+                    ['href' => 'all_loans.php', 'label' => 'All Loans'],
+                ],
+            ],
             ['href' => 'losses.php',     'icon' => '↓',  'label' => 'Losses'],
             // ['href' => 'boaster.php',    'icon' => '↑',  'label' => 'Top Up'],
         ]

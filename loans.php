@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
 
     // Check loan exists and get balance + client info for aggregate update
     $loan = mysqli_fetch_assoc(mysqli_query($conn, "
-        SELECT l.amount, l.client_id,
+        SELECT l.amount, l.client_id, l.client, l.phone,
                COALESCE(SUM(lp.amount_paid),0) AS paid,
                l.bulk_id, l.retail_id, l.external_id
         FROM loans l
@@ -81,6 +81,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
 
     $received_by = (int)$_SESSION['user_id'];
     $lc_id      = (int)$loan['client_id'];
+
+    // Resolve missing client_id by looking up loan_clients via name + phone
+    if ($lc_id <= 0 && !empty($loan['client'])) {
+        $esc_name  = mysqli_real_escape_string($conn, $loan['client']);
+        $phone_cnd = !empty($loan['phone'])
+            ? "AND phone = '" . mysqli_real_escape_string($conn, $loan['phone']) . "'"
+            : "AND (phone IS NULL OR phone = '')";
+        $lc_row = mysqli_fetch_assoc(mysqli_query($conn,
+            "SELECT id FROM loan_clients WHERE name = '$esc_name' $phone_cnd " . cidAnd() . " LIMIT 1"
+        ));
+        if ($lc_row) {
+            $lc_id = (int)$lc_row['id'];
+            // Persist the correct client_id so future payments resolve instantly
+            mysqli_query($conn, "UPDATE loans SET client_id = $lc_id WHERE id = $loan_id");
+        }
+    }
+
     $fully_paid = (($loan['paid'] + $amount_paid) >= $loan['amount']);
 
     mysqli_begin_transaction($conn);
@@ -88,9 +105,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
 
     $ok = (bool)mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ('$loan_id','$amount_paid','$payment_date',$received_by)");
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "
-        UPDATE loan_clients SET paid_amount = paid_amount + '$amount_paid', unpaid_amount = unpaid_amount - '$amount_paid' WHERE id = $lc_id
-    ");
+    if ($ok && $lc_id > 0) {
+        $ok = (bool)mysqli_query($conn, "
+            UPDATE loan_clients lc
+            JOIN (
+                SELECT COALESCE(SUM(l.amount),0)    AS total_loaned,
+                       COALESCE(SUM(lp_s.paid),0)   AS total_paid_sum,
+                       COUNT(DISTINCT l.id)          AS cnt
+                FROM loans l
+                LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
+                       ON lp_s.loan_id = l.id
+                WHERE l.client_id = $lc_id
+            ) agg
+            SET lc.paid_amount   = agg.total_paid_sum,
+                lc.unpaid_amount = agg.total_loaned - agg.total_paid_sum,
+                lc.total_loans   = agg.cnt
+            WHERE lc.id = $lc_id
+        ");
+    }
 
     if ($ok && $loan['bulk_id']) {
         $q = $fully_paid
