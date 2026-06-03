@@ -500,7 +500,7 @@ $bulk_products = mysqli_query($conn, "
     SELECT s.*, p.name, p.unit_measure ,p.category
     FROM stock s
     JOIN products p ON s.product_id = p.id
-    WHERE s.quantity > 0 $cid_and
+    WHERE s.quantity > 0 " . cidAndFor('s') . "
 ");
 
 // Get products for retail sale
@@ -508,7 +508,7 @@ $retail_products = mysqli_query($conn, "
     SELECT r.*, p.name, p.unit_measure,p.category
     FROM retail_stock r
     JOIN products p ON r.product_id = p.id
-    WHERE r.pieces_quantity > 0 $cid_and
+    WHERE r.pieces_quantity > 0 " . cidAndFor('r') . "
 ");
 
 $highlight_sale_id  = (int)($_GET['highlight'] ?? 0);
@@ -565,7 +565,7 @@ if ($highlight_sale_id > 0 && $highlight_sale_tab !== '') {
         FROM sales_bulk sb
         JOIN products p ON sb.product_id = p.id
         LEFT JOIN users u ON sb.sold_by = u.id
-        WHERE sb.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' $cid_and
+        WHERE sb.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' " . cidAndFor('sb') . "
         ORDER BY sb.created_at DESC
     ");
 
@@ -574,7 +574,7 @@ if ($highlight_sale_id > 0 && $highlight_sale_tab !== '') {
         FROM sales_retail sr
         JOIN products p ON sr.product_id = p.id
         LEFT JOIN users u ON sr.sold_by = u.id
-        WHERE sr.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' $cid_and
+        WHERE sr.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' " . cidAndFor('sr') . "
         ORDER BY sr.created_at DESC
     ");
 
@@ -585,7 +585,7 @@ if ($highlight_sale_id > 0 && $highlight_sale_tab !== '') {
         FROM sales_external se
         LEFT JOIN users u ON se.sold_by = u.id
         LEFT JOIN product_owners po ON se.owner_id = po.id
-        WHERE se.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' $cid_and
+        WHERE se.sale_date BETWEEN '$date_from_safe' AND '$date_to_safe' " . cidAndFor('se') . "
         $ext_owner_where
         ORDER BY se.created_at DESC
     ");
