@@ -159,10 +159,12 @@ $total_balance = $total_amt - $total_paid;
                 <td><span class="<?= $badge ?>"><?= $label ?></span></td>
                 <td style="color:var(--secondary);font-size:12px;"><?= htmlspecialchars($l['given_by_name'] ?: '—') ?></td>
                 <td style="white-space:nowrap;">
-                    <?php if ($sale_id): ?>
+                    <?php if ($sale_id):
+                        $sale_label = ['bulk'=>'Bulk','retail'=>'Retail','external'=>'External'][$sale_tab] ?? 'Sale';
+                    ?>
                     <a href="sales.php?tab=<?= $sale_tab ?>&highlight=<?= $sale_id ?>" target="_blank"
                         style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 7px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;">
-                        Sale ↗
+                        <?= $sale_label ?> ↗
                     </a>
                     <?php endif; ?>
                     <?php if ($balance > 0): ?>

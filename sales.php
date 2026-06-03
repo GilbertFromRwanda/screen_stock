@@ -841,7 +841,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <table class="table" id="tbl-bulk">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th><th>Actions</th>
+                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -860,6 +860,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td>RWF <?php echo number_format($default_price, 0); ?></td>
                             <td class="<?php echo $diff_class; ?>"><?php echo $price_diff != 0 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
+                            <td><?php echo $row['cash_amount'] > 0 ? 'RWF '.number_format($row['cash_amount'],0) : '—'; ?></td>
+                            <td><?php echo $row['momo_amount'] > 0 ? 'RWF '.number_format($row['momo_amount'],0) : '—'; ?></td>
+                            <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
                             <td style="white-space:nowrap;">
@@ -885,7 +888,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                         <tr class="table-total-row">
                             <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($bulk_grand_total, 0); ?></strong></td>
-                            <td colspan="3"></td>
+                            <td colspan="6"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -899,7 +902,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <table class="table" id="tbl-retail">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Customer</th><th>Sold By</th><th>Actions</th>
+                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -920,6 +923,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td>RWF <?php echo number_format($default_price, 0); ?></td>
                             <td class="<?php echo $diff_class; ?>"><?php echo abs($price_diff) > 0.005 ? ($price_diff > 0 ? '+' : '') . number_format($price_diff, 0) : '-'; ?></td>
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
+                            <td><?php echo $row['cash_amount'] > 0 ? 'RWF '.number_format($row['cash_amount'],0) : '—'; ?></td>
+                            <td><?php echo $row['momo_amount'] > 0 ? 'RWF '.number_format($row['momo_amount'],0) : '—'; ?></td>
+                            <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
                             <td style="white-space:nowrap;">
@@ -945,7 +951,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                         <tr class="table-total-row">
                             <td colspan="6" style="text-align:right;"><strong>Total:</strong></td>
                             <td><strong>RWF <?php echo number_format($retail_grand_total, 0); ?></strong></td>
-                            <td colspan="3"></td>
+                            <td colspan="6"></td>
                         </tr>
                     </tfoot>
                 </table>
