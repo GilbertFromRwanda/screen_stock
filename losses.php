@@ -10,7 +10,7 @@ $date_from = $_GET['date_from'] ?? '';
 $date_to   = $_GET['date_to']   ?? '';
 $type_filter = in_array($_GET['type'] ?? '', ['bulk','retail','external']) ? $_GET['type'] : '';
 
-$cid_and = cidAnd();
+$cid_and = cidAndFor('r');
 $where_parts = ["r.back_to_stock = 0 $cid_and"];
 if ($date_from) $where_parts[] = "r.refund_date >= '" . mysqli_real_escape_string($conn, $date_from) . "'";
 if ($date_to)   $where_parts[] = "r.refund_date <= '" . mysqli_real_escape_string($conn, $date_to)   . "'";

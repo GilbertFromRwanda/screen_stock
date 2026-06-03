@@ -2,7 +2,7 @@
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
-if (($_SESSION['role'] ?? '') !== 'superadmin') {
+if (($_SESSION['role'] ?? '') !== 'superadmin' && $_SESSION['role']!== 'admin') {
     $_SESSION['flash_error'] = "Super admin access only.";
     redirect('dashboard.php');
 }
@@ -127,6 +127,53 @@ if (isset($_GET['action']) && $_GET['action'] === 'explain') {
     if (!$q) { echo json_encode(['error' => mysqli_error($conn)]); exit; }
     while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
     echo json_encode(['rows' => $rows]);
+    exit;
+}
+
+// ── Database Backup (download as .sql) ───────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'backup') {
+    $db_name  = DB_NAME;
+    $filename = 'backup_' . $db_name . '_' . date('Y-m-d_H-i-s') . '.sql';
+
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    echo "-- Database Backup: $db_name\n";
+    echo "-- Generated: " . date('Y-m-d H:i:s') . "\n\n";
+    echo "SET FOREIGN_KEY_CHECKS = 0;\n\n";
+
+    $tables_q = mysqli_query($conn, "SHOW TABLES");
+    while ($tbl_row = mysqli_fetch_array($tables_q)) {
+        $table = $tbl_row[0];
+
+        $create_q   = mysqli_query($conn, "SHOW CREATE TABLE `$table`");
+        $create_row = mysqli_fetch_assoc($create_q);
+        echo "DROP TABLE IF EXISTS `$table`;\n";
+        echo $create_row['Create Table'] . ";\n\n";
+
+        $rows_q = mysqli_query($conn, "SELECT * FROM `$table`");
+        if (mysqli_num_rows($rows_q) > 0) {
+            $fields = mysqli_fetch_fields($rows_q);
+            $cols   = array_map(fn($f) => "`{$f->name}`", $fields);
+            $prefix = "INSERT INTO `$table` (" . implode(', ', $cols) . ") VALUES\n";
+            $batch  = [];
+
+            while ($row = mysqli_fetch_row($rows_q)) {
+                $vals = array_map(fn($v) => $v === null ? 'NULL' : "'" . mysqli_real_escape_string($conn, $v) . "'", $row);
+                $batch[] = '(' . implode(', ', $vals) . ')';
+                if (count($batch) >= 500) {
+                    echo $prefix . implode(",\n", $batch) . ";\n";
+                    $batch = [];
+                }
+            }
+            if ($batch) echo $prefix . implode(",\n", $batch) . ";\n";
+            echo "\n";
+        }
+    }
+
+    echo "SET FOREIGN_KEY_CHECKS = 1;\n";
     exit;
 }
 
@@ -439,6 +486,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db'])) {
 
         <div class="db-header">
             <h1>Database Management</h1>
+            <a href="database.php?action=backup" class="btn btn-primary"
+               style="font-size:13.5px;padding:8px 18px;text-decoration:none;">
+                ⬇ Backup Database
+            </a>
         </div>
 
         <?php if ($flash_ok):  ?><div class="flash-ok"><?= htmlspecialchars($flash_ok) ?></div><?php endif; ?>

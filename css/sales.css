@@ -475,37 +475,201 @@
         .price-input-group {
             flex-wrap: wrap;
         }
-        
+
         .default-price-badge {
             width: 100%;
             justify-content: center;
         }
-        
+
         .sale-action-buttons {
             flex-direction: column;
+            align-items: flex-start;
         }
 
         .sale-type-tabs {
             flex-direction: column;
         }
-        
+
         .price-comparison {
             flex-direction: column;
             align-items: flex-start;
         }
-        
+
         .bulk-price-header {
             flex-direction: column;
             align-items: flex-start;
             gap: 12px;
         }
-        
+
         .price-multiplier {
             width: 100%;
         }
-        
+
         .price-multiplier input {
             flex: 1;
+        }
+
+        /* Tab nav — equal-width buttons that wrap */
+        .sales-tab-nav {
+            flex-wrap: wrap;
+            gap: 2px;
+        }
+
+        .sales-tab-btn {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding: 8px 10px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        /* Date filter — stack vertically */
+        .date-filter-form {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+        }
+
+        .date-filter-group {
+            width: 100%;
+        }
+
+        .date-filter-group input[type="date"],
+        .date-filter-group select {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .date-filter-form .btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        /* Search box full width */
+        #search-bulk,
+        #search-retail,
+        #search-external {
+            max-width: 100% !important;
+        }
+
+        /* Hide non-critical columns in bulk/retail tables:
+           col 5 = Default Price, col 6 = Difference, col 12 = Sold By */
+        #tbl-bulk th:nth-child(5),
+        #tbl-bulk td:nth-child(5),
+        #tbl-bulk th:nth-child(6),
+        #tbl-bulk td:nth-child(6),
+        #tbl-bulk th:nth-child(12),
+        #tbl-bulk td:nth-child(12),
+        #tbl-retail th:nth-child(5),
+        #tbl-retail td:nth-child(5),
+        #tbl-retail th:nth-child(6),
+        #tbl-retail td:nth-child(6),
+        #tbl-retail th:nth-child(12),
+        #tbl-retail td:nth-child(12) {
+            display: none;
+        }
+
+        /* Hide non-critical columns in external table:
+           col 3 = Owner, col 7 = My Commission, col 12 = Sold By */
+        #tbl-external th:nth-child(3),
+        #tbl-external td:nth-child(3),
+        #tbl-external th:nth-child(7),
+        #tbl-external td:nth-child(7),
+        #tbl-external th:nth-child(12),
+        #tbl-external td:nth-child(12) {
+            display: none;
+        }
+
+        /* Table cells — slightly smaller font for more columns to fit */
+        #tbl-bulk th,
+        #tbl-bulk td,
+        #tbl-retail th,
+        #tbl-retail td,
+        #tbl-external th,
+        #tbl-external td {
+            font-size: 12px;
+            padding: 8px 8px;
+        }
+
+        /* Table row action buttons — stacked, tap-friendly */
+        #tbl-bulk td:last-child,
+        #tbl-retail td:last-child,
+        #tbl-external td:last-child {
+            white-space: normal;
+            padding: 6px 8px;
+            min-width: 72px;
+        }
+
+        #tbl-bulk td:last-child .btn,
+        #tbl-retail td:last-child .btn,
+        #tbl-external td:last-child .btn {
+            display: block;
+            padding: 7px 10px !important;
+            font-size: 12px !important;
+            margin-bottom: 4px;
+        }
+
+        #tbl-bulk td:last-child .btn:last-of-type,
+        #tbl-retail td:last-child .btn:last-of-type,
+        #tbl-external td:last-child .btn:last-of-type {
+            margin-bottom: 0;
+        }
+
+        #tbl-bulk td:last-child form,
+        #tbl-retail td:last-child form,
+        #tbl-external td:last-child form {
+            display: block !important;
+            margin-top: 4px;
+        }
+
+        /* Level selector buttons — wrap tighter */
+        #bulk_level_buttons,
+        #retail_level_buttons {
+            gap: 6px;
+        }
+
+        .lvl-btn {
+            min-width: 80px;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        .lvl-btn-name  { font-size: 12px; }
+        .lvl-btn-stock { font-size: 10px; }
+        .lvl-btn-price { font-size: 12px; }
+
+        /* Split payment box — bigger touch targets */
+        .split-row {
+            padding: 10px 10px;
+        }
+
+        .split-row input[type="text"] {
+            padding: 8px 8px;
+            font-size: 15px;
+        }
+
+        .split-label {
+            width: 60px;
+            font-size: 12px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        /* Modal scrolls from bottom edge on very small phones */
+        .modal-content {
+            margin: 8px;
+            padding: 16px;
+        }
+
+        .sales-tab-btn {
+            font-size: 11px;
+            padding: 7px 8px;
+        }
+
+        /* Top action buttons — comfortable tap height on very small phones */
+        .sale-action-buttons .btn-lg {
+            font-size: 14px;
+            padding: 13px 16px;
         }
     }
     
