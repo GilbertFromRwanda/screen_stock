@@ -398,7 +398,13 @@ function populate(d) {
     set('d-sell-footer', 'Warehouse: RWF ' + moneySpan(d.sell_wh) + ' | Retail: RWF ' + moneySpan(d.sell_rt));
 
     set('d-cost-total', 'RWF ' + moneySpan(d.cost_total));
-    set('d-cost-footer', 'Warehouse: RWF ' + moneySpan(d.cost_wh) + ' | Retail: RWF ' + moneySpan(d.cost_rt));
+    var updatedLabel = d.cache_updated ? 'Updated ' + new Date(d.cache_updated).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+    set('d-cost-footer',
+        'Warehouse: RWF ' + moneySpan(d.cost_wh) + ' | Retail: RWF ' + moneySpan(d.cost_rt) +
+        '<div style="margin-top:4px;display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:10px;color:#9ca3af;">' + updatedLabel + '</span>' +
+        '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">Recalculate</a>' +
+        '</div>');
 
     set('d-today-total', 'RWF ' + moneySpan(d.today_t));
     var trend = d.today_t - d.yesterday_t;
@@ -627,6 +633,28 @@ window.toggleAlerts = function() {
     var open = body.style.display !== 'none';
     body.style.display    = open ? 'none' : 'block';
     if (chevron) chevron.style.transform = open ? '' : 'rotate(90deg)';
+};
+
+// ── Recalculate stock values ──────────────────────────────────────────────────
+window.recalcStockValues = function(e) {
+    if (e) e.preventDefault();
+    var link = document.getElementById('d-cost-recalc');
+    if (link) link.textContent = 'Calculating…';
+    fetch('ajax_recalc_stock.php')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            set('d-cost-total', 'RWF ' + moneySpan(d.cost_total));
+            set('d-sell-total', 'RWF ' + moneySpan(d.sell_total));
+            var updatedLabel = d.updated_at ? 'Updated ' + new Date(d.updated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+            set('d-cost-footer',
+                'Warehouse: RWF ' + moneySpan(d.cost_wh) + ' | Retail: RWF ' + moneySpan(d.cost_rt) +
+                '<div style="margin-top:4px;display:flex;align-items:center;gap:8px;">' +
+                '<span style="font-size:10px;color:#9ca3af;">' + updatedLabel + '</span>' +
+                '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">Recalculate</a>' +
+                '</div>');
+            set('d-sell-footer', 'Warehouse: RWF ' + moneySpan(d.sell_wh) + ' | Retail: RWF ' + moneySpan(d.sell_rt));
+        })
+        .catch(function() { if (link) link.textContent = 'Recalculate'; });
 };
 
 // ── Boot: fetch all data ──────────────────────────────────────────────────────

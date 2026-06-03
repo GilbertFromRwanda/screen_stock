@@ -127,6 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
         }
         mysqli_commit($conn);
+        require_once 'stock_value.php';
+        recalcStockValue($conn, cid(), $product_id);
         echo json_encode(['ok' => true, 'message' => 'Purchase recorded successfully.']);
     } else {
         mysqli_rollback($conn);

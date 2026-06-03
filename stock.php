@@ -21,6 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_stock'])) {
             retail_price  = $retail_price
         WHERE product_id = $product_id " . cidAnd() . "
     ");
+    require_once 'stock_value.php';
+    recalcStockValue($conn, cid(), $product_id);
     $_SESSION['flash_success'] = "Warehouse stock updated.";
     header("Location: stock.php"); exit;
 }
@@ -37,6 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_stock'])) 
             retail_price    = $retail_price
         WHERE product_id = $product_id " . cidAnd() . "
     ");
+    require_once 'stock_value.php';
+    recalcStockValue($conn, cid(), $product_id);
     $_SESSION['flash_success'] = "Retail stock updated.";
     header("Location: stock.php"); exit;
 }
@@ -82,6 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['move_to_retail'])) {
         mysqli_query($conn, "INSERT INTO stock_movements (company_id, product_id, pieces_moved, moved_date, notes)
                              VALUES (" . cidSql() . ", $product_id, $pieces_to_move, CURDATE(), '$note')");
 
+        require_once 'stock_value.php';
+        recalcStockValue($conn, cid(), $product_id);
         $_SESSION['flash_success'] = $move_type === 'packages'
             ? "Moved $packages_to_remove package(s) ($pieces_to_move pieces) to retail shop successfully"
             : "Moved $pieces_to_move pieces to retail shop successfully";

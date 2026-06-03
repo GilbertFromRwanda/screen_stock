@@ -1,78 +1,5 @@
 
--- ============================================================
--- Screen Stock — incremental DB updates
--- Run these once on any existing installation.
--- All statements use IF NOT EXISTS / IF EXISTS so they are
--- safe to re-run without errors.
--- ============================================================
 
-
--- ── purchase_levels ──────────────────────────────────────────────────────────
--- Stores the multi-level packaging chain for every purchase.
--- Created inline in new-purchase.php; listed here for reference / fresh installs.
-CREATE TABLE IF NOT EXISTS `purchase_levels` (
-    `id`             INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `purchase_id`    INT          NOT NULL,
-    `level_order`    TINYINT      NOT NULL,
-    `level_name`     VARCHAR(100) NOT NULL,
-    `qty_per_parent` INT          NOT NULL DEFAULT 1,
-    `selling_price`  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-    INDEX `idx_purchase_id` (`purchase_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
-
-
--- ── sales_bulk.level_divisor ─────────────────────────────────────────────────
--- Tracks which packaging level was sold so profit reports can correctly
--- convert sub-level quantities back to top-level package cost.
--- DEFAULT 1 = full-package sale (backward compatible with old rows).
-ALTER TABLE `sales_bulk` ADD COLUMN IF NOT EXISTS `level_divisor` INT NOT NULL DEFAULT 1 AFTER `quantity`;
-
-
--- ── companies ────────────────────────────────────────────────────────────────
--- Each company is an independent tenant. Users belong to exactly one company.
--- Superadmin users have company_id = NULL and can manage all companies.
-CREATE TABLE IF NOT EXISTS `companies` (
-    `id`         INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `name`       VARCHAR(255) NOT NULL,
-    `email`      VARCHAR(255) DEFAULT NULL,
-    `phone`      VARCHAR(50)  DEFAULT NULL,
-    `address`    TEXT         DEFAULT NULL,
-    `status`     ENUM('active','inactive') NOT NULL DEFAULT 'active',
-    `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
--- ── users.company_id ─────────────────────────────────────────────────────────
--- NULL = superadmin (no company); otherwise references companies.id
-ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-
-
--- ── users.role — add superadmin ──────────────────────────────────────────────
-ALTER TABLE `users` MODIFY COLUMN `role` ENUM('superadmin','admin','manager','user') NOT NULL DEFAULT 'user';
-
-
--- ── company_id on all tenant-scoped tables ───────────────────────────────────
--- products is intentionally excluded — it is shared across all companies.
-ALTER TABLE `stock`           ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `retail_stock`    ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `purchases`       ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `purchase_levels` ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `sales_bulk`      ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `sales_retail`    ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `sales_external`  ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `loans`           ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `loan_clients`    ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `loan_payments`   ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `expenses`        ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `suppliers`       ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `product_owners`  ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `refunds`         ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `boaster`         ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `consumption`     ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `stock_movements` ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
-ALTER TABLE `weekly_revenue`  ADD COLUMN IF NOT EXISTS `company_id` INT DEFAULT NULL AFTER `id`;
 
 
 -- ── Seed: initial company ─────────────────────────────────────────────────────
@@ -88,25 +15,20 @@ INSERT IGNORE INTO `users` (`company_id`, `username`, `password`, `full_name`, `
 VALUES (NULL, 'superadmin', '$2y$10$.jJafyBL/kRUv1eQAomQQ.w5sLK2y.GZ4gsPDHfH2GqzAFPC.KsSW', 'Super Admin', 'superadmin', 'active');
 
 
--- ── Backfill company_id = 1 on all tenant-scoped tables ──────────────────────
--- Assigns all existing rows (company_id IS NULL) to company 1.
--- Skip users with role='superadmin' — they intentionally stay NULL.
-UPDATE `users`           SET `company_id` = 1 WHERE `company_id` IS NULL AND `role` != 'superadmin';
-UPDATE `stock`           SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `retail_stock`    SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `purchases`       SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `purchase_levels` SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `sales_bulk`      SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `sales_retail`    SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `sales_external`  SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `loans`           SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `loan_clients`    SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `loan_payments`   SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `expenses`        SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `suppliers`       SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `product_owners`  SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `refunds`         SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `boaster`         SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `consumption`     SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `stock_movements` SET `company_id` = 1 WHERE `company_id` IS NULL;
-UPDATE `weekly_revenue`  SET `company_id` = 1 WHERE `company_id` IS NULL;
+-- ── stock_value_cache ────────────────────────────────────────────────────────
+-- Stores pre-computed FIFO purchase cost and selling value per product per company.
+-- Refreshed automatically on every purchase, sale, and stock change.
+-- Use ajax_recalc_stock.php to force a full rebuild.
+CREATE TABLE IF NOT EXISTS `stock_value_cache` (
+    `id`         INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `company_id` INT           DEFAULT NULL,
+    `product_id` INT           NOT NULL,
+    `cost_wh`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `cost_rt`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `sell_wh`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `sell_rt`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `updated_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_svc_company` (`company_id`),
+    INDEX `idx_svc_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+

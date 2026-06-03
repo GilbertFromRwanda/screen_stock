@@ -14,26 +14,27 @@ $ca          = cidAnd();
 // ── Stock ─────────────────────────────────────────────────────────────────────
 $total_products = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM products"))['c'];
 
-$sell_wh  = (float)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(quantity*package_price) v FROM stock WHERE 1=1 $ca"))['v'] ?? 0);
-$sell_rt  = (float)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(pieces_quantity*retail_price) v FROM retail_stock WHERE 1=1 $ca"))['v'] ?? 0);
-$rt_pcs   = (int)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(pieces_quantity) v FROM retail_stock WHERE 1=1 $ca"))['v'] ?? 0);
+$rt_pcs = (int)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(pieces_quantity) v FROM retail_stock WHERE 1=1 $ca"))['v'] ?? 0);
 
-$cost_wh = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE(SUM(s.quantity * ac.wac),0) v FROM stock s
-    JOIN (SELECT product_id, SUM(quantity*cost_price)/NULLIF(SUM(quantity),0) wac
-          FROM purchases WHERE cost_price IS NOT NULL " . cidAndFor('purchases') . " GROUP BY product_id) ac
-    ON ac.product_id = s.product_id WHERE 1=1 " . cidAndFor('s') . "
-"))['v'] ?? 0);
+// Read FIFO cost + selling values from cache; auto-seed on first load
+$cache_count = (int)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM stock_value_cache WHERE 1=1 $ca"))['c'] ?? 0);
+if ($cache_count === 0) {
+    require_once 'stock_value.php';
+    recalcStockValue($conn, cid());
+}
+$sv = mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(cost_wh),0) cost_wh,
+           COALESCE(SUM(cost_rt),0) cost_rt,
+           COALESCE(SUM(sell_wh),0) sell_wh,
+           COALESCE(SUM(sell_rt),0) sell_rt,
+           MAX(updated_at)          cache_updated
+    FROM stock_value_cache WHERE 1=1 $ca
+")) ?? [];
 
-$cost_rt = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE(SUM(rs.pieces_quantity*(ac.wac/NULLIF(st.pieces_per_package,0))),0) v
-    FROM retail_stock rs
-    JOIN (SELECT product_id, SUM(quantity*cost_price)/NULLIF(SUM(quantity),0) wac
-          FROM purchases WHERE cost_price IS NOT NULL " . cidAndFor('purchases') . " GROUP BY product_id) ac
-    ON ac.product_id = rs.product_id
-    LEFT JOIN stock st ON st.product_id=rs.product_id AND st.company_id=rs.company_id
-    WHERE 1=1 " . cidAndFor('rs') . "
-"))['v'] ?? 0);
+$sell_wh = (float)($sv['sell_wh'] ?? 0);
+$sell_rt = (float)($sv['sell_rt'] ?? 0);
+$cost_wh = (float)($sv['cost_wh'] ?? 0);
+$cost_rt = (float)($sv['cost_rt'] ?? 0);
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
 $ts = mysqli_fetch_assoc(mysqli_query($conn, "
@@ -213,6 +214,7 @@ echo json_encode([
     'cost_wh'          => $cost_wh,
     'cost_rt'          => $cost_rt,
     'cost_total'       => $cost_wh + $cost_rt,
+    'cache_updated'    => $sv['cache_updated'] ?? null,
     'rt_pcs'           => $rt_pcs,
     'today_t'          => $today_t,
     'today_bulk'       => $today_bulk,

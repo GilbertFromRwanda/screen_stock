@@ -74,6 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_purchase'])) {
         }
 
         mysqli_query($conn, $update);
+        require_once 'stock_value.php';
+        recalcStockValue($conn, cid(), (int)$product_id);
         $success = "Purchase added successfully and stock updated";
         $_SESSION['flash_success'] =$success;
     } else {
@@ -85,6 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_purchase'])) {
 }
 // Handle Edit Purchase
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
+    $cid_sql = cidSql(); $cid_and = cidAnd();
     $purchase_id = (int)$_POST['purchase_id'];
     $product_id = mysqli_real_escape_string($conn, $_POST['product_id']);
 
@@ -134,6 +137,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
                 mysqli_query($conn, "UPDATE stock SET quantity = quantity + ($qty_diff), pieces_per_package = $pieces_per_qty, package_price = $package_price, retail_price = $retail_price WHERE product_id = $product_id $cid_and");
             }
 
+            require_once 'stock_value.php';
+            if ($old['product_id'] != $product_id) {
+                recalcStockValue($conn, cid(), (int)$old['product_id']);
+                recalcStockValue($conn, cid(), (int)$product_id);
+            } else {
+                recalcStockValue($conn, cid(), (int)$product_id);
+            }
             $_SESSION['flash_success'] = "Purchase updated successfully and stock adjusted";
         } else {
             $_SESSION['flash_error'] = "Error updating purchase: " . mysqli_error($conn);
