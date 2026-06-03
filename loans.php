@@ -177,12 +177,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_loan_pa
         if ($remaining > 0) {
             $pay = min($remaining, $row['balance']);
             $rows[] = ['id' => $row['id'], 'label' => $row['category'].'-'.$row['product_name'],
-                'client' => $row['client'], 'date' => date('M d', strtotime($row['loan_date'])),
+                'client' => $row['client'], 'date' => date('Y-m-d', strtotime($row['loan_date'])),
                 'balance' => $row['balance'], 'will_pay' => $pay, 'full' => ($pay >= $row['balance'])];
             $remaining -= $pay;
         } else {
             $rows[] = ['id' => $row['id'], 'label' => $row['category'].'-'.$row['product_name'],
-                'client' => $row['client'], 'date' => date('M d', strtotime($row['loan_date'])),
+                'client' => $row['client'], 'date' => date('Y-m-d', strtotime($row['loan_date'])),
                 'balance' => $row['balance'], 'will_pay' => 0, 'full' => false];
         }
     }
@@ -502,6 +502,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <table class="table" id="tbl-loan-clients" style="min-width:700px;">
             <thead>
                 <tr>
+                    <th>Actions</th>
                     <th>#</th>
                     <th>Client</th>
                     <th>Phone</th>
@@ -510,7 +511,6 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                     <th>Paid</th>
                     <th>Outstanding</th>
                     <th>Status</th>
-                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -521,6 +521,19 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 else                             { $status = 'Unpaid';  $badge_cls = 'badge-unpaid'; }
             ?>
             <tr data-status="<?php echo strtolower($status); ?>">
+                <td>
+                    <div class="act-menu-wrap">
+                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                        <div class="act-menu">
+                            <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
+                            <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
+                            <?php if ($outstanding > 0): ?>
+                            <div class="act-menu-sep"></div>
+                            <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </td>
                 <td style="color:var(--secondary);"><?php echo $i + 1; ?></td>
                 <td style="font-weight:600;"><?php echo htmlspecialchars($c['name']); ?></td>
                 <td style="color:var(--secondary);"><?php echo htmlspecialchars($c['phone'] ?: '—'); ?></td>
@@ -531,22 +544,6 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                     <strong>RWF <?php echo number_format(abs($outstanding), 0); ?></strong>
                 </td>
                 <td><span class="<?php echo $badge_cls; ?>"><?php echo $status; ?></span></td>
-                <td style="white-space:nowrap;">
-                    <button class="btn-pay" style="margin-right:4px;"
-                        onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>)">
-                        View
-                    </button>
-                    <button class="btn-pay" style="margin-right:4px;background:#0891b2;"
-                        onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>)">
-                        Payments
-                    </button>
-                    <?php if ($outstanding > 0): ?>
-                    <button class="btn-pay" style="background:var(--warning,#f59e0b);"
-                        onclick="openGlobalLoanPayFor(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (float)$outstanding; ?>)">
-                        Pay
-                    </button>
-                    <?php endif; ?>
-                </td>
             </tr>
             <?php endforeach; ?>
             </tbody>
@@ -597,8 +594,9 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             </div>
             <div id="loanPreviewSummary" style="margin-top:10px;font-size:13px;color:var(--secondary);"></div>
         </div>
-        <div style="margin-top:20px;display:flex;gap:10px;">
+        <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
             <button id="globalLoanPayBtn" class="btn btn-primary" onclick="execGlobalLoanPay()" disabled>Apply Payment</button>
+            <button id="gloanExportBtn" onclick="exportGlobalLoanPreview()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;">&#8681; Export &amp; Share</button>
             <button class="btn btn-secondary" onclick="closeModal('globalLoanPayModal')">Cancel</button>
         </div>
     </div>
@@ -608,7 +606,12 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 <div id="clientLoansModal" class="modal">
     <div class="modal-content" style="max-width:800px;">
         <span class="close" onclick="closeModal('clientLoansModal')">&times;</span>
-        <h2 id="clientLoansTitle">Loans</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 id="clientLoansTitle" style="margin:0;">Loans</h2>
+            <button id="clLoansExportBtn" onclick="exportClientLoans()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;gap:6px;align-items:center;">
+                &#8681; Export &amp; Share
+            </button>
+        </div>
         <div id="clientLoansFilter" style="display:none;margin:12px 0 8px;gap:6px;align-items:center;flex-wrap:wrap;">
             <button class="filter-status-btn active" data-status="unpaid" onclick="setClientLoanFilter(this)">Unpaid</button>
             <button class="filter-status-btn" data-status="all" onclick="setClientLoanFilter(this)">All</button>
@@ -623,7 +626,12 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 <div id="clientPaymentsModal" class="modal">
     <div class="modal-content" style="max-width:720px;">
         <span class="close" onclick="closeModal('clientPaymentsModal')">&times;</span>
-        <h2 id="clientPaymentsTitle">Payments</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 id="clientPaymentsTitle" style="margin:0;">Payments</h2>
+            <button id="cpayExportBtn" onclick="exportClientPayments()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">
+                &#8681; Export &amp; Share
+            </button>
+        </div>
         <div style="display:flex;gap:10px;margin:12px 0 8px;align-items:flex-end;flex-wrap:wrap;">
             <div class="form-group" style="margin:0;min-width:140px;">
                 <label style="font-size:12px;">From</label>
@@ -733,9 +741,212 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     </div>
 </div>
 
+<!-- Share Modal -->
+<div id="shareModal" class="modal">
+    <div class="modal-content" style="max-width:620px;">
+        <span class="close" onclick="closeModal('shareModal')">&times;</span>
+        <h2 id="shareModalTitle" style="margin-bottom:4px;">Export &amp; Share</h2>
+        <p id="shareModalSubtitle" style="color:var(--secondary);font-size:13px;margin:0 0 14px;"></p>
+        <div id="shareTablePreview" style="overflow-x:auto;max-height:340px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:16px;"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button onclick="printSharePDF()" style="background:#2563eb;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;">
+                &#128438; Save as PDF
+            </button>
+            <button onclick="shareToWhatsApp()" style="background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;">
+                <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M16 3C8.8 3 3 8.8 3 16c0 2.6.7 5 2 7.1L3 29l6.1-2A13 13 0 0 0 16 29c7.2 0 13-5.8 13-13S23.2 3 16 3zm6.5 18.1c-.3.8-1.6 1.5-2.2 1.6-.6.1-1.2.3-3.8-.8-3.2-1.3-5.2-4.5-5.4-4.7-.2-.2-1.4-1.9-1.4-3.6 0-1.7.9-2.5 1.2-2.9.3-.4.7-.4.9-.4h.7c.2 0 .5-.1.8.6.3.7 1 2.5 1.1 2.7.1.2.2.4 0 .7-.1.3-.2.4-.4.7-.2.3-.4.5-.2.9.2.4.9 1.5 2 2.4 1.3 1.1 2.4 1.5 2.8 1.6.4.2.6.1.8-.1.2-.2.9-1 1.1-1.4.2-.4.5-.3.8-.2.3.1 2 .9 2.3 1.1.4.2.6.3.7.5.1.3.1 1.2-.2 2z"/></svg>
+                WhatsApp
+            </button>
+            <button onclick="closeModal('shareModal')" class="btn btn-secondary">Close</button>
+        </div>
+    </div>
+</div>
+
 <script src="script.js"></script>
 <script>
 var loanUnitPrice = 0;
+var _cpayRows = [];
+var _cpayClientName = '';
+var _gloanPreviewRows = [];
+var _pdfExportData = null;
+var _waText = '';
+
+function openShareModal(pdfData, waText) {
+    _pdfExportData = pdfData;
+    _waText = waText || '';
+    document.getElementById('shareModalTitle').textContent = pdfData.title;
+    document.getElementById('shareModalSubtitle').textContent = pdfData.subtitle || '';
+    // render preview table
+    var preview = document.getElementById('shareTablePreview');
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    pdfData.headers.forEach(function(h) {
+        html += '<th style="padding:9px 12px;background:#1e40af;color:#fff;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">' + h + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+    pdfData.rows.forEach(function(row, ri) {
+        html += '<tr style="background:' + (ri % 2 === 0 ? '#fff' : '#f8fafc') + ';">';
+        row.forEach(function(cell, ci) {
+            var align = (typeof cell === 'number' || (ci > 0 && String(cell).match(/^[\d,]+$/))) ? 'right' : 'left';
+            html += '<td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:' + align + ';">' + cell + '</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody>';
+    if (pdfData.footer) {
+        html += '<tfoot><tr style="background:#f1f5f9;font-weight:700;">';
+        pdfData.footer.forEach(function(cell) {
+            html += '<td style="padding:9px 12px;border-top:2px solid #cbd5e1;">' + cell + '</td>';
+        });
+        html += '</tr></tfoot>';
+    }
+    html += '</table>';
+    preview.innerHTML = html;
+    openModal('shareModal');
+}
+
+function printSharePDF() {
+    if (!_pdfExportData) return;
+    var d = _pdfExportData;
+    var win = window.open('', '_blank', 'width=1000,height=750');
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + d.title + '</title><style>' +
+        'body{font-family:Arial,sans-serif;padding:28px 32px;color:#1e293b;font-size:13px;}' +
+        'h1{margin:0 0 4px;font-size:18px;}' +
+        '.sub{color:#64748b;font-size:12px;margin-bottom:6px;}' +
+        '.meta{text-align:right;font-size:11px;color:#94a3b8;margin-bottom:18px;}' +
+        'table{width:100%;border-collapse:collapse;}' +
+        'th{background:#1e40af;color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}' +
+        'td{padding:8px 12px;border-bottom:1px solid #e2e8f0;}' +
+        'tr:nth-child(even) td{background:#f8fafc;}' +
+        'tfoot td{background:#f1f5f9;font-weight:700;border-top:2px solid #cbd5e1;border-bottom:none;}' +
+        '.r{text-align:right;}' +
+        '@media print{.print-btn{display:none;}body{padding:0;}@page{margin:15mm;}}' +
+        '</style></head><body>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">' +
+        '<div class="meta" style="margin:0;">Generated: ' + new Date().toLocaleString() + '</div>' +
+        '<button class="print-btn" onclick="window.print()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Print / Save PDF</button>' +
+        '</div>';
+    html += '<h1>' + d.title + '</h1>';
+    if (d.subtitle) html += '<div class="sub">' + d.subtitle + '</div>';
+    html += '<br><table><thead><tr>';
+    d.headers.forEach(function(h) { html += '<th>' + h + '</th>'; });
+    html += '</tr></thead><tbody>';
+    d.rows.forEach(function(row, ri) {
+        html += '<tr>';
+        row.forEach(function(cell, ci) {
+            var cls = (ci > 0 && String(cell).match(/^[\d,]+$/)) ? ' class="r"' : '';
+            html += '<td' + cls + '>' + cell + '</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody>';
+    if (d.footer) {
+        html += '<tfoot><tr>';
+        d.footer.forEach(function(cell) { html += '<td>' + cell + '</td>'; });
+        html += '</tr></tfoot>';
+    }
+    html += '</table></body></html>';
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+}
+
+function shareToWhatsApp() {
+    window.open('https://wa.me/?text=' + encodeURIComponent(_waText), '_blank');
+}
+
+function copyShareText() {
+    navigator.clipboard && navigator.clipboard.writeText(_waText);
+}
+
+function exportClientLoans() {
+    var filtered = _clLoans.filter(function(l) {
+        return _clFilter === 'all' || (parseFloat(l.amount) - parseFloat(l.total_paid)) > 0;
+    });
+    if (!filtered.length) { alert('No data to export.'); return; }
+
+    var totalLoaned = 0, totalPaid = 0;
+    var waLines = ['Loans — ' + _clName, new Date().toLocaleDateString(), ''];
+    var pdfRows = [];
+    filtered.forEach(function(l, i) {
+        var balance = parseFloat(l.amount) - parseFloat(l.total_paid);
+        var status  = balance <= 0 ? 'Paid' : (parseFloat(l.total_paid) > 0 ? 'Partial' : 'Unpaid');
+        totalLoaned += parseFloat(l.amount);
+        totalPaid   += parseFloat(l.total_paid);
+        waLines.push((i+1) + '. ' + l.loan_date + ' | ' + (l.product_category||'') + '-' + (l.product_name||'?') +
+            '\n   Loaned: RWF ' + parseFloat(l.amount).toLocaleString() +
+            '  Paid: RWF ' + parseFloat(l.total_paid).toLocaleString() +
+            '  Balance: RWF ' + Math.abs(balance).toLocaleString() + ' (' + status + ')');
+        var createdAt = l.created_at ? l.created_at.replace('T',' ').substring(0,16) : '—';
+        pdfRows.push([(i+1), l.loan_date, (l.product_category||'')+'-'+(l.product_name||'?'),
+            parseFloat(l.amount).toLocaleString(), parseFloat(l.total_paid).toLocaleString(),
+            Math.abs(balance).toLocaleString(), status, createdAt, l.given_by_name||'—']);
+    });
+    var outstanding = totalLoaned - totalPaid;
+    waLines.push('', 'Total Loaned : RWF ' + totalLoaned.toLocaleString(),
+        'Total Paid   : RWF ' + totalPaid.toLocaleString(),
+        'Outstanding  : RWF ' + Math.abs(outstanding).toLocaleString());
+    openShareModal({
+        title: 'Loans — ' + _clName,
+        subtitle: new Date().toLocaleDateString(),
+        headers: ['#', 'Date', 'Product', 'Loaned (RWF)', 'Paid (RWF)', 'Balance (RWF)', 'Status', 'Created At', 'Given By'],
+        rows: pdfRows,
+        footer: ['', '', 'Total (' + filtered.length + ')', totalLoaned.toLocaleString(), totalPaid.toLocaleString(), Math.abs(outstanding).toLocaleString(), '', '', '']
+    }, waLines.join('\n'));
+}
+
+function exportClientPayments() {
+    if (!_cpayRows.length) { alert('No data to export.'); return; }
+    var from = document.getElementById('cpay_from').value;
+    var to   = document.getElementById('cpay_to').value;
+    var waLines = ['Payments — ' + _cpayClientName, 'Period: ' + from + ' to ' + to, ''];
+    var total = 0, pdfRows = [];
+    _cpayRows.forEach(function(p, i) {
+        var amt = parseFloat(p.amount_paid);
+        total += amt;
+        waLines.push((i+1) + '. ' + p.payment_date + ' | ' + (p.product_category||'') + '-' + (p.product_name||'?') +
+            '  RWF ' + amt.toLocaleString() + (p.received_by_name ? '  (by ' + p.received_by_name + ')' : ''));
+        pdfRows.push([(i+1), p.payment_date, (p.product_category||'')+'-'+(p.product_name||'?'),
+            amt.toLocaleString(), p.received_by_name || '—',
+            p.created_at ? p.created_at.replace('T',' ').substring(0,16) : '—']);
+    });
+    waLines.push('', 'Total: RWF ' + total.toLocaleString());
+    openShareModal({
+        title: 'Payments — ' + _cpayClientName,
+        subtitle: 'Period: ' + from + ' to ' + to,
+        headers: ['#', 'Date', 'Product', 'Amount Paid (RWF)', 'Received By', 'Created At'],
+        rows: pdfRows,
+        footer: ['', '', 'Total (' + _cpayRows.length + ')', total.toLocaleString(), '', '']
+    }, waLines.join('\n'));
+}
+
+function exportGlobalLoanPreview() {
+    if (!_gloanPreviewRows.length) { alert('No preview data to export.'); return; }
+    var amount = document.getElementById('gloan_amount').value;
+    var client = document.getElementById('gloan_client').value.trim();
+    var subtitle = 'Amount: RWF ' + parseFloat(amount).toLocaleString() + (client ? '  |  Client: ' + client : '');
+    var waLines = ['Global Loan Payment Preview', subtitle, new Date().toLocaleDateString(), ''];
+    var totalBalance = 0, totalWillPay = 0, pdfRows = [];
+    _gloanPreviewRows.forEach(function(row, i) {
+        var willPay = parseFloat(row.will_pay);
+        var balance = parseFloat(row.balance);
+        totalBalance += balance; totalWillPay += willPay;
+        var status = willPay <= 0 ? 'Not covered' : (willPay >= balance ? 'Full' : 'Partial');
+        waLines.push((i+1) + '. ' + row.date + ' | ' + row.label + ' | ' + (row.client||'—') +
+            '\n   Balance: RWF ' + balance.toLocaleString() +
+            '  Will pay: ' + (willPay > 0 ? 'RWF ' + willPay.toLocaleString() : '—') + ' (' + status + ')');
+        pdfRows.push([(i+1), row.date, row.label, row.client||'—',
+            balance.toLocaleString(), willPay > 0 ? willPay.toLocaleString() : '—']);
+    });
+    waLines.push('', 'Total Outstanding : RWF ' + totalBalance.toLocaleString(),
+        'Total Will Pay    : RWF ' + totalWillPay.toLocaleString());
+    openShareModal({
+        title: 'Global Loan Payment Preview',
+        subtitle: subtitle,
+        headers: ['#', 'Date', 'Product', 'Client', 'Balance (RWF)', 'Will Pay (RWF)'],
+        rows: pdfRows,
+        footer: ['', '', '', 'Total (' + pdfRows.length + ')', totalBalance.toLocaleString(), totalWillPay.toLocaleString()]
+    }, waLines.join('\n'));
+}
 
 function calcLoanAmount() {
     var qty = parseInt(document.getElementById('loan_qty').value) || 0;
@@ -949,6 +1160,7 @@ function viewClientLoans(clientName, clientId) {
     });
     document.getElementById('clientLoansFilter').style.display = 'none';
     document.getElementById('clientLoansPagination').style.display = 'none';
+    document.getElementById('clLoansExportBtn').style.display = 'none';
     var body = document.getElementById('clientLoansBody');
     body.innerHTML = '<p style="text-align:center;padding:20px;color:var(--secondary);">Loading...</p>';
     openModal('clientLoansModal');
@@ -1006,13 +1218,15 @@ function renderClientLoans() {
     var totalLoaned = 0, totalPaid = 0;
     filtered.forEach(function(l) { totalLoaned += parseFloat(l.amount); totalPaid += parseFloat(l.total_paid); });
 
-    var html = '<table class="table" style="font-size:13px;min-width:680px;">' +
-        '<thead><tr><th>#</th><th>Loan Date</th><th>Product</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+    var html = '<table class="table" style="font-size:13px;min-width:860px;">' +
+        '<thead><tr><th></th><th>#</th><th>Loan Date</th><th>Product</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Created At</th><th>Given By</th></tr></thead><tbody>';
 
     pageRows.forEach(function(l, idx) {
         var balance = parseFloat(l.amount) - parseFloat(l.total_paid);
         var statusCls = balance <= 0 ? 'badge-paid' : (parseFloat(l.total_paid) > 0 ? 'badge-partial' : 'badge-unpaid');
         var statusTxt = balance <= 0 ? 'Paid' : (parseFloat(l.total_paid) > 0 ? 'Partial' : 'Unpaid');
+        var createdAt = l.created_at ? l.created_at.replace('T',' ').substring(0,16) : '—';
+        var givenBy   = l.given_by_name || '—';
         var saleTab = '', saleId = 0;
         if (l.external_id) { saleTab = 'external'; saleId = l.external_id; }
         else if (l.bulk_id) { saleTab = 'bulk'; saleId = l.bulk_id; }
@@ -1022,6 +1236,10 @@ function renderClientLoans() {
               'style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 6px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;">' +
               saleTab.charAt(0).toUpperCase() + saleTab.slice(1) + ' ↗</a>' : '';
         html += '<tr>' +
+            '<td style="white-space:nowrap;">' + saleLink +
+            (balance > 0 ? '<button class="btn-pay" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this)" style="margin-right:4px;">Pay</button>' : '') +
+            '<a href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');" style="font-size:12px;color:var(--danger);text-decoration:none;padding:3px 6px;border:1px solid var(--danger);border-radius:4px;">Del</a>' +
+            '</td>' +
             '<td style="color:var(--secondary);">' + (start + idx + 1) + '</td>' +
             '<td style="white-space:nowrap;">' + l.loan_date + '</td>' +
             '<td>' + (l.product_category || '') + '-' + (l.product_name || '—') + '</td>' +
@@ -1029,20 +1247,20 @@ function renderClientLoans() {
             '<td>RWF ' + parseFloat(l.total_paid).toLocaleString() + '</td>' +
             '<td class="' + (balance > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(balance).toLocaleString() + '</strong></td>' +
             '<td><span class="' + statusCls + '">' + statusTxt + '</span></td>' +
-            '<td style="white-space:nowrap;">' + saleLink +
-            (balance > 0 ? '<button class="btn-pay" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this)" style="margin-right:4px;">Pay</button>' : '') +
-            '<a href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');" style="font-size:12px;color:var(--danger);text-decoration:none;padding:3px 6px;border:1px solid var(--danger);border-radius:4px;">Del</a>' +
-            '</td></tr>';
+            '<td style="color:var(--secondary);font-size:12px;white-space:nowrap;">' + createdAt + '</td>' +
+            '<td style="color:var(--secondary);">' + givenBy + '</td>' +
+            '</tr>';
     });
 
     var outstanding = totalLoaned - totalPaid;
     html += '</tbody><tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
-        '<td colspan="3" style="padding:10px 12px;">Total (' + filtered.length + ')</td>' +
+        '<td colspan="4" style="padding:10px 12px;">Total (' + filtered.length + ')</td>' +
         '<td>RWF ' + totalLoaned.toLocaleString() + '</td>' +
         '<td>RWF ' + totalPaid.toLocaleString() + '</td>' +
         '<td class="' + (outstanding > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(outstanding).toLocaleString() + '</strong></td>' +
-        '<td colspan="2"></td></tr></tfoot></table>';
+        '<td colspan="3"></td></tr></tfoot></table>';
     body.innerHTML = html;
+    document.getElementById('clLoansExportBtn').style.display = 'inline-flex';
 
     // Pagination
     var pag = document.getElementById('clientLoansPagination');
@@ -1074,6 +1292,8 @@ function openGlobalLoanPay() {
     document.getElementById('globalLoanPreview').style.display = 'none';
     document.getElementById('globalLoanPayAlert').style.display = 'none';
     document.getElementById('globalLoanPayBtn').disabled = true;
+    document.getElementById('gloanExportBtn').style.display = 'none';
+    _gloanPreviewRows = [];
     openModal('globalLoanPayModal');
 }
 
@@ -1099,7 +1319,7 @@ function loadLoanPreview() {
     var preview = document.getElementById('globalLoanPreview');
     var btn     = document.getElementById('globalLoanPayBtn');
 
-    if (amount <= 0) { preview.style.display = 'none'; btn.disabled = true; return; }
+    if (amount <= 0) { preview.style.display = 'none'; btn.disabled = true; document.getElementById('gloanExportBtn').style.display = 'none'; return; }
 
     var data = new FormData();
     data.append('preview_global_loan_payment', '1');
@@ -1112,6 +1332,9 @@ function loadLoanPreview() {
             var body    = document.getElementById('loanPreviewBody');
             var summary = document.getElementById('loanPreviewSummary');
             body.innerHTML = '';
+
+            _gloanPreviewRows = res.rows || [];
+            document.getElementById('gloanExportBtn').style.display = _gloanPreviewRows.length ? 'inline-block' : 'none';
 
             if (!res.rows || res.rows.length === 0) {
                 body.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--secondary);">No unpaid loans found.</td></tr>';
@@ -1189,6 +1412,7 @@ var _cpayClientId = 0;
 
 function viewClientPayments(clientId, clientName) {
     _cpayClientId = clientId;
+    _cpayClientName = clientName;
     document.getElementById('clientPaymentsTitle').textContent = clientName + ' — Payments';
     document.getElementById('clientPaymentsCount').textContent = '';
 
@@ -1202,6 +1426,8 @@ function viewClientPayments(clientId, clientName) {
 }
 
 function loadClientPayments() {
+    document.getElementById('cpayExportBtn').style.display = 'none';
+    _cpayRows = [];
     var body = document.getElementById('clientPaymentsBody');
     body.innerHTML = '<p style="text-align:center;padding:20px;color:var(--secondary);">Loading...</p>';
 
@@ -1214,8 +1440,10 @@ function loadClientPayments() {
     fetch('loans.php', { method: 'POST', body: data })
         .then(function(r) { return r.json(); })
         .then(function(rows) {
+            _cpayRows = rows;
             document.getElementById('clientPaymentsCount').textContent =
                 rows.length + ' payment' + (rows.length !== 1 ? 's' : '');
+            document.getElementById('cpayExportBtn').style.display = rows.length ? 'inline-block' : 'none';
 
             if (!rows.length) {
                 body.innerHTML = '<p style="text-align:center;padding:24px;color:var(--secondary);">No payments in this period.</p>';

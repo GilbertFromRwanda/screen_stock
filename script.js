@@ -1,3 +1,20 @@
+// ── Sale toast ─────────────────────────────────────────────────────────────
+function showSaleToast(message, success) {
+    var t = document.getElementById('saleToast');
+    if (!t) {
+        t = document.createElement('div');
+        t.id = 'saleToast';
+        document.body.appendChild(t);
+    }
+    t.textContent = message;
+    t.className = success ? 'show toast-success' : 'show toast-error';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function() {
+        t.style.opacity = '0';
+        setTimeout(function() { t.className = ''; t.style.opacity = ''; }, 260);
+    }, 4000);
+}
+
 // Modal functions
 function openModal(modalId) {
     document.getElementById(modalId).style.display = 'block';
@@ -13,6 +30,35 @@ window.onclick = function(event) {
         event.target.style.display = 'none';
     }
 }
+
+// ── Actions dropdown ───────────────────────────────────────────────────────
+function toggleActMenu(btn) {
+    var menu = btn.nextElementSibling;
+    var isOpen = menu.classList.contains('open');
+    closeActMenus();
+    if (!isOpen) {
+        var rect = btn.getBoundingClientRect();
+        menu.style.position = 'fixed';
+        menu.style.top  = (rect.bottom + 4) + 'px';
+        menu.style.left = rect.left + 'px';
+        menu.style.right = 'auto';
+        // flip left if it would overflow viewport
+        if (rect.left + 160 > window.innerWidth) {
+            menu.style.left = 'auto';
+            menu.style.right = (window.innerWidth - rect.right) + 'px';
+        }
+        menu.classList.add('open');
+    }
+}
+function closeActMenus() {
+    document.querySelectorAll('.act-menu.open').forEach(function(m) { m.classList.remove('open'); });
+}
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.act-menu-wrap')) closeActMenus();
+});
+// reposition on scroll/resize
+window.addEventListener('scroll', closeActMenus, true);
+window.addEventListener('resize', closeActMenus);
 
 // Stock Management - Move to Retail
 var movePiecesPerPackage = 0;

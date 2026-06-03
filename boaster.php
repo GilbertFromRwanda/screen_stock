@@ -312,10 +312,12 @@ if ($date_from || $date_to || $giver_filter) {
                         <td class="amount-positive">RWF <?php echo number_format($row['amount'], 0); ?></td>
                         <td><?php echo htmlspecialchars($row['description'] ?: '-'); ?></td>
                         <td>
-                            <div class="action-buttons">
-                                <a href="boaster.php?delete=<?php echo $row['id']; ?>" 
-                                   class="btn-delete"
-                                   onclick="return confirm('Delete this entry?')">Delete</a>
+                            <div class="act-menu-wrap">
+                                <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                <div class="act-menu">
+                                    <a class="act-item danger" href="boaster.php?delete=<?php echo $row['id']; ?>"
+                                        onclick="return confirm('Delete this entry?')"><i class="fas fa-trash"></i> Delete</a>
+                                </div>
                             </div>
                         </td>
                     </tr>

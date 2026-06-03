@@ -365,23 +365,23 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                                 <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
                                 <td><?php echo $user['last_login'] ? date('M d, Y', strtotime($user['last_login'])) : '<span style="color:var(--gray-400);">—</span>'; ?></td>
                                 <td>
-                                    <div class="action-buttons">
-                                        <button type="button" class="btn btn-sm btn-warning"
-                                                onclick="openEditModal(this)" <?php echo $data_attrs; ?>>Edit</button>
-                                        <?php if ($user['id'] != $_SESSION['user_id']): ?>
-                                            <form method="POST" style="display:contents;"
-                                                  onsubmit="return confirmDelete('<?php echo addslashes($user['full_name']); ?>')">
-                                                <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
-                                                <button type="submit" name="delete_user" class="btn btn-sm btn-danger">Delete</button>
-                                            </form>
-                                            <form method="POST" style="display:contents;">
+                                    <div class="act-menu-wrap">
+                                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                        <div class="act-menu">
+                                            <button class="act-item" type="button" onclick="openEditModal(this);closeActMenus()" <?php echo $data_attrs; ?>><i class="fas fa-pen"></i> Edit</button>
+                                            <?php if ($user['id'] != $_SESSION['user_id']): ?>
+                                            <form method="POST">
                                                 <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
                                                 <input type="hidden" name="current_status" value="<?php echo $user['status']; ?>">
-                                                <button type="submit" name="toggle_status" class="btn btn-sm <?php echo $user['status']=='active' ? 'btn-secondary' : 'btn-success'; ?>">
-                                                    <?php echo $user['status']=='active' ? 'Deactivate' : 'Activate'; ?>
-                                                </button>
+                                                <button type="submit" name="toggle_status" class="act-item"><i class="fas fa-<?php echo $user['status']=='active' ? 'ban' : 'check'; ?>"></i> <?php echo $user['status']=='active' ? 'Deactivate' : 'Activate'; ?></button>
                                             </form>
-                                        <?php endif; ?>
+                                            <div class="act-menu-sep"></div>
+                                            <form method="POST" onsubmit="return confirmDelete('<?php echo addslashes($user['full_name']); ?>')">
+                                                <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
+                                                <button type="submit" name="delete_user" class="act-item danger"><i class="fas fa-trash"></i> Delete</button>
+                                            </form>
+                                            <?php endif; ?>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>

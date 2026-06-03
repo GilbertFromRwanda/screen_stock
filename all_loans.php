@@ -118,6 +118,7 @@ $total_balance = $total_amt - $total_paid;
         <table class="table" id="tbl-all-loans" style="min-width:800px;">
             <thead>
                 <tr>
+                    <th></th>
                     <th>#</th>
                     <th>Date</th>
                     <th>Client</th>
@@ -128,7 +129,6 @@ $total_balance = $total_amt - $total_paid;
                     <th>Balance</th>
                     <th>Status</th>
                     <th>Given By</th>
-                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -146,6 +146,26 @@ $total_balance = $total_amt - $total_paid;
                 elseif ($l['retail_id'])    { $sale_tab = 'retail';   $sale_id = $l['retail_id']; }
             ?>
             <tr data-status="<?= $status ?>">
+                <td>
+                    <div class="act-menu-wrap">
+                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                        <div class="act-menu">
+                            <?php if ($sale_id):
+                                $sale_label = ['bulk'=>'Bulk','retail'=>'Retail','external'=>'External'][$sale_tab] ?? 'Sale';
+                            ?>
+                            <a class="act-item" href="sales.php?tab=<?= $sale_tab ?>&highlight=<?= $sale_id ?>" target="_blank"><i class="fas fa-arrow-up-right-from-square"></i> <?= $sale_label ?> Sale</a>
+                            <?php endif; ?>
+                            <?php if ($balance > 0): ?>
+                            <?php if ($sale_id): ?><div class="act-menu-sep"></div><?php endif; ?>
+                            <button class="act-item" style="color:#d97706;"
+                                data-loan-id="<?= (int)$l['id'] ?>"
+                                data-balance="<?= (float)$balance ?>"
+                                data-client="<?= htmlspecialchars($l['client'], ENT_QUOTES) ?>"
+                                onclick="openPayment(this);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </td>
                 <td style="color:var(--secondary);"><?= $i + 1 ?></td>
                 <td style="white-space:nowrap;"><?= htmlspecialchars($l['loan_date']) ?></td>
                 <td style="font-weight:600;"><?= htmlspecialchars($l['client']) ?></td>
@@ -158,23 +178,6 @@ $total_balance = $total_amt - $total_paid;
                 </td>
                 <td><span class="<?= $badge ?>"><?= $label ?></span></td>
                 <td style="color:var(--secondary);font-size:12px;"><?= htmlspecialchars($l['given_by_name'] ?: '—') ?></td>
-                <td style="white-space:nowrap;">
-                    <?php if ($sale_id):
-                        $sale_label = ['bulk'=>'Bulk','retail'=>'Retail','external'=>'External'][$sale_tab] ?? 'Sale';
-                    ?>
-                    <a href="sales.php?tab=<?= $sale_tab ?>&highlight=<?= $sale_id ?>" target="_blank"
-                        style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 7px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;">
-                        <?= $sale_label ?> ↗
-                    </a>
-                    <?php endif; ?>
-                    <?php if ($balance > 0): ?>
-                    <button class="btn-pay"
-                        data-loan-id="<?= (int)$l['id'] ?>"
-                        data-balance="<?= (float)$balance ?>"
-                        data-client="<?= htmlspecialchars($l['client'], ENT_QUOTES) ?>"
-                        onclick="openPayment(this)">Pay</button>
-                    <?php endif; ?>
-                </td>
             </tr>
             <?php endforeach; ?>
             </tbody>

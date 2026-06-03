@@ -19,7 +19,17 @@ $nav = [
                     ['href' => 'new-purchase.php', 'label' => 'New Purchase'],
                 ],
             ],
-            ['href' => 'sales.php',      'icon' => '⤴',  'label' => 'Sales'],
+            [
+                'href'    => 'sales.php',
+                'icon'    => '⤴',
+                'label'   => 'Sales',
+                'submenu' => [
+                    ['href' => 'sales.php',         'label' => 'View All '],
+                    ['href' => 'sale_bulk.php',      'label' => 'New Bulk Sale'],
+                    ['href' => 'sale_retail.php',    'label' => 'New Retail Sale'],
+                    ['href' => 'sale_external.php',  'label' => 'New External Sale'],
+                ],
+            ],
             // ['href' => 'suppliers.php',  'icon' => '⊙',  'label' => 'Suppliers'],
         ]
     ],
@@ -33,7 +43,7 @@ $nav = [
                 'icon'    => '⇄',
                 'label'   => 'Loans',
                 'submenu' => [
-                    ['href' => 'loans.php',     'label' => 'Loan Clients'],
+                    ['href' => 'loans.php',     'label' => 'By Client'],
                     ['href' => 'all_loans.php', 'label' => 'All Loans'],
                 ],
             ],
@@ -134,6 +144,7 @@ $nav = [
     </div>
 </div>
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
 /* ── Sidebar redesign ─────────────────────────────────────────────────────── */
 .sidebar {

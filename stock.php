@@ -235,11 +235,14 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                         <?php endif; ?>
                                     </td>
                                     <td><span class="badge badge-<?php echo $status_class; ?>"><?php echo $status; ?></span></td>
-                                    <td style="white-space:nowrap;">
-                                        <button onclick="openMoveModal(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $total_pieces; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['quantity']; ?>)"
-                                                class="btn btn-sm btn-primary">Move to Detaye</button>
-                                        <button onclick="openEditStock(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $row['quantity']; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['package_price']; ?>, <?php echo $row['retail_price']; ?>)"
-                                                class="btn btn-sm btn-secondary" style="margin-left:4px;">Edit</button>
+                                    <td>
+                                        <div class="act-menu-wrap">
+                                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                            <div class="act-menu">
+                                                <button class="act-item" onclick="openMoveModal(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $total_pieces; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['quantity']; ?>);closeActMenus()"><i class="fas fa-arrow-right"></i> Move to Detaye</button>
+                                                <button class="act-item" onclick="openEditStock(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $row['quantity']; ?>, <?php echo $row['pieces_per_package']; ?>, <?php echo $row['package_price']; ?>, <?php echo $row['retail_price']; ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
@@ -272,8 +275,12 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                     <td>RWF <?php echo number_format($row['retail_price'], 0); ?></td>
                                     <td>RWF <?php echo number_format($row['pieces_quantity'] * $row['retail_price'], 0); ?></td>
                                     <td>
-                                        <button onclick="openEditRetail(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $row['pieces_quantity']; ?>, <?php echo $row['retail_price']; ?>)"
-                                                class="btn btn-sm btn-secondary">Edit</button>
+                                        <div class="act-menu-wrap">
+                                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                            <div class="act-menu">
+                                                <button class="act-item" onclick="openEditRetail(<?php echo $row['product_id']; ?>, '<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>', <?php echo $row['pieces_quantity']; ?>, <?php echo $row['retail_price']; ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>

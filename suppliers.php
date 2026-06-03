@@ -78,10 +78,15 @@ $suppliers = mysqli_query($conn, "SELECT * FROM suppliers " . cidWhere() . " ORD
                             <td><?php echo htmlspecialchars($row['email']); ?></td>
                             <td><?php echo htmlspecialchars($row['address']); ?></td>
                             <td>
-                                <a href="#" class="btn btn-sm btn-warning">Edit</a>
-                                <a href="?delete=<?php echo $row['id']; ?>" 
-                                   onclick="return confirm('Are you sure?')" 
-                                   class="btn btn-sm btn-danger">Delete</a>
+                                <div class="act-menu-wrap">
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <div class="act-menu">
+                                        <a class="act-item" href="#"><i class="fas fa-pen"></i> Edit</a>
+                                        <div class="act-menu-sep"></div>
+                                        <a class="act-item danger" href="?delete=<?php echo $row['id']; ?>"
+                                            onclick="return confirm('Are you sure?')"><i class="fas fa-trash"></i> Delete</a>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                         <?php endwhile; ?>

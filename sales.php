@@ -1,4 +1,5 @@
 <?php
+ob_start();
 require_once 'config.php';
 
 if (!isLoggedIn()) {
@@ -150,26 +151,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     $phone         = mysqli_real_escape_string($conn, trim($_POST['ext_phone'] ?? ''));
     $total_amount  = $quantity * $unit_price;
 
-    if (empty($product_name)) {
-        $_SESSION['flash_error'] = "Product name is required for external sale.";
-        header("Location: sales.php"); exit;
-    }
-    if ($unit_price < 1) {
-        $_SESSION['flash_error'] = "Unit price must be greater than 0.";
-        header("Location: sales.php"); exit;
-    }
-    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
-        $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
-        header("Location: sales.php"); exit;
-    }
-    if ($loan_amount > 0 && empty($customer_name)) {
-        $_SESSION['flash_error'] = "Client name is required when loan amount is set.";
-        header("Location: sales.php"); exit;
-    }
-    if ($loan_amount > 0 && empty($phone)) {
-        $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
-        header("Location: sales.php"); exit;
-    }
+    if (empty($product_name))
+        saleResp(false, "Product name is required for external sale.", 'external');
+    if ($unit_price < 1)
+        saleResp(false, "Unit price must be greater than 0.", 'external');
+    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1)
+        saleResp(false, "Payment split must equal total (RWF " . number_format($total_amount, 0) . ").", 'external');
+    if ($loan_amount > 0 && empty($customer_name))
+        saleResp(false, "Client name is required when loan amount is set.", 'external');
+    if ($loan_amount > 0 && empty($phone))
+        saleResp(false, "Client phone is required when loan amount is set.", 'external');
 
     // Resolve owner — SELECT outside transaction (read-only)
     $owner_id_val = 'NULL';
@@ -221,13 +212,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
-        $_SESSION['flash_success'] = "External sale recorded — " . implode(", ", $parts);
-        $_SESSION['flash_sale_type'] = 'external';
+        saleResp(true, "External sale recorded — " . implode(", ", $parts), 'external');
     } else {
         mysqli_rollback($conn);
-        $_SESSION['flash_error'] = "Sale could not be recorded. Please try again.";
+        saleResp(false, "Sale could not be recorded. Please try again.", 'external');
     }
-    header("Location: sales.php"); exit;
+}
+
+// ── AJAX-aware response helper ────────────────────────────────────────────────
+function saleResp(bool $ok, string $msg, string $tab = '') {
+    if (!empty($_POST['ajax'])) {
+        ob_clean();
+        header('Content-Type: application/json');
+        echo json_encode(['success' => $ok, 'message' => $msg]);
+        exit;
+    }
+    if ($ok) { $_SESSION['flash_success'] = $msg; if ($tab) $_SESSION['flash_sale_type'] = $tab; }
+    else      { $_SESSION['flash_error']   = $msg; }
+    header('Location: sales.php' . ($tab ? '?tab='.$tab : ''));
+    exit;
 }
 
 // Handle Bulk Sale (with split payment: Cash + Momo + Loan)
@@ -245,23 +248,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     // Convert sold quantity to top-level packages for stock deduction
     $packages_to_deduct = (int)ceil($quantity / $level_divisor);
 
-    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
-        $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
-        header("Location: sales.php"); exit;
-    }
-    if ($loan_amount > 0 && empty($customer_name)) {
-        $_SESSION['flash_error'] = "Client name is required when loan amount is set.";
-        header("Location: sales.php"); exit;
-    }
-    if ($loan_amount > 0 && empty($phone)) {
-        $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
-        header("Location: sales.php"); exit;
-    }
+    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1)
+        saleResp(false, "Payment split must equal total (RWF " . number_format($total_amount, 0) . ").", 'bulk');
+    if ($loan_amount > 0 && empty($customer_name))
+        saleResp(false, "Client name is required when loan amount is set.", 'bulk');
+    if ($loan_amount > 0 && empty($phone))
+        saleResp(false, "Client phone is required when loan amount is set.", 'bulk');
     $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id $cid_and"));
-    if (!$stock || $stock['quantity'] < $packages_to_deduct) {
-        $_SESSION['flash_error'] = "Insufficient stock available";
-        header("Location: sales.php"); exit;
-    }
+    if (!$stock || $stock['quantity'] < $packages_to_deduct)
+        saleResp(false, "Insufficient stock available.", 'bulk');
     $sold_by       = (int)$_SESSION['user_id'];
     $has_loan_flag = $loan_amount > 0 ? 1 : 0;
     $loan_date     = date('Y-m-d');
@@ -299,13 +294,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
-        $_SESSION['flash_success'] = "Bulk sale recorded — " . implode(", ", $parts);
-        $_SESSION['flash_sale_type'] = 'bulk';
+        saleResp(true, "Bulk sale recorded — " . implode(", ", $parts), 'bulk');
     } else {
         mysqli_rollback($conn);
-        $_SESSION['flash_error'] = "Sale could not be recorded. Please try again.";
+        saleResp(false, "Sale could not be recorded. Please try again.", 'bulk');
     }
-    header("Location: sales.php"); exit;
 }
 
 // Handle Retail Sale (with split payment: Cash + Momo + Loan)
@@ -322,23 +315,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     $pieces_to_deduct = $qty_sold * $level_multiplier;   // actual pieces removed from retail_stock
     $total_amount     = $qty_sold * $selling_price;
 
-    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1) {
-        $_SESSION['flash_error'] = "Payment split (RWF " . number_format($cash_amount + $momo_amount + $loan_amount, 0) . ") must equal total (RWF " . number_format($total_amount, 0) . ").";
-        header("Location: sales.php"); exit;
-    }
-    if ($loan_amount > 0 && empty($customer_name)) {
-        $_SESSION['flash_error'] = "Client name is required when loan amount is set.";
-        header("Location: sales.php"); exit;
-    }
-    if ($loan_amount > 0 && empty($phone)) {
-        $_SESSION['flash_error'] = "Client phone is required when loan amount is set.";
-        header("Location: sales.php"); exit;
-    }
+    if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1)
+        saleResp(false, "Payment split must equal total (RWF " . number_format($total_amount, 0) . ").", 'retail');
+    if ($loan_amount > 0 && empty($customer_name))
+        saleResp(false, "Client name is required when loan amount is set.", 'retail');
+    if ($loan_amount > 0 && empty($phone))
+        saleResp(false, "Client phone is required when loan amount is set.", 'retail');
     $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $product_id $cid_and"));
-    if (!$retail || $retail['pieces_quantity'] < $pieces_to_deduct) {
-        $_SESSION['flash_error'] = "Insufficient retail stock available";
-        header("Location: sales.php"); exit;
-    }
+    if (!$retail || $retail['pieces_quantity'] < $pieces_to_deduct)
+        saleResp(false, "Insufficient retail stock available.", 'retail');
     $sold_by       = (int)$_SESSION['user_id'];
     $has_loan_flag = $loan_amount > 0 ? 1 : 0;
     $loan_date     = date('Y-m-d');
@@ -377,13 +362,47 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
-        $_SESSION['flash_success'] = "Retail sale recorded — " . implode(", ", $parts);
-        $_SESSION['flash_sale_type'] = 'retail';
+        saleResp(true, "Retail sale recorded — " . implode(", ", $parts), 'retail');
     } else {
         mysqli_rollback($conn);
-        $_SESSION['flash_error'] = "Sale could not be recorded. Please try again.";
+        saleResp(false, "Sale could not be recorded. Please try again.", 'retail');
     }
-    header("Location: sales.php"); exit;
+}
+
+// ── AJAX: Sales summary cards ─────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_sales_summary'])) {
+    $from = mysqli_real_escape_string($conn, $_POST['date_from'] ?? date('Y-m-d'));
+    $to   = mysqli_real_escape_string($conn, $_POST['date_to']   ?? date('Y-m-d'));
+
+    $bulk = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(total_amount),0) AS total,
+               COALESCE(SUM(cash_amount),0) AS cash, COALESCE(SUM(momo_amount),0) AS momo,
+               COALESCE(SUM(loan_amount),0) AS loan
+        FROM sales_bulk WHERE sale_date BETWEEN '$from' AND '$to' " . cidAndFor('sales_bulk')));
+
+    $retail = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(total_amount),0) AS total,
+               COALESCE(SUM(cash_amount),0) AS cash, COALESCE(SUM(momo_amount),0) AS momo,
+               COALESCE(SUM(loan_amount),0) AS loan
+        FROM sales_retail WHERE sale_date BETWEEN '$from' AND '$to' " . cidAndFor('sales_retail')));
+
+    $external = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(total_amount),0) AS total,
+               COALESCE(SUM(cash_amount),0) AS cash, COALESCE(SUM(momo_amount),0) AS momo,
+               COALESCE(SUM(loan_amount),0) AS loan
+        FROM sales_external WHERE sale_date BETWEEN '$from' AND '$to' " . cidAndFor('sales_external')));
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'bulk'        => $bulk,
+        'retail'      => $retail,
+        'external'    => $external,
+        'grand_total' => (float)$bulk['total']  + (float)$retail['total']  + (float)$external['total'],
+        'grand_cash'  => (float)$bulk['cash']   + (float)$retail['cash']   + (float)$external['cash'],
+        'grand_momo'  => (float)$bulk['momo']   + (float)$retail['momo']   + (float)$external['momo'],
+        'grand_loan'  => (float)$bulk['loan']   + (float)$retail['loan']   + (float)$external['loan'],
+    ]);
+    exit;
 }
 
 // ── AJAX: Get purchase cost (WAC) for a product ───────────────────────────────
@@ -616,19 +635,13 @@ $all_products_query = mysqli_query($conn, "
 $all_products_arr = [];
 while ($ap = mysqli_fetch_assoc($all_products_query)) $all_products_arr[] = $ap;
 
-// Existing loan clients for picker (with outstanding balance)
+// Existing loan clients for picker
 $loan_clients_query = mysqli_query($conn, "
-    SELECT l.client, l.phone, MAX(l.loan_date) AS last_visit, COUNT(DISTINCT l.id) AS visits,
-           SUM(l.amount) AS total_loaned,
-           COALESCE((SELECT SUM(lp.amount_paid) FROM loan_payments lp
-                     WHERE lp.loan_id IN (SELECT id FROM loans WHERE client = l.client AND (phone = l.phone OR (phone IS NULL AND l.phone IS NULL)))), 0) AS total_paid
-    FROM loans l GROUP BY l.client, l.phone ORDER BY last_visit DESC
+    SELECT name AS client, phone, total_loans AS visits, unpaid_amount AS outstanding
+    FROM loan_clients WHERE 1=1 $cid_and ORDER BY updated_at DESC
 ");
 $loan_clients_arr = [];
-while ($c = mysqli_fetch_assoc($loan_clients_query)) {
-    $c['outstanding'] = max(0, (float)$c['total_loaned'] - (float)$c['total_paid']);
-    $loan_clients_arr[] = $c;
-}
+while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
 // Product owners for picker
 $ext_owners_query = mysqli_query($conn, "
@@ -651,6 +664,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
     <title>Sales - Small Stock Management</title>
         <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/sales.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
         .searchable-select {
             position: relative;
@@ -747,6 +761,28 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         .lvl-btn.active .lvl-btn-name,
         .lvl-btn.active .lvl-btn-stock { color: var(--primary); }
 
+        .loan-card {
+            background: var(--white);
+            border-radius: 14px;
+            padding: 20px 18px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--gray-200);
+            border-top: 4px solid var(--primary);
+            transition: box-shadow .2s, transform .2s;
+        }
+        .loan-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+        .loan-card.green  { border-top-color: var(--success); }
+        .loan-card.red    { border-top-color: var(--danger); }
+        .loan-card.orange { border-top-color: var(--warning); }
+        .loan-card-label {
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: .6px; color: var(--secondary); margin-bottom: 8px;
+        }
+        .loan-card-value { font-size: 22px; font-weight: 700; color: var(--dark); line-height: 1.2; }
+        .loan-card-value.danger  { color: var(--danger); }
+        .loan-card-value.success { color: var(--success); }
+        .loan-card-sub { font-size: 11px; color: var(--secondary); margin-top: 5px; }
+
         .sales-tab-nav {
             display: flex;
             gap: 4px;
@@ -790,9 +826,45 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             <?php endif; ?>
             
             <div class="sale-action-buttons">
-                <button class="btn btn-primary btn-lg" onclick="openModal('bulkSaleModal')">+ Kuranguza</button>
-                <button class="btn btn-success btn-lg" onclick="openModal('retailSaleModal')">+ Gucuruza Detaye</button>
-                <button class="btn btn-lg" style="background:var(--warning,#f59e0b);color:#fff;" onclick="openModal('externalSaleModal')">+ External Sale</button>
+                <a href="sale_bulk.php" class="btn btn-primary btn-lg">+ Kuranguza</a>
+                <a href="sale_retail.php" class="btn btn-success btn-lg">+ Gucuruza Detaye</a>
+                <a href="sale_external.php" class="btn btn-lg" style="background:var(--warning,#f59e0b);color:#fff;">+ External Sale</a>
+            </div>
+
+            <!-- Summary Cards -->
+            <div id="salesSummaryCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:18px 0;">
+                <div class="loan-card" style="position:relative;">
+                    <div class="loan-card-label">All Sales</div>
+                    <div class="loan-card-value" id="sc-grand-total">—</div>
+                    <div class="loan-card-sub" id="sc-grand-sub" style="font-size:11px;margin-top:4px;"></div>
+                </div>
+                <div class="loan-card green">
+                    <div class="loan-card-label">Bulk (Kuranguza)</div>
+                    <div class="loan-card-value" id="sc-bulk-total">—</div>
+                    <div class="loan-card-sub" id="sc-bulk-sub" style="font-size:11px;margin-top:4px;"></div>
+                </div>
+                <div class="loan-card orange">
+                    <div class="loan-card-label">Retail (Detaye)</div>
+                    <div class="loan-card-value" id="sc-retail-total">—</div>
+                    <div class="loan-card-sub" id="sc-retail-sub" style="font-size:11px;margin-top:4px;"></div>
+                </div>
+                <div class="loan-card">
+                    <div class="loan-card-label">External</div>
+                    <div class="loan-card-value" id="sc-ext-total">—</div>
+                    <div class="loan-card-sub" id="sc-ext-sub" style="font-size:11px;margin-top:4px;"></div>
+                </div>
+                <div class="loan-card" style="border-left:4px solid #0ea5e9;">
+                    <div class="loan-card-label">Cash Collected</div>
+                    <div class="loan-card-value" id="sc-cash" style="color:#0ea5e9;">—</div>
+                </div>
+                <div class="loan-card" style="border-left:4px solid #8b5cf6;">
+                    <div class="loan-card-label">Momo Collected</div>
+                    <div class="loan-card-value" id="sc-momo" style="color:#8b5cf6;">—</div>
+                </div>
+                <div class="loan-card red">
+                    <div class="loan-card-label">On Loan</div>
+                    <div class="loan-card-value danger" id="sc-loan">—</div>
+                </div>
             </div>
               <?php
                 $active_tab = in_array($last_sale_type, ['bulk','retail','external'])
@@ -841,7 +913,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <table class="table" id="tbl-bulk">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
+                            <th>Actions</th><th>Date</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -853,6 +925,24 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
                         ?>
                         <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php endif; ?>>
+                            <td>
+                                <?php if($row['refunded']): ?>
+                                <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
+                                <?php else: ?>
+                                <div class="act-menu-wrap">
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <div class="act-menu">
+                                        <button class="act-item" onclick="openEditBulk(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['package_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                        <button class="act-item" onclick="openRefundModal('bulk',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
+                                        <div class="act-menu-sep"></div>
+                                        <form method="POST" onsubmit="return confirm('Delete this bulk sale and restore stock?')">
+                                            <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
+                                            <button type="submit" name="delete_bulk_sale" class="act-item danger"><i class="fas fa-trash"></i> Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
                             <td><?php echo htmlspecialchars($row['name']); ?></td>
                             <td><?php echo $row['quantity']; ?></td>
@@ -865,22 +955,6 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
-                            <td style="white-space:nowrap;">
-                                <?php if($row['refunded']): ?>
-                                <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
-                                <?php else: ?>
-                                <button class="btn btn-sm" style="background:var(--warning,#f59e0b);color:#fff;padding:3px 8px;"
-                                    onclick="openEditBulk(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['package_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>')">Edit</button>
-                                <button class="btn btn-sm" style="background:#8b5cf6;color:#fff;padding:3px 8px;"
-                                    onclick="openRefundModal('bulk',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>)">Refund</button>
-                                <?php endif; ?>
-                                <?php if(!$row['refunded']): ?>
-                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this bulk sale and restore stock?')">
-                                    <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
-                                    <button type="submit" name="delete_bulk_sale" class="btn btn-sm" style="background:var(--danger,#dc2626);color:#fff;padding:3px 8px;">Del</button>
-                                </form>
-                                <?php endif; ?>
-                            </td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -902,7 +976,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <table class="table" id="tbl-retail">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
+                            <th>Actions</th><th>Date</th><th>Product</th><th>Pieces</th><th>Price/Piece</th><th>Default Price</th><th>Difference</th><th>Total</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -916,6 +990,24 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             $diff_class = $price_diff > 0.005 ? 'text-danger' : ($price_diff < -0.005 ? 'text-success' : '');
                         ?>
                         <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php endif; ?>>
+                            <td>
+                                <?php if($row['refunded']): ?>
+                                <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
+                                <?php else: ?>
+                                <div class="act-menu-wrap">
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <div class="act-menu">
+                                        <button class="act-item" onclick="openEditRetail(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['retail_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                        <button class="act-item" onclick="openRefundModal('retail',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
+                                        <div class="act-menu-sep"></div>
+                                        <form method="POST" onsubmit="return confirm('Delete this retail sale and restore stock?')">
+                                            <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
+                                            <button type="submit" name="delete_retail_sale" class="act-item danger"><i class="fas fa-trash"></i> Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
                             <td><?php echo htmlspecialchars($row['name']); ?></td>
                             <td><?php echo $row['pieces_sold']; ?></td>
@@ -928,22 +1020,6 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
-                            <td style="white-space:nowrap;">
-                                <?php if($row['refunded']): ?>
-                                <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
-                                <?php else: ?>
-                                <button class="btn btn-sm" style="background:var(--warning,#f59e0b);color:#fff;padding:3px 8px;"
-                                    onclick="openEditRetail(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['retail_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>')">Edit</button>
-                                <button class="btn btn-sm" style="background:#8b5cf6;color:#fff;padding:3px 8px;"
-                                    onclick="openRefundModal('retail',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['total_amount']; ?>)">Refund</button>
-                                <?php endif; ?>
-                                <?php if(!$row['refunded']): ?>
-                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this retail sale and restore stock?')">
-                                    <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
-                                    <button type="submit" name="delete_retail_sale" class="btn btn-sm" style="background:var(--danger,#dc2626);color:#fff;padding:3px 8px;">Del</button>
-                                </form>
-                                <?php endif; ?>
-                            </td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -965,7 +1041,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <table class="table" id="tbl-external">
                     <thead>
                         <tr>
-                            <th>Date</th><th>Product</th><th>Owner</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>My Commission</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th><th>Actions</th>
+                            <th>Actions</th><th>Date</th><th>Product</th><th>Owner</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>My Commission</th><th>Cash</th><th>Momo</th><th>Loan</th><th>Customer</th><th>Sold By</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -973,6 +1049,24 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             $ext_grand_total += $row['total_amount'];
                         ?>
                         <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php endif; ?>>
+                            <td>
+                                <?php if($row['refunded']): ?>
+                                <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
+                                <?php else: ?>
+                                <div class="act-menu-wrap">
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <div class="act-menu">
+                                        <button class="act-item" onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,<?php echo (float)($row['my_revenue'] ?? 0); ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                        <button class="act-item" onclick="openRefundModal('external',<?php echo $row['id']; ?>,0,'<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
+                                        <div class="act-menu-sep"></div>
+                                        <form method="POST" onsubmit="return confirm('Delete this external sale?')">
+                                            <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
+                                            <button type="submit" name="delete_external_sale" class="act-item danger"><i class="fas fa-trash"></i> Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo date('Y-m-d', strtotime($row['sale_date'])); ?></td>
                             <td><?php echo htmlspecialchars($row['product_name']); ?></td>
                             <td><?php
@@ -989,22 +1083,6 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?: 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
-                            <td style="white-space:nowrap;">
-                                <?php if($row['refunded']): ?>
-                                <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
-                                <?php else: ?>
-                                <button class="btn btn-sm" style="background:var(--warning,#f59e0b);color:#fff;padding:3px 8px;"
-                                    onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,<?php echo (float)($row['my_revenue'] ?? 0); ?>)">Edit</button>
-                                <button class="btn btn-sm" style="background:#8b5cf6;color:#fff;padding:3px 8px;"
-                                    onclick="openRefundModal('external',<?php echo $row['id']; ?>,0,'<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>)">Refund</button>
-                                <?php endif; ?>
-                                <?php if(!$row['refunded']): ?>
-                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this external sale?')">
-                                    <input type="hidden" name="sale_id" value="<?php echo $row['id']; ?>">
-                                    <button type="submit" name="delete_external_sale" class="btn btn-sm" style="background:var(--danger,#dc2626);color:#fff;padding:3px 8px;">Del</button>
-                                </form>
-                                <?php endif; ?>
-                            </td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -2650,6 +2728,72 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     btn.disabled = false; btn.textContent = 'Process Refund';
                 });
         }
+
+    // ── Sales summary cards ──────────────────────────────────────────────────
+    function fmt(n) { return 'RWF ' + parseFloat(n).toLocaleString(undefined, {maximumFractionDigits:0}); }
+
+    function loadSummaryCards() {
+        var from = document.getElementById('date_from').value;
+        var to   = document.getElementById('date_to').value;
+        var ids  = ['sc-grand-total','sc-bulk-total','sc-retail-total','sc-ext-total','sc-cash','sc-momo','sc-loan'];
+        ids.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = '…'; el.style.opacity = '0.4'; }
+        });
+
+        var fd = new FormData();
+        fd.append('get_sales_summary', '1');
+        fd.append('date_from', from);
+        fd.append('date_to',   to);
+
+        fetch('sales.php', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                function sub(s) {
+                    var parts = [];
+                    if (+s.cash > 0) parts.push('Cash: ' + fmt(s.cash));
+                    if (+s.momo > 0) parts.push('Momo: ' + fmt(s.momo));
+                    if (+s.loan > 0) parts.push('Loan: ' + fmt(s.loan));
+                    return s.cnt + ' sale' + (s.cnt != 1 ? 's' : '') + (parts.length ? '  ·  ' + parts.join('  ') : '');
+                }
+                function set(id, val) {
+                    var el = document.getElementById(id);
+                    if (el) { el.textContent = val; el.style.opacity = ''; }
+                }
+                set('sc-grand-total', fmt(d.grand_total));
+                set('sc-bulk-total',  fmt(d.bulk.total));
+                set('sc-retail-total',fmt(d.retail.total));
+                set('sc-ext-total',   fmt(d.external.total));
+                set('sc-cash',        fmt(d.grand_cash));
+                set('sc-momo',        fmt(d.grand_momo));
+                set('sc-loan',        fmt(d.grand_loan));
+
+                var grandSub = document.getElementById('sc-grand-sub');
+                if (grandSub) grandSub.textContent =
+                    (+d.bulk.cnt + +d.retail.cnt + +d.external.cnt) + ' total sales';
+
+                var bSub = document.getElementById('sc-bulk-sub');
+                if (bSub) bSub.textContent = sub(d.bulk);
+                var rSub = document.getElementById('sc-retail-sub');
+                if (rSub) rSub.textContent = sub(d.retail);
+                var eSub = document.getElementById('sc-ext-sub');
+                if (eSub) eSub.textContent = sub(d.external);
+            })
+            .catch(function() {
+                ids.forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) { el.textContent = '—'; el.style.opacity = ''; }
+                });
+            });
+    }
+
+    loadSummaryCards();
+
+    // Re-fetch when the filter form is submitted
+    document.querySelector('.date-filter-form').addEventListener('submit', function() {
+        setTimeout(loadSummaryCards, 50);
+    });
+
     </script>
 </body>
 </html>

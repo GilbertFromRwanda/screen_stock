@@ -204,15 +204,21 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
                     <td><?php echo htmlspecialchars($row['category'] ?: '-'); ?></td>
                     <td>RWF <?php echo number_format($row['amount'], 0); ?></td>
                     <td>
-                        <button type="button" class="btn btn-sm btn-secondary"
-                            data-id="<?php echo $row['id']; ?>"
-                            data-description="<?php echo htmlspecialchars($row['description'], ENT_QUOTES); ?>"
-                            data-category="<?php echo htmlspecialchars($row['category'], ENT_QUOTES); ?>"
-                            data-amount="<?php echo $row['amount']; ?>"
-                            data-date="<?php echo $row['expense_date']; ?>"
-                            onclick="openEditExpense(this)">Edit</button>
-                        <a href="?delete=<?php echo $row['id']; ?>" class="btn btn-sm btn-danger"
-                            onclick="return confirm('Delete this expense?')">Delete</a>
+                        <div class="act-menu-wrap">
+                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                            <div class="act-menu">
+                                <button class="act-item"
+                                    data-id="<?php echo $row['id']; ?>"
+                                    data-description="<?php echo htmlspecialchars($row['description'], ENT_QUOTES); ?>"
+                                    data-category="<?php echo htmlspecialchars($row['category'], ENT_QUOTES); ?>"
+                                    data-amount="<?php echo $row['amount']; ?>"
+                                    data-date="<?php echo $row['expense_date']; ?>"
+                                    onclick="openEditExpense(this);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                <div class="act-menu-sep"></div>
+                                <a class="act-item danger" href="?delete=<?php echo $row['id']; ?>"
+                                    onclick="return confirm('Delete this expense?')"><i class="fas fa-trash"></i> Delete</a>
+                            </div>
+                        </div>
                     </td>
                 </tr>
                 <?php $grand_total += $row['amount']; endforeach;

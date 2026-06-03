@@ -233,22 +233,21 @@ function companyColor($name) {
                             <td><span class="status-badge <?php echo $c['status']; ?>"><?php echo ucfirst($c['status']); ?></span></td>
                             <td><?php echo date('M d, Y', strtotime($c['created_at'])); ?></td>
                             <td>
-                                <div class="action-buttons">
-                                    <button type="button" class="btn btn-sm btn-warning"
-                                            onclick="openEditModal(this)" <?php echo $data; ?>>Edit</button>
-                                    <form method="POST" style="display:contents;"
-                                          onsubmit="return confirm('Delete <?php echo addslashes($c['name']); ?>?')">
-                                        <input type="hidden" name="company_id" value="<?php echo $c['id']; ?>">
-                                        <button type="submit" name="delete_company" class="btn btn-sm btn-danger">Delete</button>
-                                    </form>
-                                    <form method="POST" style="display:contents;">
-                                        <input type="hidden" name="company_id" value="<?php echo $c['id']; ?>">
-                                        <input type="hidden" name="current_status" value="<?php echo $c['status']; ?>">
-                                        <button type="submit" name="toggle_status"
-                                                class="btn btn-sm <?php echo $c['status'] === 'active' ? 'btn-secondary' : 'btn-success'; ?>">
-                                            <?php echo $c['status'] === 'active' ? 'Deactivate' : 'Activate'; ?>
-                                        </button>
-                                    </form>
+                                <div class="act-menu-wrap">
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <div class="act-menu">
+                                        <button class="act-item" type="button" onclick="openEditModal(this);closeActMenus()" <?php echo $data; ?>><i class="fas fa-pen"></i> Edit</button>
+                                        <form method="POST">
+                                            <input type="hidden" name="company_id" value="<?php echo $c['id']; ?>">
+                                            <input type="hidden" name="current_status" value="<?php echo $c['status']; ?>">
+                                            <button type="submit" name="toggle_status" class="act-item"><i class="fas fa-<?php echo $c['status'] === 'active' ? 'ban' : 'check'; ?>"></i> <?php echo $c['status'] === 'active' ? 'Deactivate' : 'Activate'; ?></button>
+                                        </form>
+                                        <div class="act-menu-sep"></div>
+                                        <form method="POST" onsubmit="return confirm('Delete <?php echo addslashes($c['name']); ?>?')">
+                                            <input type="hidden" name="company_id" value="<?php echo $c['id']; ?>">
+                                            <button type="submit" name="delete_company" class="act-item danger"><i class="fas fa-trash"></i> Delete</button>
+                                        </form>
+                                    </div>
                                 </div>
                             </td>
                         </tr>

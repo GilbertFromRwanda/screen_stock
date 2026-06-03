@@ -449,16 +449,20 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
                         <?php endif; ?>
                     </td>
                     <td>
-                        <div style="display:flex;gap:6px;align-items:center;">
-                        <?php if ($bal > 0): ?>
-                            <button type="button" class="btn btn-sm btn-primary"
-                                data-con-id="<?php echo $row['id']; ?>"
-                                data-done-by="<?php echo htmlspecialchars($row['done_by'] ?: 'N/A', ENT_QUOTES); ?>"
-                                data-balance="<?php echo $bal; ?>"
-                                onclick="openConPayment(this)">Pay</button>
-                        <?php endif; ?>
-                        <a href="?delete=<?php echo $row['id']; ?>" class="btn btn-sm btn-danger"
-                            onclick="return confirm('Delete this record?')">Del</a>
+                        <div class="act-menu-wrap">
+                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                            <div class="act-menu">
+                                <?php if ($bal > 0): ?>
+                                <button class="act-item"
+                                    data-con-id="<?php echo $row['id']; ?>"
+                                    data-done-by="<?php echo htmlspecialchars($row['done_by'] ?: 'N/A', ENT_QUOTES); ?>"
+                                    data-balance="<?php echo $bal; ?>"
+                                    onclick="openConPayment(this);closeActMenus()"><i class="fas fa-money-bill"></i> Pay</button>
+                                <div class="act-menu-sep"></div>
+                                <?php endif; ?>
+                                <a class="act-item danger" href="?delete=<?php echo $row['id']; ?>"
+                                    onclick="return confirm('Delete this record?')"><i class="fas fa-trash"></i> Delete</a>
+                            </div>
                         </div>
                     </td>
                 </tr>

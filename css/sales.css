@@ -592,34 +592,34 @@
         }
 
         /* Table row action buttons — stacked, tap-friendly */
-        #tbl-bulk td:last-child,
-        #tbl-retail td:last-child,
-        #tbl-external td:last-child {
+        #tbl-bulk td:first-child,
+        #tbl-retail td:first-child,
+        #tbl-external td:first-child {
             white-space: normal;
             padding: 6px 8px;
             min-width: 72px;
         }
 
-        #tbl-bulk td:last-child .btn,
-        #tbl-retail td:last-child .btn,
-        #tbl-external td:last-child .btn {
-            display: block;
-            padding: 7px 10px !important;
+        #tbl-bulk td:first-child,
+        #tbl-retail td:first-child,
+        #tbl-external td:first-child {
+            display: table-cell;
+        }
+
+        #tbl-bulk td:first-child .btn,
+        #tbl-retail td:first-child .btn,
+        #tbl-external td:first-child .btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px !important;
             font-size: 12px !important;
-            margin-bottom: 4px;
+            margin: 2px 2px 2px 0;
         }
 
-        #tbl-bulk td:last-child .btn:last-of-type,
-        #tbl-retail td:last-child .btn:last-of-type,
-        #tbl-external td:last-child .btn:last-of-type {
-            margin-bottom: 0;
-        }
-
-        #tbl-bulk td:last-child form,
-        #tbl-retail td:last-child form,
-        #tbl-external td:last-child form {
-            display: block !important;
-            margin-top: 4px;
+        #tbl-bulk td:first-child form,
+        #tbl-retail td:first-child form,
+        #tbl-external td:first-child form {
+            display: inline !important;
         }
 
         /* Level selector buttons — wrap tighter */

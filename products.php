@@ -211,10 +211,14 @@ function build_rows($result, $offset) {
             <td>{$um}</td>
             <td>RWF " . number_format($row['unit_price'], 0) . "</td>
             <td>
-                <a href='#' class='btn btn-sm btn-warning'
-                    onclick=\"editProduct({$row['id']},'$js_name','$js_cat',{$row['reorder_level']},'$js_um',{$row['unit_price']})\">Edit</a>
-                <a href='products.php?delete={$row['id']}' onclick=\"return confirm('Are you sure?')\"
-                    class='btn btn-sm btn-danger'>Delete</a>
+                <div class='act-menu-wrap'>
+                    <button class='act-btn' title='Actions' onclick='toggleActMenu(this)'><i class='fas fa-ellipsis-v'></i></button>
+                    <div class='act-menu'>
+                        <a class='act-item' href='#' onclick=\"editProduct({$row['id']},'$js_name','$js_cat',{$row['reorder_level']},'$js_um',{$row['unit_price']});closeActMenus()\"><i class='fas fa-pen'></i> Edit</a>
+                        <div class='act-menu-sep'></div>
+                        <a class='act-item danger' href='products.php?delete={$row['id']}' onclick=\"return confirm('Are you sure?')\"><i class='fas fa-trash'></i> Delete</a>
+                    </div>
+                </div>
             </td>
         </tr>";
         $i++;

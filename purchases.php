@@ -419,19 +419,24 @@ $purchases = mysqli_query($conn, "
                             </td>
                             <td><?php echo $row['supplier_name'] ? htmlspecialchars($row['supplier_name']) : '<span style="color:var(--gray-300);">—</span>'; ?></td>
                             <td>
-                                <button type="button" class="btn btn-sm btn-secondary"
-                                    data-id="<?php echo $row['id']; ?>"
-                                    data-product-id="<?php echo $row['product_id']; ?>"
-                                    data-product-name="<?php echo htmlspecialchars($row['product_category'].'-'.$row['product_name']); ?>"
-                                    data-supplier-id="<?php echo $row['supplier_id'] ?? ''; ?>"
-                                    data-quantity="<?php echo $row['quantity']; ?>"
-                                    data-pieces-per-qty="<?php echo $row['pieces_per_qty']; ?>"
-                                    data-cost-price="<?php echo $row['cost_price']; ?>"
-                                    data-package-price="<?php echo $row['package_price']; ?>"
-                                    data-retail-price="<?php echo $row['retail_price']; ?>"
-                                    data-date="<?php echo date('Y-m-d', strtotime($row['purchase_date'])); ?>"
-                                    onclick="openEditPurchase(this)">Edit</button>
-                                <a href="new-purchase.php?repeat=<?= $row['id'] ?>" class="btn btn-sm btn-primary" style="margin-left:4px;">Repeat</a>
+                                <div class="act-menu-wrap">
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <div class="act-menu">
+                                        <button class="act-item"
+                                            data-id="<?php echo $row['id']; ?>"
+                                            data-product-id="<?php echo $row['product_id']; ?>"
+                                            data-product-name="<?php echo htmlspecialchars($row['product_category'].'-'.$row['product_name']); ?>"
+                                            data-supplier-id="<?php echo $row['supplier_id'] ?? ''; ?>"
+                                            data-quantity="<?php echo $row['quantity']; ?>"
+                                            data-pieces-per-qty="<?php echo $row['pieces_per_qty']; ?>"
+                                            data-cost-price="<?php echo $row['cost_price']; ?>"
+                                            data-package-price="<?php echo $row['package_price']; ?>"
+                                            data-retail-price="<?php echo $row['retail_price']; ?>"
+                                            data-date="<?php echo date('Y-m-d', strtotime($row['purchase_date'])); ?>"
+                                            onclick="openEditPurchase(this);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                        <a class="act-item" href="new-purchase.php?repeat=<?= $row['id'] ?>"><i class="fas fa-rotate-right"></i> Repeat</a>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                         <?php
