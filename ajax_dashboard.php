@@ -26,7 +26,7 @@ $cost_wh = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
 "))['v'] ?? 0);
 
 $cost_rt = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE(SUM(rs.pieces_quantity*(ac.wac/NULLIF(st.pieces_per_package,1))),0) v
+    SELECT COALESCE(SUM(rs.pieces_quantity*(ac.wac/NULLIF(st.pieces_per_package,0))),0) v
     FROM retail_stock rs
     JOIN (SELECT product_id, SUM(quantity*cost_price)/NULLIF(SUM(quantity),0) wac
           FROM purchases WHERE cost_price IS NOT NULL " . cidAndFor('purchases') . " GROUP BY product_id) ac
