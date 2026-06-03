@@ -18,15 +18,16 @@ if (!$conn) {
 // Set timezone
 date_default_timezone_set('Africa/Kigali');
 
+// Set timezone
+date_default_timezone_set('Africa/Kigali');
+
 // Function to check if user is logged in
 function isLoggedIn() {
     return isset($_SESSION['user_id']);
 }
 
-// Function to redirect
-function redirect($url) {
-    header("Location: $url");
-    exit();
+function isSuperAdmin() {
+    return ($_SESSION['role'] ?? '') === 'superadmin';
 }
 
 // Returns the session company_id as int, or null for superadmin
@@ -42,8 +43,18 @@ function cidSql(): string {
 function cidAnd(): string {
     $c = cid(); return $c !== null ? "AND company_id = $c" : '';
 }
+// Returns "AND alias.company_id = X" or "" — use when query has multiple joined tables
+function cidAndFor(string $alias): string {
+    $c = cid(); return $c !== null ? "AND $alias.company_id = $c" : '';
+}
 // Returns "WHERE company_id = X" or "" (superadmin sees all)
 function cidWhere(): string {
     $c = cid(); return $c !== null ? "WHERE company_id = $c" : '';
+}
+
+// Function to redirect
+function redirect($url) {
+    header("Location: $url");
+    exit();
 }
 ?>
