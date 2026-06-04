@@ -63,6 +63,27 @@ function product_exists($conn, $name, $category, $exclude_id = 0) {
     return $r && mysqli_num_rows($r) > 0;
 }
 
+// ── Export products as CSV ────────────────────────────────────────────────────
+if (isset($_GET['export'])) {
+    $search_exp     = trim($_GET['search'] ?? '');
+    $search_esc_exp = mysqli_real_escape_string($conn, $search_exp);
+    $where_exp      = "WHERE deleted = 0" . ($search_esc_exp !== '' ? " AND (name LIKE '%$search_esc_exp%' OR category LIKE '%$search_esc_exp%')" : "");
+    $exp_q          = mysqli_query($conn, "SELECT name, category, reorder_level, unit_measure, unit_price FROM products $where_exp ORDER BY name ASC");
+
+    $filename = 'products_' . date('Y-m-d') . '.csv';
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Name', 'Category', 'Reorder Level', 'Unit Measure', 'Unit Price']);
+    while ($r = mysqli_fetch_assoc($exp_q)) {
+        fputcsv($out, [$r['name'], $r['category'], $r['reorder_level'], $r['unit_measure'], $r['unit_price']]);
+    }
+    fclose($out);
+    exit;
+}
+
 // ── Template download ──────────────────────────────────────────────────────────
 if (isset($_GET['template'])) {
     header('Content-Type: text/csv');
@@ -304,6 +325,7 @@ if (isset($_GET['ajax'])) {
         <div class="products-toolbar">
             <button onclick="openModal('addProductModal')" class="btn btn-primary">Add New Product</button>
             <button onclick="openModal('importModal')" class="btn btn-secondary">Import Excel</button>
+            <a id="exportBtn" href="products.php?export=1" class="btn btn-secondary" style="text-decoration:none;">Export CSV</a>
             <div class="search-wrap">
                 <input type="text" id="productSearch" placeholder="Search name or category..."
                     value="<?php echo htmlspecialchars($search); ?>" autocomplete="off">
@@ -413,9 +435,16 @@ const pagination = document.getElementById('productsPagination');
 const infoEl     = document.getElementById('productsInfo');
 const searchInput = document.getElementById('productSearch');
 
+const exportBtn = document.getElementById('exportBtn');
+function updateExportLink(search) {
+    exportBtn.href = 'products.php?export=1' + (search ? '&search=' + encodeURIComponent(search) : '');
+}
+updateExportLink(currentSearch);
+
 function fetchProducts(page, search) {
     currentPage   = page;
     currentSearch = search;
+    updateExportLink(search);
     tbody.classList.add('loading');
 
     const url = 'products.php?ajax=1&page=' + page + (search ? '&search=' + encodeURIComponent(search) : '');

@@ -779,7 +779,7 @@ function loadPreset(key, btn) {
     suggestPrices();
 }
 
-addLevel();
+loadPreset('two', document.querySelectorAll('.preset-card')[1]);
 
 <?php if ($repeat_data): ?>
 (function() {

@@ -51,17 +51,18 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
 
-// Date filter
-$date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($conn, $_GET['date_from']) : '';
-$date_to   = isset($_GET['date_to'])   ? mysqli_real_escape_string($conn, $_GET['date_to'])   : '';
+// Date filter — default to current month
+$date_from = isset($_GET['date_from']) && $_GET['date_from'] !== ''
+    ? mysqli_real_escape_string($conn, $_GET['date_from'])
+    : date('Y-m-01');
+$date_to   = isset($_GET['date_to'])   && $_GET['date_to']   !== ''
+    ? mysqli_real_escape_string($conn, $_GET['date_to'])
+    : date('Y-m-t');
 
 $cid_and = cidAnd();
-$where = "WHERE 1=1 $cid_and"; $limit = " LIMIT 100";
-if ($date_from && $date_to)  { $where .= " AND expense_date BETWEEN '$date_from' AND '$date_to'"; $limit = ""; }
-elseif ($date_from)           { $where .= " AND expense_date >= '$date_from'"; $limit = ""; }
-elseif ($date_to)             { $where .= " AND expense_date <= '$date_to'";   $limit = ""; }
+$where   = "WHERE 1=1 $cid_and AND expense_date BETWEEN '$date_from' AND '$date_to'";
 
-$records = mysqli_query($conn, "SELECT * FROM expenses $where ORDER BY expense_date DESC, id DESC $limit");
+$records = mysqli_query($conn, "SELECT * FROM expenses $where ORDER BY expense_date DESC, id DESC");
 
 // Summary stats (all-time)
 $stats = mysqli_fetch_assoc(mysqli_query($conn, "
@@ -150,9 +151,8 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
                 <input type="date" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>">
             </div>
             <button type="submit" class="btn btn-primary">Filter</button>
-            <?php if ($date_from || $date_to): ?>
-                <a href="expenses.php" class="btn btn-secondary">Clear</a>
-            <?php endif; ?>
+            <a href="expenses.php?date_from=<?php echo date('Y-m-d'); ?>&date_to=<?php echo date('Y-m-d'); ?>" class="btn btn-secondary">Today</a>
+            <a href="expenses.php" class="btn btn-secondary">This Month</a>
         </form>
 
         <div id="pageAlert" class="alert" style="display:none;"></div>
@@ -164,6 +164,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
                 <thead>
                     <tr>
                         <th>#</th>
+                        <th>Date</th>
                         <th>Description</th>
                         <th>Category</th>
                         <th>Amount</th>
@@ -172,34 +173,13 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
                 </thead>
                 <tbody>
                 <?php
-                $rows = []; $date_totals = [];
-                while ($row = mysqli_fetch_assoc($records)) {
-                    $rows[] = $row;
-                    $d = $row['expense_date'];
-                    if (!isset($date_totals[$d])) $date_totals[$d] = 0;
-                    $date_totals[$d] += $row['amount'];
-                }
-                $current_date = ''; $group_index = 0; $grand_total = 0; $row_num = 0;
-                foreach ($rows as $row):
-                    $row_date = $row['expense_date'];
-                    if ($row_date !== $current_date):
-                        if ($current_date !== ''):
+                $grand_total = 0; $row_num = 0;
+                while ($row = mysqli_fetch_assoc($records)):
+                    $grand_total += $row['amount'];
                 ?>
-                <tr class="date-subtotal" data-group="<?php echo $group_index; ?>">
-                    <td colspan="3"><strong>Subtotal</strong></td>
-                    <td colspan="2"><strong>RWF <?php echo number_format($date_totals[$current_date], 0); ?></strong></td>
-                </tr>
-                <?php $group_index++; endif; $current_date = $row_date; $is_first = ($group_index === 0); ?>
-                <tr class="date-group-header <?php echo $is_first ? 'active' : ''; ?>" data-toggle="<?php echo $group_index; ?>" onclick="toggleDateGroup(this)">
-                    <td colspan="4">
-                        <span class="toggle-icon"><?php echo $is_first ? '&#9660;' : '&#9654;'; ?></span>
-                        <?php echo date('D, M d Y', strtotime($row_date)); ?>
-                    </td>
-                    <td class="header-total">RWF <?php echo number_format($date_totals[$row_date], 0); ?></td>
-                </tr>
-                <?php endif; ?>
-                <tr class="date-group-row" data-group="<?php echo $group_index; ?>" <?php if ($group_index > 0): ?>style="display:none"<?php endif; ?>>
+                <tr>
                     <td><?php echo ++$row_num; ?></td>
+                    <td style="white-space:nowrap;"><?php echo date('D, M d Y', strtotime($row['expense_date'])); ?></td>
                     <td><?php echo htmlspecialchars($row['description']); ?></td>
                     <td><?php echo htmlspecialchars($row['category'] ?: '-'); ?></td>
                     <td>RWF <?php echo number_format($row['amount'], 0); ?></td>
@@ -221,17 +201,14 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
                         </div>
                     </td>
                 </tr>
-                <?php $grand_total += $row['amount']; endforeach;
-                if ($current_date !== ''): ?>
-                <tr class="date-subtotal" data-group="<?php echo $group_index; ?>" <?php if ($group_index > 0): ?>style="display:none"<?php endif; ?>>
-                    <td colspan="3"><strong>Subtotal</strong></td>
-                    <td colspan="2"><strong>RWF <?php echo number_format($date_totals[$current_date], 0); ?></strong></td>
-                </tr>
+                <?php endwhile;
+                if ($row_num === 0): ?>
+                <tr><td colspan="6" style="text-align:center;color:var(--secondary);padding:32px;">No expenses found.</td></tr>
                 <?php endif; ?>
                 </tbody>
                 <tfoot>
                     <tr class="grand-total">
-                        <td colspan="3"><strong>Grand Total</strong></td>
+                        <td colspan="4"><strong>Total</strong></td>
                         <td colspan="2"><strong>RWF <?php echo number_format($grand_total, 0); ?></strong></td>
                     </tr>
                 </tfoot>
@@ -314,14 +291,6 @@ function openEditExpense(btn) {
     openModal('editExpenseModal');
 }
 
-function toggleDateGroup(header) {
-    var groupId = header.getAttribute('data-toggle');
-    var rows = document.querySelectorAll('tr[data-group="' + groupId + '"]');
-    var isActive = header.classList.contains('active');
-    header.classList.toggle('active', !isActive);
-    header.querySelector('.toggle-icon').innerHTML = isActive ? '&#9654;' : '&#9660;';
-    rows.forEach(function(r) { r.style.display = isActive ? 'none' : ''; });
-}
 
 function ajaxForm(formId, alertId, actionName, onSuccess) {
     document.getElementById(formId).addEventListener('submit', function(e) {

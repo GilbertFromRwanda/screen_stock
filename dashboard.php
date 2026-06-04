@@ -241,7 +241,7 @@ try {
         <!-- Dashboard Row: Chart + Stock Health -->
         <div class="dashboard-row">
             <div class="chart-container">
-                <h3>Sales Trend (Last 7 Days) <small>Bulk vs Retail</small></h3>
+                <h3>Daily Revenue (Sunday - Saturday)</h3>
                 <div class="chart-wrapper" style="height:300px;">
                     <canvas id="salesChart"></canvas>
                 </div>
@@ -302,61 +302,6 @@ try {
             </div>
         </div>
 
-        <!-- Performance Summary -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px;">
-            <div class="perf-box">
-                <h4>Performance Summary</h4>
-                <div class="perf-grid">
-                    <div class="perf-item">
-                        <div class="perf-item-label">Avg. Daily Sales</div>
-                        <div class="perf-item-value" id="d-avg-daily"><span class="skel skel-sm">&nbsp;</span></div>
-                    </div>
-                    <div class="perf-item">
-                        <div class="perf-item-label">Best Day</div>
-                        <div class="perf-item-value" id="d-best-day"><span class="skel skel-sm">&nbsp;</span></div>
-                    </div>
-                    <div class="perf-item">
-                        <div class="perf-item-label">Total Transactions</div>
-                        <div class="perf-item-value" id="d-total-trans"><span class="skel skel-sm">&nbsp;</span></div>
-                    </div>
-                    <div class="perf-item">
-                        <div class="perf-item-label">Stock Turnover</div>
-                        <div class="perf-item-value" id="d-turnover"><span class="skel skel-sm">&nbsp;</span></div>
-                    </div>
-                </div>
-            </div>
-            <div class="perf-box">
-                <h4>Quick Insights</h4>
-                <div class="insight-row">
-                    <span class="insight-label">Bulk vs Retail</span>
-                    <span class="insight-value" id="d-bulk-retail"><span class="skel skel-sm">&nbsp;</span></span>
-                </div>
-                <div class="insight-row">
-                    <span class="insight-label">Avg. Transaction</span>
-                    <span class="insight-value" id="d-avg-trans"><span class="skel skel-sm">&nbsp;</span></span>
-                </div>
-                <div class="insight-row">
-                    <span class="insight-label">Peak Hour</span>
-                    <span class="insight-value" id="d-peak-hour"><span class="skel skel-sm">&nbsp;</span></span>
-                </div>
-                <div class="insight-row">
-                    <span class="insight-label">Items per Sale</span>
-                    <span class="insight-value" id="d-avg-items"><span class="skel skel-sm">&nbsp;</span></span>
-                </div>
-                <div class="insight-row" style="border-top:1px solid var(--gray-100);margin-top:4px;padding-top:8px;">
-                    <span class="insight-label">💵 Cash (today)</span>
-                    <span class="insight-value" style="color:#16a34a;" id="d-ins-cash"><span class="skel skel-sm">&nbsp;</span></span>
-                </div>
-                <div class="insight-row">
-                    <span class="insight-label">📱 Momo (today)</span>
-                    <span class="insight-value" style="color:#2563eb;" id="d-ins-momo"><span class="skel skel-sm">&nbsp;</span></span>
-                </div>
-                <div class="insight-row">
-                    <span class="insight-label">🔖 Loans (today)</span>
-                    <span class="insight-value" style="color:#d97706;" id="d-ins-loan"><span class="skel skel-sm">&nbsp;</span></span>
-                </div>
-            </div>
-        </div>
 
     </div><!-- /main-content -->
 </div><!-- /dashboard-container -->
@@ -457,18 +402,6 @@ function populate(d) {
     set('d-mov-count', d.mov_count.toLocaleString());
     set('d-suppliers', d.total_suppliers.toLocaleString());
 
-    // Performance
-    set('d-avg-daily', 'RWF ' + moneySpan(d.avg_daily));
-    setText('d-best-day', d.best_day);
-    set('d-total-trans', d.total_trans.toLocaleString());
-    setText('d-turnover', d.stock_turnover + '%');
-    setText('d-bulk-retail', d.bulk_pct + '% / ' + d.retail_pct + '%');
-    set('d-avg-trans', 'RWF ' + moneySpan(d.avg_trans));
-    setText('d-peak-hour', d.peak_hour);
-    setText('d-avg-items', d.avg_items.toFixed(1));
-    set('d-ins-cash', 'RWF ' + moneySpan(d.today_cash));
-    set('d-ins-momo', 'RWF ' + moneySpan(d.today_momo));
-    set('d-ins-loan', 'RWF ' + moneySpan(d.today_loan));
 
     // Low stock
     buildLowStock(d.low_stock, d.retail_empty);
@@ -480,7 +413,7 @@ function populate(d) {
     buildAlerts(d);
 
     // Chart
-    buildChart(d.chart_labels, d.chart_bulk, d.chart_retail);
+    buildChart(d.chart_labels, d.chart_revenue, d.chart_cost, d.chart_profit);
 
     // Users dropdown for collection
     var sel = document.getElementById('coll-user');
@@ -561,27 +494,60 @@ function buildAlerts(d) {
     set('d-alerts', html);
 }
 
-function buildChart(labels, bulk, retail) {
+function buildChart(labels, revenue, cost, profit) {
     var canvas = document.getElementById('salesChart');
     if (!canvas) return;
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     try {
         chartInstance = new Chart(canvas.getContext('2d'), {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: labels,
                 datasets: [
-                    {label:'Bulk Sales', data:bulk, borderColor:'rgba(102,126,234,1)',
-                     backgroundColor:'rgba(102,126,234,0.1)', borderWidth:2, tension:0.4, pointRadius:4,
-                     pointBackgroundColor:'rgba(102,126,234,1)'},
-                    {label:'Retail Sales', data:retail, borderColor:'rgba(245,87,108,1)',
-                     backgroundColor:'rgba(245,87,108,0.1)', borderWidth:2, tension:0.4, pointRadius:4,
-                     pointBackgroundColor:'rgba(245,87,108,1)'}
+                    {
+                        label: 'Revenue',
+                        data: revenue,
+                        backgroundColor: 'rgba(40,167,69,0.7)',
+                        borderColor: 'rgba(40,167,69,1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Cost',
+                        data: cost,
+                        backgroundColor: 'rgba(220,53,69,0.7)',
+                        borderColor: 'rgba(220,53,69,1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Profit',
+                        data: profit,
+                        type: 'line',
+                        borderColor: 'rgba(102,126,234,1)',
+                        backgroundColor: 'rgba(102,126,234,0.1)',
+                        borderWidth: 3,
+                        pointRadius: 5,
+                        pointBackgroundColor: 'rgba(102,126,234,1)',
+                        tension: 0.3,
+                        fill: true
+                    }
                 ]
             },
-            options: {responsive:true, maintainAspectRatio:false,
-                animation:{duration:400},
-                plugins:{legend:{display:true, position:'top'}}}
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 400 },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': RWF ' + ctx.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
         });
     } catch(e) { console.error(e); }
 }

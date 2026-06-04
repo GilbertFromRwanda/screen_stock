@@ -244,7 +244,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['trim_data'])) {
     $flash_ok = "Whitespace trimmed — $trimmed value(s) updated in $tbl.";
 }
 
-// ── Clear database ────────────────────────────────────────────────────────────
+// ── Clear database (superadmin only) ─────────────────────────────────────────
+$is_superadmin = ($_SESSION['role'] ?? '') === 'superadmin';
+
 // Groups: transactional (always offered), products, users
 $CLEAR_GROUPS = [
     'transactions' => [
@@ -269,7 +271,7 @@ $CLEAR_GROUPS = [
     ],
 ];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_superadmin) {
     $chosen = $_POST['clear_groups'] ?? [];
     $to_clear = [];
     foreach ($chosen as $grp) {
@@ -509,7 +511,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db'])) {
             </form>
         </div>
 
-        <!-- ── Clear Database ──────────────────────────────────────────────────── -->
+        <!-- ── Clear Database (superadmin only) ──────────────────────────────── -->
+        <?php if ($is_superadmin): ?>
         <div class="clear-panel">
             <div class="clear-panel-head" onclick="toggleClearPanel()">
                 <span style="font-size:18px;">🗑️</span>
@@ -556,6 +559,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db'])) {
                 </form>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- ── Slow Queries ────────────────────────────────────────────────────── -->
         <div class="sq-panel">

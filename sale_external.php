@@ -230,12 +230,22 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                     </div>
                 </div>
 
-                <!-- Is Loan -->
-                <div class="form-group" style="margin:0 0 16px;">
+                <!-- Payment shortcuts -->
+                <div class="form-group" style="margin:0 0 16px;display:flex;flex-wrap:wrap;gap:10px;">
                     <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="ext_is_loan" onchange="toggleExtIsLoan()" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
+                        <input type="checkbox" id="ext_is_loan" onchange="toggleExtShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
                         <span style="font-weight:700;font-size:14px;">Is Loan?</span>
                         <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                        <input type="checkbox" id="ext_is_cash" onchange="toggleExtShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
+                        <span style="font-weight:700;font-size:14px;">Is Cash?</span>
+                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                        <input type="checkbox" id="ext_is_momo" onchange="toggleExtShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
+                        <span style="font-weight:700;font-size:14px;">Is Momo?</span>
+                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
                     </label>
                 </div>
 
@@ -486,6 +496,8 @@ function calcExtTotal() {
         document.getElementById('ext_sum_total').textContent = 'RWF ' + total.toLocaleString();
         document.getElementById('ext_summary').style.display = 'block';
         var isLoan = document.getElementById('ext_is_loan').checked;
+        var isCash = document.getElementById('ext_is_cash').checked;
+        var isMomo = document.getElementById('ext_is_momo').checked;
         var cash = parseFloat(document.getElementById('ext_cash').value)||0;
         var momo = parseFloat(document.getElementById('ext_momo').value)||0;
         var loan = parseFloat(document.getElementById('ext_loan').value)||0;
@@ -493,6 +505,14 @@ function calcExtTotal() {
             document.getElementById('ext_cash').value = 0;
             document.getElementById('ext_momo').value = 0;
             document.getElementById('ext_loan').value = total;
+        } else if (isCash) {
+            document.getElementById('ext_cash').value = total;
+            document.getElementById('ext_momo').value = 0;
+            document.getElementById('ext_loan').value = 0;
+        } else if (isMomo) {
+            document.getElementById('ext_cash').value = 0;
+            document.getElementById('ext_momo').value = total;
+            document.getElementById('ext_loan').value = 0;
         } else if (cash===0 && momo===0 && loan===0) {
             document.getElementById('ext_momo').value = total;
         }
@@ -539,14 +559,20 @@ function calcExtSplit(changed) {
     document.getElementById('ext_submit_btn').disabled = !(extCoreValid && splitOk && clientOk);
 }
 
-function toggleExtIsLoan() {
-    var isLoan = document.getElementById('ext_is_loan').checked;
-    if (isLoan) {
-        var qty   = parseInt(document.getElementById('ext_quantity').value) || 0;
-        var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
-        document.getElementById('ext_cash').value = 0;
-        document.getElementById('ext_momo').value = 0;
-        document.getElementById('ext_loan').value = qty * price;
+function toggleExtShortcut(type) {
+    if (type !== 'loan') document.getElementById('ext_is_loan').checked = false;
+    if (type !== 'cash') document.getElementById('ext_is_cash').checked = false;
+    if (type !== 'momo') document.getElementById('ext_is_momo').checked = false;
+
+    var qty   = parseInt(document.getElementById('ext_quantity').value)   || 0;
+    var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
+    var total = qty * price;
+    var checked = document.getElementById('ext_is_' + type).checked;
+
+    if (checked) {
+        document.getElementById('ext_cash').value = type === 'cash' ? total : 0;
+        document.getElementById('ext_momo').value = type === 'momo' ? total : 0;
+        document.getElementById('ext_loan').value = type === 'loan' ? total : 0;
     }
     calcExtSplit();
 }
@@ -601,6 +627,9 @@ function handleExtSubmit() {
                 document.getElementById('ext_cash').value = 0;
                 document.getElementById('ext_momo').value = 0;
                 document.getElementById('ext_loan').value = 0;
+                document.getElementById('ext_is_loan').checked = false;
+                document.getElementById('ext_is_cash').checked = false;
+                document.getElementById('ext_is_momo').checked = false;
                 document.getElementById('ext_summary').style.display = 'none';
                 document.getElementById('ext_loan_fields').style.display = 'none';
                 extCoreValid = false;

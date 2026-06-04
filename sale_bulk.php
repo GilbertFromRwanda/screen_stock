@@ -212,12 +212,22 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                     <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
                 </div>
 
-                <!-- Is Loan -->
-                <div class="form-group" style="margin:0 0 16px;">
+                <!-- Payment shortcuts -->
+                <div class="form-group" style="margin:0 0 16px;display:flex;flex-wrap:wrap;gap:10px;">
                     <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkIsLoan()" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
+                        <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
                         <span style="font-weight:700;font-size:14px;">Is Loan?</span>
                         <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                        <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
+                        <span style="font-weight:700;font-size:14px;">Is Cash?</span>
+                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                        <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
+                        <span style="font-weight:700;font-size:14px;">Is Momo?</span>
+                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
                     </label>
                 </div>
 
@@ -506,6 +516,8 @@ function calculateBulkTotal() {
         document.getElementById('bulk_sum_total').textContent = 'RWF ' + total.toLocaleString();
         summary.style.display = 'block';
         var isLoan = document.getElementById('bulk_is_loan').checked;
+        var isCash = document.getElementById('bulk_is_cash').checked;
+        var isMomo = document.getElementById('bulk_is_momo').checked;
         var cash = parseFloat(document.getElementById('bulk_cash').value)||0;
         var momo = parseFloat(document.getElementById('bulk_momo').value)||0;
         var loan = parseFloat(document.getElementById('bulk_loan_split').value)||0;
@@ -513,6 +525,14 @@ function calculateBulkTotal() {
             document.getElementById('bulk_cash').value = 0;
             document.getElementById('bulk_momo').value = 0;
             document.getElementById('bulk_loan_split').value = total;
+        } else if (isCash) {
+            document.getElementById('bulk_cash').value = total;
+            document.getElementById('bulk_momo').value = 0;
+            document.getElementById('bulk_loan_split').value = 0;
+        } else if (isMomo) {
+            document.getElementById('bulk_cash').value = 0;
+            document.getElementById('bulk_momo').value = total;
+            document.getElementById('bulk_loan_split').value = 0;
         } else if (cash===0 && momo===0 && loan===0) {
             document.getElementById('bulk_momo').value = total;
         }
@@ -553,14 +573,20 @@ function calcBulkSplit(changed) {
     document.getElementById('bulk_submit_btn').disabled = !(bulkCoreValid && splitOk && clientOk);
 }
 
-function toggleBulkIsLoan() {
-    var isLoan = document.getElementById('bulk_is_loan').checked;
-    if (isLoan) {
-        var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
-        var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
-        document.getElementById('bulk_cash').value = 0;
-        document.getElementById('bulk_momo').value = 0;
-        document.getElementById('bulk_loan_split').value = qty * price;
+function toggleBulkShortcut(type) {
+    if (type !== 'loan') document.getElementById('bulk_is_loan').checked = false;
+    if (type !== 'cash') document.getElementById('bulk_is_cash').checked = false;
+    if (type !== 'momo') document.getElementById('bulk_is_momo').checked = false;
+
+    var qty   = parseInt(document.getElementById('bulk_quantity').value)   || 0;
+    var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
+    var total = qty * price;
+    var checked = document.getElementById('bulk_is_' + type).checked;
+
+    if (checked) {
+        document.getElementById('bulk_cash').value       = type === 'cash' ? total : 0;
+        document.getElementById('bulk_momo').value       = type === 'momo' ? total : 0;
+        document.getElementById('bulk_loan_split').value = type === 'loan' ? total : 0;
     }
     calcBulkSplit();
 }
@@ -616,6 +642,9 @@ function handleBulkSubmit() {
                 document.getElementById('bulk_cash').value = 0;
                 document.getElementById('bulk_momo').value = 0;
                 document.getElementById('bulk_loan_split').value = 0;
+                document.getElementById('bulk_is_loan').checked = false;
+                document.getElementById('bulk_is_cash').checked = false;
+                document.getElementById('bulk_is_momo').checked = false;
                 document.getElementById('bulk_summary').style.display = 'none';
                 document.getElementById('bulk_payment_section').style.display = 'none';
                 document.getElementById('bulk_loan_fields').style.display = 'none';

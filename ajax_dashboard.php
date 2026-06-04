@@ -96,24 +96,58 @@ $today_profit = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
 
 $week_profit = (float)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_profit),0) v FROM weekly_revenue WHERE week_start_date='$week_start' $ca"))['v'] ?? 0);
 
-// ── Chart data ────────────────────────────────────────────────────────────────
-$chart_labels = []; $chart_bulk = []; $chart_retail = [];
-$cid_val = cid();
-$chart_cond_b = $cid_val !== null ? "AND sb.company_id=$cid_val" : "";
-$chart_cond_r = $cid_val !== null ? "AND sr.company_id=$cid_val" : "";
+// ── Chart data (current week: Sunday – Saturday) ──────────────────────────────
+$chart_labels = []; $chart_revenue = []; $chart_cost = []; $chart_profit = [];
+
+$week_sun_chart = date('Y-m-d', strtotime('sunday last week'));
+$week_sat_chart = date('Y-m-d', strtotime('saturday this week'));
+if (date('w') == 0) {
+    $week_sun_chart = date('Y-m-d');
+    $week_sat_chart = date('Y-m-d', strtotime('saturday next week'));
+}
+
 $chart_q = mysqli_query($conn, "
     SELECT dates.date,
-        COALESCE(SUM(CASE WHEN sb.id IS NOT NULL THEN sb.total_amount ELSE 0 END),0) bulk,
-        COALESCE(SUM(CASE WHEN sr.id IS NOT NULL THEN sr.total_amount ELSE 0 END),0) retail
-    FROM (SELECT CURDATE()-INTERVAL n DAY date FROM (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6) x) dates
-    LEFT JOIN sales_bulk   sb ON sb.sale_date=dates.date AND sb.refunded=0 $chart_cond_b
-    LEFT JOIN sales_retail sr ON sr.sale_date=dates.date AND sr.refunded=0 $chart_cond_r
-    GROUP BY dates.date ORDER BY dates.date
+        COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0) AS total_revenue,
+        COALESCE(bulk.cost,    0) + COALESCE(retail.cost,    0) AS total_cost,
+        (COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0))
+        - (COALESCE(bulk.cost, 0) + COALESCE(retail.cost, 0))   AS profit
+    FROM (
+        SELECT DATE('$week_sun_chart') + INTERVAL seq DAY AS date
+        FROM (SELECT 0 seq UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6) x
+    ) dates
+    LEFT JOIN (
+        SELECT sale_date,
+            SUM(total_amount) AS revenue,
+            SUM(COALESCE((SELECT cost_price FROM purchases pu2
+                          WHERE pu2.product_id = sb.product_id " . cidAndFor('pu2') . "
+                          ORDER BY purchase_date DESC LIMIT 1), 0)
+                * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)) AS cost
+        FROM sales_bulk sb
+        WHERE sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
+        GROUP BY sale_date
+    ) AS bulk ON bulk.sale_date = dates.date
+    LEFT JOIN (
+        SELECT sale_date,
+            SUM(total_amount) AS revenue,
+            SUM(COALESCE(
+                (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0)
+                 FROM purchases pu
+                 JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
+                 WHERE pu.product_id = sr.product_id " . cidAndFor('pu') . "
+                 ORDER BY pu.purchase_date DESC LIMIT 1), 0
+            ) * sr.pieces_sold) AS cost
+        FROM sales_retail sr
+        WHERE sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
+        GROUP BY sale_date
+    ) AS retail ON retail.sale_date = dates.date
+    ORDER BY dates.date ASC
 ");
 while ($r = mysqli_fetch_assoc($chart_q)) {
-    $chart_labels[] = date('D', strtotime($r['date']));
-    $chart_bulk[]   = (float)$r['bulk'];
-    $chart_retail[] = (float)$r['retail'];
+    $chart_labels[]  = date('D', strtotime($r['date']));
+    $chart_revenue[] = (float)$r['total_revenue'];
+    $chart_cost[]    = (float)$r['total_cost'];
+    $chart_profit[]  = (float)$r['profit'];
 }
 
 // ── Low stock ─────────────────────────────────────────────────────────────────
@@ -127,64 +161,6 @@ $retail_empty = (int)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c 
 $mov = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) cnt, COALESCE(SUM(pieces_moved),0) pcs FROM stock_movements WHERE moved_date BETWEEN '$week_start' AND '$week_end' $ca"));
 $total_suppliers = (int)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM suppliers WHERE 1=1 $ca"))['c'] ?? 0);
 $outstanding_loans = (float)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) v FROM loans WHERE 1=1 $ca"))['v'] ?? 0);
-
-// ── Performance metrics ───────────────────────────────────────────────────────
-$avg_daily = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT AVG(daily_total) v FROM (
-        SELECT sale_date, SUM(total_amount) daily_total FROM (
-            SELECT sale_date, total_amount FROM sales_bulk   WHERE 1=1 $ca
-            UNION ALL SELECT sale_date, total_amount FROM sales_retail WHERE 1=1 $ca
-        ) s GROUP BY sale_date ORDER BY sale_date DESC LIMIT 30
-    ) t
-"))['v'] ?? 0);
-
-$best_day_row = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT DAYNAME(sale_date) dn, COUNT(*) c FROM (
-        SELECT sale_date FROM sales_bulk   WHERE 1=1 $ca
-        UNION ALL SELECT sale_date FROM sales_retail WHERE 1=1 $ca
-    ) s GROUP BY DAYOFWEEK(sale_date) ORDER BY c DESC LIMIT 1
-"));
-$best_day = $best_day_row['dn'] ?? 'N/A';
-
-$total_trans = (int)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT (SELECT COUNT(*) FROM sales_bulk WHERE 1=1 $ca)+(SELECT COUNT(*) FROM sales_retail WHERE 1=1 $ca) v
-"))['v'] ?? 0);
-
-$trn = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE(SUM(sb.quantity),0) sold, COALESCE((SELECT SUM(quantity) FROM stock WHERE 1=1 $ca),1) stk
-    FROM products p
-    LEFT JOIN sales_bulk sb ON p.id=sb.product_id " . cidAndFor('sb') . "
-    LEFT JOIN sales_retail sr ON p.id=sr.product_id " . cidAndFor('sr') . "
-"));
-$stock_turnover = $trn['stk'] > 0 ? round(($trn['sold'] / $trn['stk']) * 100) : 0;
-
-$bulk_all   = (float)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_amount),0) v FROM sales_bulk   WHERE 1=1 $ca"))['v'] ?? 0);
-$retail_all = (float)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_amount),0) v FROM sales_retail WHERE 1=1 $ca"))['v'] ?? 0);
-$total_all  = $bulk_all + $retail_all;
-
-$avg_trans_row = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT AVG(amount) v FROM (
-        SELECT total_amount amount FROM sales_bulk   WHERE 1=1 $ca
-        UNION ALL SELECT total_amount FROM sales_retail WHERE 1=1 $ca
-    ) s
-"));
-$avg_trans = (float)($avg_trans_row['v'] ?? 0);
-
-$peak_row = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT HOUR(created_at) h, COUNT(*) c FROM (
-        SELECT created_at FROM sales_bulk   WHERE 1=1 $ca
-        UNION ALL SELECT created_at FROM sales_retail WHERE 1=1 $ca
-    ) s GROUP BY h ORDER BY c DESC LIMIT 1
-"));
-$peak_hour = $peak_row ? date('g A', strtotime($peak_row['h'] . ':00')) : 'N/A';
-
-$avg_items_row = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT AVG(items) v FROM (
-        SELECT quantity AS items FROM sales_bulk   WHERE 1=1 $ca
-        UNION ALL SELECT pieces_sold FROM sales_retail WHERE 1=1 $ca
-    ) s
-"));
-$avg_items = round((float)($avg_items_row['v'] ?? 0), 1);
 
 // ── Users for filter ──────────────────────────────────────────────────────────
 $users = [];
@@ -232,19 +208,11 @@ echo json_encode([
     'mov_count'        => (int)$mov['cnt'],
     'mov_pieces'       => (int)$mov['pcs'],
     'chart_labels'     => $chart_labels,
-    'chart_bulk'       => $chart_bulk,
-    'chart_retail'     => $chart_retail,
+    'chart_revenue'    => $chart_revenue,
+    'chart_cost'       => $chart_cost,
+    'chart_profit'     => $chart_profit,
     'low_stock'        => $low_stock,
     'retail_empty'     => $retail_empty,
-    'avg_daily'        => $avg_daily,
-    'best_day'         => $best_day,
-    'total_trans'      => $total_trans,
-    'stock_turnover'   => $stock_turnover,
-    'bulk_pct'         => $total_all > 0 ? round($bulk_all / $total_all * 100) : 0,
-    'retail_pct'       => $total_all > 0 ? round($retail_all / $total_all * 100) : 0,
-    'avg_trans'        => $avg_trans,
-    'peak_hour'        => $peak_hour,
-    'avg_items'        => $avg_items,
     'users'            => $users,
     'top_products'     => $top_products,
     'today'            => $today,

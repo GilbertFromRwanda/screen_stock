@@ -209,12 +209,22 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                     <input type="text" id="retail_customer" name="customer_name" value="client" placeholder="Enter customer name">
                 </div>
 
-                <!-- Is Loan -->
-                <div class="form-group" style="margin:0 0 16px;">
+                <!-- Payment shortcuts -->
+                <div class="form-group" style="margin:0 0 16px;display:flex;flex-wrap:wrap;gap:10px;">
                     <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="retail_is_loan" onchange="toggleRetailIsLoan()" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
+                        <input type="checkbox" id="retail_is_loan" onchange="toggleRetailShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
                         <span style="font-weight:700;font-size:14px;">Is Loan?</span>
                         <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                        <input type="checkbox" id="retail_is_cash" onchange="toggleRetailShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
+                        <span style="font-weight:700;font-size:14px;">Is Cash?</span>
+                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                        <input type="checkbox" id="retail_is_momo" onchange="toggleRetailShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
+                        <span style="font-weight:700;font-size:14px;">Is Momo?</span>
+                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
                     </label>
                 </div>
 
@@ -506,6 +516,8 @@ function calculateRetailTotal() {
         document.getElementById('retail_sum_total').textContent = 'RWF ' + total.toLocaleString();
         summary.style.display = 'block';
         var isLoan = document.getElementById('retail_is_loan').checked;
+        var isCash = document.getElementById('retail_is_cash').checked;
+        var isMomo = document.getElementById('retail_is_momo').checked;
         var cash = parseFloat(document.getElementById('retail_cash').value)||0;
         var momo = parseFloat(document.getElementById('retail_momo').value)||0;
         var loan = parseFloat(document.getElementById('retail_loan_split').value)||0;
@@ -513,6 +525,14 @@ function calculateRetailTotal() {
             document.getElementById('retail_cash').value = 0;
             document.getElementById('retail_momo').value = 0;
             document.getElementById('retail_loan_split').value = total;
+        } else if (isCash) {
+            document.getElementById('retail_cash').value = total;
+            document.getElementById('retail_momo').value = 0;
+            document.getElementById('retail_loan_split').value = 0;
+        } else if (isMomo) {
+            document.getElementById('retail_cash').value = 0;
+            document.getElementById('retail_momo').value = total;
+            document.getElementById('retail_loan_split').value = 0;
         } else if (cash===0 && momo===0 && loan===0) {
             document.getElementById('retail_momo').value = total;
         }
@@ -553,14 +573,21 @@ function calcRetailSplit(changed) {
     document.getElementById('retail_submit_btn').disabled = !(retailCoreValid && splitOk && clientOk);
 }
 
-function toggleRetailIsLoan() {
-    var isLoan = document.getElementById('retail_is_loan').checked;
-    if (isLoan) {
-        var qty   = parseInt(document.getElementById('pieces_sold').value) || 0;
-        var price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
-        document.getElementById('retail_cash').value = 0;
-        document.getElementById('retail_momo').value = 0;
-        document.getElementById('retail_loan_split').value = qty * price;
+function toggleRetailShortcut(type) {
+    // Mutual exclusion
+    if (type !== 'loan') document.getElementById('retail_is_loan').checked = false;
+    if (type !== 'cash') document.getElementById('retail_is_cash').checked = false;
+    if (type !== 'momo') document.getElementById('retail_is_momo').checked = false;
+
+    var qty   = parseInt(document.getElementById('pieces_sold').value)   || 0;
+    var price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
+    var total = qty * price;
+    var checked = document.getElementById('retail_is_' + type).checked;
+
+    if (checked) {
+        document.getElementById('retail_cash').value       = type === 'cash' ? total : 0;
+        document.getElementById('retail_momo').value       = type === 'momo' ? total : 0;
+        document.getElementById('retail_loan_split').value = type === 'loan' ? total : 0;
     }
     calcRetailSplit();
 }
@@ -611,6 +638,9 @@ function handleRetailSubmit() {
                 document.getElementById('retail_cash').value = 0;
                 document.getElementById('retail_momo').value = 0;
                 document.getElementById('retail_loan_split').value = 0;
+                document.getElementById('retail_is_loan').checked = false;
+                document.getElementById('retail_is_cash').checked = false;
+                document.getElementById('retail_is_momo').checked = false;
                 document.getElementById('retail_summary').style.display = 'none';
                 document.getElementById('retail_payment_section').style.display = 'none';
                 document.getElementById('retail_loan_fields').style.display = 'none';
