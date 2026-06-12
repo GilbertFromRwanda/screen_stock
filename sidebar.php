@@ -31,6 +31,7 @@ $nav = [
                 ],
             ],
             // ['href' => 'suppliers.php',  'icon' => '⊙',  'label' => 'Suppliers'],
+             ['href' => 'wishlist.php',   'icon' => '★',  'label' => 'Wishlist'],
         ]
     ],
     'finance' => [

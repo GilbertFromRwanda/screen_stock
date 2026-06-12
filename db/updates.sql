@@ -32,3 +32,14 @@ CREATE TABLE IF NOT EXISTS `stock_value_cache` (
     INDEX `idx_svc_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+
+-- Wishlist: products clients want that are not yet in stock
+CREATE TABLE IF NOT EXISTS wishlist (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    product_name VARCHAR(255) NOT NULL,
+    client_count INT          NOT NULL DEFAULT 1,
+    status       ENUM('pending','purchased') NOT NULL DEFAULT 'pending',
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    purchased_at DATETIME NULL
+);
+
