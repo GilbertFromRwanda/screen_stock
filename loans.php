@@ -332,6 +332,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_payments'])
     exit;
 }
 
+// ── AJAX: Recalculate Client Balance ──────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['recalc_client_balance'])) {
+    $client_id = (int)$_POST['client_id'];
+    if ($client_id <= 0) { header('Content-Type: application/json'); echo json_encode(['success'=>false,'message'=>'Invalid client.']); exit; }
+    $ok = (bool)mysqli_query($conn, "
+        UPDATE loan_clients lc
+        JOIN (
+            SELECT COUNT(DISTINCT l.id)       AS cnt,
+                   COALESCE(SUM(l.amount),0)  AS loaned,
+                   COALESCE(SUM(lp_s.paid),0) AS paid_sum
+            FROM loans l
+            LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
+                   ON lp_s.loan_id = l.id
+            WHERE l.client_id = $client_id
+        ) agg
+        SET lc.total_loans   = agg.cnt,
+            lc.paid_amount   = agg.paid_sum,
+            lc.unpaid_amount = agg.loaned - agg.paid_sum
+        WHERE lc.id = $client_id
+    ");
+    header('Content-Type: application/json');
+    echo json_encode($ok ? ['success'=>true] : ['success'=>false,'message'=>mysqli_error($conn)]);
+    exit;
+}
+
 // ── Delete Loan ────────────────────────────────────────────────────────────────
 if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
     $del_id = (int)$_GET['delete'];
@@ -527,6 +552,8 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                         <div class="act-menu">
                             <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
+                            <div class="act-menu-sep"></div>
+                            <button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
                             <?php if ($outstanding > 0): ?>
                             <div class="act-menu-sep"></div>
                             <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
@@ -1145,6 +1172,20 @@ function filterClientTable() {
     }
 }
 filterClientTable();
+
+// ── Recalculate client balance ─────────────────────────────────────────────────
+function recalcClientBalance(clientId, btn) {
+    var row = btn.closest('tr');
+    var fd = new FormData();
+    fd.append('recalc_client_balance', '1');
+    fd.append('client_id', clientId);
+    fetch('loans.php', { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (res.success) { location.reload(); }
+            else { alert('Recalculate failed: ' + (res.message || 'unknown error')); }
+        });
+}
 
 // ── View client loans modal ────────────────────────────────────────────────────
 var _clLoans = [], _clFilter = 'unpaid', _clPage = 1, _clPageSize = 10, _clName = '';

@@ -18,15 +18,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
     $id = (int)$_POST['sale_id'];
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_bulk WHERE id=$id"));
     if ($row) {
-        mysqli_query($conn, "UPDATE stock SET quantity = quantity + {$row['quantity']} WHERE product_id = {$row['product_id']} $cid_and");
-        if ($row['loan_amount'] > 0) {
+        mysqli_begin_transaction($conn);
+        $ok = true;
+
+        $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity + {$row['quantity']} WHERE product_id = {$row['product_id']} $cid_and");
+
+        $del_client_id = 0;
+        if ($ok && $row['loan_amount'] > 0) {
             $client_e = mysqli_real_escape_string($conn, $row['customer_name']);
-            mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
+            $loan_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, client_id FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1"));
+            $del_client_id = $loan_row ? (int)$loan_row['client_id'] : 0;
+            $ok = (bool)mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
+            if ($ok && $del_client_id > 0) {
+                $ok = (bool)mysqli_query($conn, "
+                    UPDATE loan_clients lc
+                    JOIN (
+                        SELECT COUNT(DISTINCT l.id)       AS cnt,
+                               COALESCE(SUM(l.amount),0)  AS loaned,
+                               COALESCE(SUM(lp_s.paid),0) AS paid_sum
+                        FROM loans l
+                        LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
+                               ON lp_s.loan_id = l.id
+                        WHERE l.client_id = $del_client_id
+                    ) agg
+                    SET lc.total_loans   = agg.cnt,
+                        lc.paid_amount   = agg.paid_sum,
+                        lc.unpaid_amount = agg.loaned - agg.paid_sum
+                    WHERE lc.id = $del_client_id
+                ");
+            }
         }
-        mysqli_query($conn, "DELETE FROM sales_bulk WHERE id=$id");
-        require_once 'stock_value.php';
-        recalcStockValue($conn, cid(), (int)$row['product_id']);
-        $_SESSION['flash_success'] = "Bulk sale deleted and stock restored.";
+
+        if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM sales_bulk WHERE id=$id");
+
+        if ($ok) {
+            mysqli_commit($conn);
+            require_once 'stock_value.php';
+            recalcStockValue($conn, cid(), (int)$row['product_id']);
+            $_SESSION['flash_success'] = "Bulk sale deleted and stock restored.";
+        } else {
+            mysqli_rollback($conn);
+            $_SESSION['flash_error'] = "Could not delete bulk sale. Please try again.";
+        }
     }
     header("Location: sales.php?tab=bulk"); exit;
 }
@@ -62,15 +95,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale']))
     $id = (int)$_POST['sale_id'];
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_retail WHERE id=$id"));
     if ($row) {
-        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$row['pieces_sold']} WHERE product_id = {$row['product_id']} $cid_and");
-        if ($row['loan_amount'] > 0) {
+        mysqli_begin_transaction($conn);
+        $ok = true;
+
+        $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$row['pieces_sold']} WHERE product_id = {$row['product_id']} $cid_and");
+
+        $del_client_id = 0;
+        if ($ok && $row['loan_amount'] > 0) {
             $client_e = mysqli_real_escape_string($conn, $row['customer_name']);
-            mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
+            $loan_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, client_id FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1"));
+            $del_client_id = $loan_row ? (int)$loan_row['client_id'] : 0;
+            $ok = (bool)mysqli_query($conn, "DELETE FROM loans WHERE product_id={$row['product_id']} AND client='$client_e' AND amount={$row['loan_amount']} AND loan_date='{$row['sale_date']}' LIMIT 1");
+            if ($ok && $del_client_id > 0) {
+                $ok = (bool)mysqli_query($conn, "
+                    UPDATE loan_clients lc
+                    JOIN (
+                        SELECT COUNT(DISTINCT l.id)       AS cnt,
+                               COALESCE(SUM(l.amount),0)  AS loaned,
+                               COALESCE(SUM(lp_s.paid),0) AS paid_sum
+                        FROM loans l
+                        LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
+                               ON lp_s.loan_id = l.id
+                        WHERE l.client_id = $del_client_id
+                    ) agg
+                    SET lc.total_loans   = agg.cnt,
+                        lc.paid_amount   = agg.paid_sum,
+                        lc.unpaid_amount = agg.loaned - agg.paid_sum
+                    WHERE lc.id = $del_client_id
+                ");
+            }
         }
-        mysqli_query($conn, "DELETE FROM sales_retail WHERE id=$id");
-        require_once 'stock_value.php';
-        recalcStockValue($conn, cid(), (int)$row['product_id']);
-        $_SESSION['flash_success'] = "Retail sale deleted and stock restored.";
+
+        if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM sales_retail WHERE id=$id");
+
+        if ($ok) {
+            mysqli_commit($conn);
+            require_once 'stock_value.php';
+            recalcStockValue($conn, cid(), (int)$row['product_id']);
+            $_SESSION['flash_success'] = "Retail sale deleted and stock restored.";
+        } else {
+            mysqli_rollback($conn);
+            $_SESSION['flash_error'] = "Could not delete retail sale. Please try again.";
+        }
     }
     header("Location: sales.php?tab=retail"); exit;
 }
