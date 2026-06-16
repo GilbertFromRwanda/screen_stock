@@ -450,7 +450,7 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
                     </td>
                     <td>
                         <div class="act-menu-wrap">
-                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                             <div class="act-menu">
                                 <?php if ($bal > 0): ?>
                                 <button class="act-item"

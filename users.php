@@ -366,7 +366,7 @@ function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_des
                                 <td><?php echo $user['last_login'] ? date('M d, Y', strtotime($user['last_login'])) : '<span style="color:var(--gray-400);">—</span>'; ?></td>
                                 <td>
                                     <div class="act-menu-wrap">
-                                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                         <div class="act-menu">
                                             <button class="act-item" type="button" onclick="openEditModal(this);closeActMenus()" <?php echo $data_attrs; ?>><i class="fas fa-pen"></i> Edit</button>
                                             <?php if ($user['id'] != $_SESSION['user_id']): ?>

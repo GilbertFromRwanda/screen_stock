@@ -185,7 +185,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
                     <td>RWF <?php echo number_format($row['amount'], 0); ?></td>
                     <td>
                         <div class="act-menu-wrap">
-                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                            <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                             <div class="act-menu">
                                 <button class="act-item"
                                     data-id="<?php echo $row['id']; ?>"

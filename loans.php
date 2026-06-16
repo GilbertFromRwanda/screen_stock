@@ -548,7 +548,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             <tr data-status="<?php echo strtolower($status); ?>">
                 <td>
                     <div class="act-menu-wrap">
-                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                         <div class="act-menu">
                             <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>

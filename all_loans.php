@@ -148,7 +148,7 @@ $total_balance = $total_amt - $total_paid;
             <tr data-status="<?= $status ?>">
                 <td>
                     <div class="act-menu-wrap">
-                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                        <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                         <div class="act-menu">
                             <?php if ($sale_id):
                                 $sale_label = ['bulk'=>'Bulk','retail'=>'Retail','external'=>'External'][$sale_tab] ?? 'Sale';
