@@ -234,7 +234,7 @@ function companyColor($name) {
                             <td><?php echo date('M d, Y', strtotime($c['created_at'])); ?></td>
                             <td>
                                 <div class="act-menu-wrap">
-                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                     <div class="act-menu">
                                         <button class="act-item" type="button" onclick="openEditModal(this);closeActMenus()" <?php echo $data; ?>><i class="fas fa-pen"></i> Edit</button>
                                         <form method="POST">

@@ -313,7 +313,7 @@ if ($date_from || $date_to || $giver_filter) {
                         <td><?php echo htmlspecialchars($row['description'] ?: '-'); ?></td>
                         <td>
                             <div class="act-menu-wrap">
-                                <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                 <div class="act-menu">
                                     <a class="act-item danger" href="boaster.php?delete=<?php echo $row['id']; ?>"
                                         onclick="return confirm('Delete this entry?')"><i class="fas fa-trash"></i> Delete</a>

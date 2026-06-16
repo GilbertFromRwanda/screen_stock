@@ -80,17 +80,14 @@ body {
 
 /* Dashboard Layout */
 .dashboard-container {
-    display: flex;
     min-height: 100vh;
     background: var(--gray-100);
 }
 
-/* sidebar styles are now in sidebar.php */
+/* topnav styles are in sidebar.php */
 
 .main-content {
-    flex: 1;
-    min-width: 0; /* prevent flex item from expanding beyond viewport */
-    margin-left: 240px;
+    min-width: 0;
     padding: 32px;
     background: var(--white);
 }

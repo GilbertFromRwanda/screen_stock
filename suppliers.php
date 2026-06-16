@@ -79,7 +79,7 @@ $suppliers = mysqli_query($conn, "SELECT * FROM suppliers " . cidWhere() . " ORD
                             <td><?php echo htmlspecialchars($row['address']); ?></td>
                             <td>
                                 <div class="act-menu-wrap">
-                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                     <div class="act-menu">
                                         <a class="act-item" href="#"><i class="fas fa-pen"></i> Edit</a>
                                         <div class="act-menu-sep"></div>

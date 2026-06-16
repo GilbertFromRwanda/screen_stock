@@ -420,7 +420,7 @@ $purchases = mysqli_query($conn, "
                             <td><?php echo $row['supplier_name'] ? htmlspecialchars($row['supplier_name']) : '<span style="color:var(--gray-300);">—</span>'; ?></td>
                             <td>
                                 <div class="act-menu-wrap">
-                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)"><i class="fas fa-ellipsis-v"></i></button>
+                                    <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                     <div class="act-menu">
                                         <button class="act-item"
                                             data-id="<?php echo $row['id']; ?>"

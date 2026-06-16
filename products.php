@@ -233,7 +233,7 @@ function build_rows($result, $offset) {
             <td>RWF " . number_format($row['unit_price'], 0) . "</td>
             <td>
                 <div class='act-menu-wrap'>
-                    <button class='act-btn' title='Actions' onclick='toggleActMenu(this)'><i class='fas fa-ellipsis-v'></i></button>
+                    <button class='act-btn' title='Actions' onclick='toggleActMenu(this)'>⋮</button>
                     <div class='act-menu'>
                         <a class='act-item' href='#' onclick=\"editProduct({$row['id']},'$js_name','$js_cat',{$row['reorder_level']},'$js_um',{$row['unit_price']});closeActMenus()\"><i class='fas fa-pen'></i> Edit</a>
                         <div class='act-menu-sep'></div>
