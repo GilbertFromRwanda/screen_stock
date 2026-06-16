@@ -6,7 +6,11 @@
       "Bash(git push *)",
       "Bash(grep -E \"\\\\.\\(php|sql|js|css\\)$\")",
       "Bash(php -r ' *)",
-      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root \"-p@Git123\" screen_db)"
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root \"-p@Git123\" screen_db)",
+      "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" status)",
+      "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" diff --stat)",
+      "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" diff)",
+      "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" add css/sales.css css/style.css sales.php .claude/settings.json)"
     ]
   }
 }

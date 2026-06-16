@@ -898,7 +898,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             </div>
 
             <!-- Summary Cards -->
-            <div id="salesSummaryCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:18px 0;">
+            <div id="salesSummaryCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin:18px 0;">
                 <div class="loan-card" style="position:relative;">
                     <div class="loan-card-label">All Sales</div>
                     <div class="loan-card-value" id="sc-grand-total">—</div>

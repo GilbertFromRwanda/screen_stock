@@ -470,8 +470,44 @@
         cursor: not-allowed;
     }
 
+    /* Always contain wide tables — applies at every screen width */
+    .recent-sales {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .sales-tab-panel {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
+        /* Prevent page-level horizontal scroll.
+           min-width:0 stops the flex item from expanding beyond the viewport;
+           overflow-x must stay visible so the table panel's scrollbar works. */
+        .main-content {
+            min-width: 0;
+        }
+
+        .main-content h1 {
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+
+        .recent-sales h2 {
+            font-size: 16px;
+        }
+
+        /* Summary cards: 2 per row on phones */
+        #salesSummaryCards {
+            grid-template-columns: repeat(2, 1fr) !important;
+        }
+
+        .loan-card-value {
+            font-size: 18px;
+        }
+
         .price-input-group {
             flex-wrap: wrap;
         }
@@ -483,7 +519,12 @@
 
         .sale-action-buttons {
             flex-direction: column;
-            align-items: flex-start;
+            align-items: stretch;
+        }
+
+        .sale-action-buttons .btn {
+            text-align: center;
+            justify-content: center;
         }
 
         .sale-type-tabs {
@@ -655,6 +696,15 @@
     }
 
     @media (max-width: 480px) {
+        /* Single column summary cards on very small phones */
+        #salesSummaryCards {
+            grid-template-columns: 1fr !important;
+        }
+
+        .loan-card-value {
+            font-size: 16px;
+        }
+
         /* Modal scrolls from bottom edge on very small phones */
         .modal-content {
             margin: 8px;

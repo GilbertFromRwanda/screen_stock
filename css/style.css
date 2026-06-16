@@ -89,6 +89,7 @@ body {
 
 .main-content {
     flex: 1;
+    min-width: 0; /* prevent flex item from expanding beyond viewport */
     margin-left: 240px;
     padding: 32px;
     background: var(--white);
