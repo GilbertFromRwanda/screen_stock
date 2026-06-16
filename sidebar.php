@@ -1,369 +1,318 @@
 <?php
 $current_page = basename($_SERVER['PHP_SELF']);
 $role = $_SESSION['role'] ?? 'staff';
-$_is_super = ($role === 'superadmin');
-
-$nav = [
-    'main' => [
-        'label' => 'Main',
-        'items' => [
-            ['href' => 'dashboard.php',  'icon' => '▣',  'label' => 'Dashboard'],
-            ['href' => 'products.php',   'icon' => '◫',  'label' => 'Products'],
-            ['href' => 'stock.php',      'icon' => '⊞',  'label' => 'Stock'],
-            [
-                'href'    => 'purchases.php',
-                'icon'    => '⤵',
-                'label'   => 'Purchases',
-                'submenu' => [
-                    ['href' => 'purchases.php',       'label' => 'View All'],
-                    ['href' => 'new-purchase.php',    'label' => 'New Purchase'],
-                    ['href' => 'purchase_advice.php', 'label' => 'Purchase Advice'],
-                ],
-            ],
-            [
-                'href'    => 'sales.php',
-                'icon'    => '⤴',
-                'label'   => 'Sales',
-                'submenu' => [
-                    ['href' => 'sales.php',         'label' => 'View All '],
-                    ['href' => 'sale_bulk.php',      'label' => 'New Bulk Sale'],
-                    ['href' => 'sale_retail.php',    'label' => 'New Retail Sale'],
-                    ['href' => 'sale_external.php',  'label' => 'New External Sale'],
-                ],
-            ],
-            // ['href' => 'suppliers.php',  'icon' => '⊙',  'label' => 'Suppliers'],
-             ['href' => 'wishlist.php',   'icon' => '★',  'label' => 'Wishlist'],
-             ['href' => 'notes.php',      'icon' => '✎',  'label' => 'Notes'],
-        ]
-    ],
-    'finance' => [
-        'label' => 'Finance',
-        'items' => [
-            // ['href' => 'consumption.php','icon' => '⌂',  'label' => 'Home Consumption'],
-            ['href' => 'expenses.php',   'icon' => '−',  'label' => 'Expenses'],
-            [
-                'href'    => 'loans.php',
-                'icon'    => '⇄',
-                'label'   => 'Loans',
-                'submenu' => [
-                    ['href' => 'loans.php',     'label' => 'By Client'],
-                    ['href' => 'all_loans.php', 'label' => 'All Loans'],
-                ],
-            ],
-            ['href' => 'losses.php',     'icon' => '↓',  'label' => 'Losses'],
-            // ['href' => 'boaster.php',    'icon' => '↑',  'label' => 'Top Up'],
-        ]
-    ],
-    'reports' => [
-        'label' => 'Reports',
-        'roles' => ['admin', 'manager', 'superadmin'],
-        'items' => [
-            ['href' => 'summary-revenue.php','icon' => '◈', 'label' => 'Revenue Summary'],
-            ['href' => 'revenue.php',        'icon' => '◉', 'label' => 'Profit Analysis'],
-        ]
-    ],
-    'admin' => [
-        'label' => 'Admin',
-        'roles' => ['admin', 'manager', 'superadmin'],
-        'items' => [
-            ['href' => 'companies.php', 'icon' => '◫', 'label' => 'Companies', 'roles_item' => ['superadmin']],
-            ['href' => 'users.php',     'icon' => '◎', 'label' => 'Users',     'roles_item' => ['admin','manager','superadmin']],
-            ['href' => 'run_update.php','icon' => '⚙', 'label' => 'Run Updates','roles_item' => ['admin','superadmin']],
-            ['href' => 'database.php',  'icon' => '⊗', 'label' => 'Database',  'roles_item' => ['admin','superadmin']],
-        ]
-    ],
-];
 ?>
-<button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle navigation">&#9776;</button>
-<div class="sidebar-overlay" id="sidebarOverlay"></div>
-<div class="sidebar">
-    <div class="sidebar-brand">
-        <div class="sidebar-brand-icon">SS</div>
-        <div>
-            <div class="sidebar-brand-name">Screen</div>
-            <div class="sidebar-brand-sub">Stock</div>
-        </div>
-    </div>
+<nav class="topnav" id="topnav">
+    <div class="topnav-inner">
 
-    <nav class="sidebar-nav">
-        <?php foreach ($nav as $section): ?>
-            <?php if (isset($section['roles']) && !in_array($role, $section['roles'])) continue; ?>
-            <div class="nav-section-label"><?php echo $section['label']; ?></div>
-            <?php foreach ($section['items'] as $item): ?>
-                <?php
-                if (isset($item['roles_item']) && !in_array($role, $item['roles_item'])) continue;
+        <!-- Brand -->
+        <a href="dashboard.php" class="topnav-brand">
+            <div class="topnav-brand-icon">SS</div>
+            <span class="topnav-brand-text">Screen<span>Stock</span></span>
+        </a>
 
-                if (!empty($item['submenu'])):
-                    $sub_active = false;
-                    foreach ($item['submenu'] as $sub) {
-                        if ($current_page === $sub['href']) { $sub_active = true; break; }
-                    }
-                    $group_open = $sub_active;
-                ?>
-                <div class="nav-item-group<?php echo $group_open ? ' open' : ''; ?>">
-                    <button type="button"
-                            class="nav-item nav-item-toggle<?php echo $group_open ? ' active' : ''; ?>"
-                            onclick="toggleSubmenu(this)">
-                        <span class="nav-icon"><?php echo $item['icon']; ?></span>
-                        <span class="nav-label"><?php echo $item['label']; ?></span>
-                        <span class="nav-chevron">&#8250;</span>
-                    </button>
-                    <div class="nav-submenu">
-                        <?php foreach ($item['submenu'] as $sub):
-                            $sub_is_active = $current_page === $sub['href'];
-                        ?>
-                        <a href="<?php echo $sub['href']; ?>"
-                           class="nav-subitem<?php echo $sub_is_active ? ' active' : ''; ?>">
-                            <span class="nav-sub-dot"></span>
-                            <?php echo $sub['label']; ?>
-                            <?php if ($sub_is_active): ?><span class="nav-active-dot"></span><?php endif; ?>
-                        </a>
-                        <?php endforeach; ?>
-                    </div>
+        <!-- Hamburger (mobile) -->
+        <button class="topnav-toggle" id="topnavToggle" aria-label="Toggle menu">&#9776;</button>
+
+        <!-- Nav links -->
+        <div class="topnav-menu" id="topnavMenu">
+
+            <a href="dashboard.php" class="tn-item<?= $current_page==='dashboard.php' ? ' active':'' ?>">&#9635; Dashboard</a>
+            <a href="products.php"  class="tn-item<?= $current_page==='products.php'  ? ' active':'' ?>">&#9643; Products</a>
+            <a href="stock.php"     class="tn-item<?= $current_page==='stock.php'      ? ' active':'' ?>">&#8862; Stock</a>
+
+            <?php $pa = in_array($current_page,['purchases.php','new-purchase.php','purchase_advice.php']); ?>
+            <div class="tn-dropdown<?= $pa?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">&#10549; Purchases <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="purchases.php"       class="tn-drop-item<?= $current_page==='purchases.php'       ?' active':'' ?>">View All</a>
+                    <a href="new-purchase.php"    class="tn-drop-item<?= $current_page==='new-purchase.php'    ?' active':'' ?>">New Purchase</a>
+                    <a href="purchase_advice.php" class="tn-drop-item<?= $current_page==='purchase_advice.php' ?' active':'' ?>">Purchase Advice</a>
                 </div>
-
-                <?php else:
-                    $active = $current_page === $item['href'];
-                ?>
-                <a href="<?php echo $item['href']; ?>" class="nav-item<?php echo $active ? ' active' : ''; ?>">
-                    <span class="nav-icon"><?php echo $item['icon']; ?></span>
-                    <span class="nav-label"><?php echo $item['label']; ?></span>
-                    <?php if ($active): ?><span class="nav-active-dot"></span><?php endif; ?>
-                </a>
-                <?php endif; ?>
-            <?php endforeach; ?>
-        <?php endforeach; ?>
-    </nav>
-
-    <div class="sidebar-footer">
-        <div class="sidebar-user">
-            <div class="sidebar-avatar"><?php echo strtoupper(substr($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'U', 0, 1)); ?></div>
-            <div class="sidebar-user-info">
-                <div class="sidebar-user-name"><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']); ?></div>
-                <div class="sidebar-user-role"><?php echo $role === 'superadmin' ? 'Super Admin' : ucfirst($role); ?></div>
             </div>
+
+            <?php $sa = in_array($current_page,['sales.php','sale_bulk.php','sale_retail.php','sale_external.php']); ?>
+            <div class="tn-dropdown<?= $sa?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">&#10548; Sales <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="sales.php"         class="tn-drop-item<?= $current_page==='sales.php'         ?' active':'' ?>">View All</a>
+                    <a href="sale_bulk.php"     class="tn-drop-item<?= $current_page==='sale_bulk.php'     ?' active':'' ?>">New Bulk Sale</a>
+                    <a href="sale_retail.php"   class="tn-drop-item<?= $current_page==='sale_retail.php'   ?' active':'' ?>">New Retail Sale</a>
+                    <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>">New External Sale</a>
+                </div>
+            </div>
+
+            <a href="wishlist.php" class="tn-item<?= $current_page==='wishlist.php'?' active':'' ?>">&#9733; Wishlist</a>
+            <a href="notes.php"    class="tn-item<?= $current_page==='notes.php'   ?' active':'' ?>">&#10000; Notes</a>
+
+            <?php $fa = in_array($current_page,['expenses.php','loans.php','all_loans.php','losses.php']); ?>
+            <div class="tn-dropdown<?= $fa?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">Finance <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="expenses.php" class="tn-drop-item<?= $current_page==='expenses.php' ?' active':'' ?>">Expenses</a>
+                    <a href="loans.php"    class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>">Loans by Client</a>
+                    <a href="all_loans.php"class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
+                    <a href="losses.php"   class="tn-drop-item<?= $current_page==='losses.php'   ?' active':'' ?>">Losses</a>
+                </div>
+            </div>
+
+            <?php if (in_array($role,['admin','manager','superadmin'])): ?>
+            <?php $ra = in_array($current_page,['summary-revenue.php','revenue.php']); ?>
+            <div class="tn-dropdown<?= $ra?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">Reports <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="summary-revenue.php" class="tn-drop-item<?= $current_page==='summary-revenue.php'?' active':'' ?>">Revenue Summary</a>
+                    <a href="revenue.php"         class="tn-drop-item<?= $current_page==='revenue.php'        ?' active':'' ?>">Profit Analysis</a>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if (in_array($role,['admin','manager','superadmin'])): ?>
+            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php']); ?>
+            <div class="tn-dropdown<?= $aa?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">&#9881; Admin <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <?php if ($role==='superadmin'): ?>
+                    <a href="companies.php"  class="tn-drop-item<?= $current_page==='companies.php' ?' active':'' ?>">Companies</a>
+                    <?php endif; ?>
+                    <a href="users.php"      class="tn-drop-item<?= $current_page==='users.php'     ?' active':'' ?>">Users</a>
+                    <?php if (in_array($role,['admin','superadmin'])): ?>
+                    <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>">Run Updates</a>
+                    <a href="database.php"   class="tn-drop-item<?= $current_page==='database.php'  ?' active':'' ?>">Database</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
+        </div><!-- /topnav-menu -->
+
+        <!-- User + Logout -->
+        <div class="topnav-user">
+            <div class="topnav-avatar"><?= strtoupper(substr($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'U', 0, 1)) ?></div>
+            <div class="topnav-user-info">
+                <div class="topnav-uname"><?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']) ?></div>
+                <div class="topnav-urole"><?= $role==='superadmin'?'Super Admin':ucfirst($role) ?></div>
+            </div>
+            <a href="logout.php" class="topnav-logout" title="Logout">&#9211;</a>
         </div>
-        <a href="logout.php" class="sidebar-logout" title="Logout">⏻</a>
+
     </div>
+</nav>
+
+<!-- Quick-access bar -->
+<div class="quickbar" id="quickbar">
+    <span class="qb-label">Quick:</span>
+    <a href="sale_bulk.php"     class="qb-btn qb-sale">+ Bulk Sale</a>
+    <a href="sale_retail.php"   class="qb-btn qb-sale">+ Retail Sale</a>
+    <a href="sale_external.php" class="qb-btn qb-sale">+ Ext. Sale</a>
+    <a href="new-purchase.php"  class="qb-btn qb-buy">+ Purchase</a>
+    <a href="expenses.php"      class="qb-btn qb-exp">+ Expense</a>
+    <a href="loans.php"         class="qb-btn qb-loan">+ Loan by Client</a>
 </div>
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
-/* ── Sidebar redesign ─────────────────────────────────────────────────────── */
-.sidebar {
-    width: 240px;
-    background: #0f172a;
-    color: #cbd5e1;
-    padding: 0;
-    position: fixed;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 4px 0 24px rgba(0,0,0,.18);
-    border-right: none;
-    z-index: 100;
+/* ── Top Navigation Bar ────────────────────────────────────────────────────── */
+:root { --tn-h: 52px; --tn-bg: #0f172a; --qb-h: 34px; }
+
+.topnav {
+    position: fixed; top: 0; left: 0; right: 0; height: var(--tn-h);
+    background: var(--tn-bg);
+    box-shadow: 0 2px 16px rgba(0,0,0,.28);
+    z-index: 1000;
+}
+.topnav-inner {
+    display: flex; align-items: center; height: 100%;
+    padding: 0 16px; gap: 4px;
 }
 
 /* Brand */
-.sidebar-brand {
-    display: flex; align-items: center; gap: 10px;
-    padding: 14px 16px 12px;
-    border-bottom: 1px solid rgba(255,255,255,.07);
-    flex-shrink: 0;
+.topnav-brand {
+    display: flex; align-items: center; gap: 8px;
+    text-decoration: none; flex-shrink: 0; margin-right: 8px;
 }
-.sidebar-brand-icon {
-    width: 30px; height: 30px; border-radius: 8px;
+.topnav-brand-icon {
+    width: 28px; height: 28px; border-radius: 7px;
     background: linear-gradient(135deg,#3b82f6,#6366f1);
     display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 800; color: #fff; flex-shrink: 0;
+    font-size: 10px; font-weight: 800; color: #fff; flex-shrink: 0;
 }
-.sidebar-brand-name {
-    font-size: 13px; font-weight: 700; color: #f1f5f9; line-height: 1.1;
+.topnav-brand-text {
+    font-size: 13px; font-weight: 700; color: #f1f5f9; line-height: 1;
 }
-.sidebar-brand-sub {
-    font-size: 10px; color: #64748b; margin-top: 1px;
+.topnav-brand-text span { color: #64748b; font-weight: 500; margin-left: 2px; }
+
+/* Nav menu */
+.topnav-menu {
+    display: flex; align-items: center; gap: 2px;
+    flex: 1; overflow: visible;
 }
 
-/* Nav */
-.sidebar-nav {
-    flex: 1; overflow-y: auto; padding: 6px 8px;
-    scrollbar-width: thin; scrollbar-color: #1e293b transparent;
-}
-.sidebar-nav::-webkit-scrollbar { width: 3px; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
-
-.nav-section-label {
-    font-size: 9.5px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 1px; color: #475569;
-    padding: 8px 8px 3px;
-}
-.nav-section-label:first-child { padding-top: 2px; }
-
-.nav-item {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 10px; border-radius: 7px; margin-bottom: 1px;
+/* Nav items */
+.tn-item {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 10px; border-radius: 6px;
     color: #94a3b8; text-decoration: none;
-    font-size: 12.5px; font-weight: 500;
+    font-size: 12.5px; font-weight: 500; white-space: nowrap;
     transition: background .15s, color .15s;
-    position: relative;
+    background: none; border: none; cursor: pointer; font-family: inherit;
 }
-.nav-item:hover {
-    background: rgba(255,255,255,.06);
-    color: #f1f5f9;
-}
-.nav-item.active {
-    background: linear-gradient(90deg,rgba(59,130,246,.22),rgba(99,102,241,.12));
-    color: #93c5fd;
-}
-.nav-icon {
-    font-size: 13px; width: 18px; text-align: center;
-    flex-shrink: 0; opacity: .85;
-}
-.nav-label { flex: 0; }
-/* Submenu */
-.nav-item-toggle {
-    width: 100%; background: none; border: none; cursor: pointer; font-family: inherit;
-}
-.nav-chevron {
-    font-size: 16px; margin-left: auto; color: #475569;
-    transition: transform .2s; line-height: 1; flex-shrink: 0;
-}
-.nav-item-group.open .nav-chevron { transform: rotate(90deg); }
+.tn-item:hover { background: rgba(255,255,255,.08); color: #f1f5f9; }
+.tn-item.active { background: rgba(59,130,246,.18); color: #93c5fd; }
 
-.nav-submenu {
-    overflow: hidden; max-height: 0;
-    transition: max-height .25s ease;
-}
-.nav-item-group.open .nav-submenu { max-height: 200px; }
+/* Dropdown */
+.tn-dropdown { position: relative; }
+.tn-dropdown > .tn-item.active { background: rgba(59,130,246,.18); color: #93c5fd; }
+.tn-chev { font-size: 9px; opacity: .6; margin-left: 2px; }
 
-.nav-subitem {
-    display: flex; align-items: center; gap: 7px;
-    padding: 5px 10px 5px 30px;
-    font-size: 12px; font-weight: 500; color: #64748b;
-    text-decoration: none; border-radius: 7px; margin-bottom: 1px;
-    transition: background .15s, color .15s; position: relative;
+.tn-drop-menu {
+    display: none;
+    position: absolute; top: calc(100% + 6px); left: 0;
+    background: #1e293b; border: 1px solid rgba(255,255,255,.08);
+    border-radius: 8px; min-width: 170px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    padding: 4px; z-index: 200;
 }
-.nav-subitem:hover { background: rgba(255,255,255,.06); color: #f1f5f9; }
-.nav-subitem.active { color: #93c5fd; }
-.nav-sub-dot {
-    width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0;
-    background: #334155; transition: background .15s;
-}
-.nav-subitem:hover .nav-sub-dot,
-.nav-subitem.active .nav-sub-dot { background: #3b82f6; }
+.tn-dropdown.open .tn-drop-menu { display: block; }
 
-.nav-active-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: #3b82f6; flex-shrink: 0;
+.tn-drop-item {
+    display: block; padding: 7px 12px; border-radius: 6px;
+    font-size: 12.5px; font-weight: 500; color: #94a3b8;
+    text-decoration: none; white-space: nowrap;
+    transition: background .12s, color .12s;
 }
+.tn-drop-item:hover { background: rgba(255,255,255,.07); color: #f1f5f9; }
+.tn-drop-item.active { color: #93c5fd; background: rgba(59,130,246,.14); }
 
-/* Footer */
-.sidebar-footer {
+/* User section */
+.topnav-user {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 12px;
-    border-top: 1px solid rgba(255,255,255,.07);
-    background: rgba(0,0,0,.15);
-    flex-shrink: 0;
+    flex-shrink: 0; margin-left: 8px;
+    border-left: 1px solid rgba(255,255,255,.08); padding-left: 12px;
 }
-.sidebar-avatar {
+.topnav-avatar {
     width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
     background: linear-gradient(135deg,#3b82f6,#6366f1);
     display: flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700; color: #fff;
 }
-.sidebar-user { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.sidebar-user-info { min-width: 0; }
-.sidebar-user-name {
-    font-size: 12px; font-weight: 600; color: #f1f5f9;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.sidebar-user-role { font-size: 10px; color: #64748b; margin-top: 1px; }
-.sidebar-logout {
+.topnav-user-info { line-height: 1.2; }
+.topnav-uname { font-size: 12px; font-weight: 600; color: #f1f5f9; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.topnav-urole { font-size: 10px; color: #64748b; }
+.topnav-logout {
     font-size: 16px; color: #64748b; text-decoration: none;
-    flex-shrink: 0; padding: 3px; border-radius: 5px;
-    transition: color .15s, background .15s;
-    line-height: 1;
+    padding: 4px; border-radius: 5px;
+    transition: color .15s, background .15s; line-height: 1; flex-shrink: 0;
 }
-.sidebar-logout:hover { color: #f87171; background: rgba(248,113,113,.1); }
+.topnav-logout:hover { color: #f87171; background: rgba(248,113,113,.1); }
 
-/* Adjust main content margin */
-.main-content { margin-left: 240px; }
-
-/* Slide-in transition for mobile */
-.sidebar { transition: transform 0.3s ease; }
-
-/* Hamburger toggle button (hidden on desktop) */
-.sidebar-toggle {
-    display: none;
-    position: fixed;
-    top: 12px;
-    left: 12px;
-    z-index: 1001;
-    background: #0f172a;
-    color: #f1f5f9;
-    border: none;
-    border-radius: 8px;
-    width: 42px;
-    height: 42px;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    cursor: pointer;
-    box-shadow: 0 2px 10px rgba(0,0,0,.35);
-    line-height: 1;
+/* Hamburger (hidden on desktop) */
+.topnav-toggle {
+    display: none; background: none; border: none; color: #f1f5f9;
+    font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    margin-left: auto; flex-shrink: 0;
 }
 
-/* Dark overlay behind open sidebar */
-.sidebar-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(15,23,42,.55);
-    z-index: 999;
-    backdrop-filter: blur(2px);
+/* Quick-access bar */
+.quickbar {
+    position: fixed; top: var(--tn-h); left: 0; right: 0; height: var(--qb-h);
+    background: #fff; border-bottom: 1px solid #e2e8f0;
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 16px; z-index: 999;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
-.sidebar-overlay.is-open { display: block; }
+.qb-label {
+    font-size: 11px; font-weight: 600; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: .6px;
+    margin-right: 2px; flex-shrink: 0;
+}
+.qb-btn {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 99px;
+    font-size: 11.5px; font-weight: 600; text-decoration: none;
+    white-space: nowrap; transition: opacity .15s, transform .1s;
+    border: 1px solid transparent;
+}
+.qb-btn:hover { opacity: .82; transform: translateY(-1px); }
+.qb-sale { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+.qb-buy  { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+.qb-exp  { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+.qb-loan { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
+
+/* Push page content below topnav + quickbar */
+.main-content { margin-left: 0 !important; margin-top: calc(var(--tn-h) + var(--qb-h)); }
+.dashboard-container { display: block !important; }
 
 @media (max-width: 768px) {
-    .sidebar {
-        z-index: 1000;
-        transform: translateX(-100%);
+    .quickbar { gap: 4px; padding: 0 10px; overflow-x: auto; scrollbar-width: none; }
+    .quickbar::-webkit-scrollbar { display: none; }
+    .qb-label { display: none; }
+}
+
+/* ── Mobile ────────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .topnav-user .topnav-user-info { display: none; }
+}
+
+@media (max-width: 768px) {
+    .topnav-menu {
+        display: none; flex-direction: column; align-items: stretch;
+        position: fixed; top: var(--tn-h); left: 0; right: 0;
+        background: #0f172a; padding: 8px 12px 16px;
+        border-bottom: 1px solid rgba(255,255,255,.08);
+        gap: 2px; overflow-y: auto; max-height: calc(100vh - var(--tn-h));
+        box-shadow: 0 8px 24px rgba(0,0,0,.4);
     }
-    .sidebar.is-open {
-        transform: translateX(0);
+    .topnav-menu.is-open { display: flex; }
+    .topnav-toggle { display: flex; align-items: center; }
+
+    .tn-dropdown { width: 100%; }
+    .tn-dropdown > .tn-item { width: 100%; }
+    .tn-drop-menu {
+        position: static; box-shadow: none; border: none;
+        background: rgba(255,255,255,.04); border-radius: 6px;
+        margin-top: 2px; padding: 2px 0 2px 12px;
+        display: none;
     }
-    .sidebar-toggle { display: flex; }
-    .main-content { margin-left: 0; }
+    .tn-dropdown.open .tn-drop-menu { display: block; }
+
+    .topnav-user { border-left: none; }
+    .topnav-inner { gap: 8px; }
 }
 </style>
 
 <script>
 (function () {
-    var toggle  = document.getElementById('sidebarToggle');
-    var sidebar = document.querySelector('.sidebar');
-    var overlay = document.getElementById('sidebarOverlay');
-    if (!toggle || !sidebar || !overlay) return;
+    var toggle = document.getElementById('topnavToggle');
+    var menu   = document.getElementById('topnavMenu');
+    if (!toggle || !menu) return;
 
     toggle.addEventListener('click', function () {
-        sidebar.classList.toggle('is-open');
-        overlay.classList.toggle('is-open');
+        menu.classList.toggle('is-open');
     });
-    overlay.addEventListener('click', function () {
-        sidebar.classList.remove('is-open');
-        overlay.classList.remove('is-open');
+
+    // Click to open/close dropdowns (all screen sizes)
+    menu.querySelectorAll('.tn-drop-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var dd = btn.closest('.tn-dropdown');
+            var wasOpen = dd.classList.contains('open');
+            menu.querySelectorAll('.tn-dropdown').forEach(function (d) { d.classList.remove('open'); });
+            if (!wasOpen) dd.classList.add('open');
+        });
     });
-    // Close sidebar on nav link click (mobile)
-    sidebar.querySelectorAll('.nav-item, .nav-subitem').forEach(function (link) {
+
+    // Click outside closes all dropdowns
+    document.addEventListener('click', function () {
+        menu.querySelectorAll('.tn-dropdown').forEach(function (d) { d.classList.remove('open'); });
+    });
+
+    // Close menu when a link is clicked on mobile
+    menu.querySelectorAll('.tn-item, .tn-drop-item').forEach(function (link) {
         link.addEventListener('click', function () {
-            if (window.innerWidth <= 768) {
-                sidebar.classList.remove('is-open');
-                overlay.classList.remove('is-open');
+            if (window.innerWidth <= 768 && link.tagName === 'A') {
+                menu.classList.remove('is-open');
             }
         });
     });
 })();
-
-function toggleSubmenu(btn) {
-    btn.closest('.nav-item-group').classList.toggle('open');
-}
 </script>
