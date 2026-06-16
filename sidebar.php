@@ -15,8 +15,9 @@ $nav = [
                 'icon'    => '⤵',
                 'label'   => 'Purchases',
                 'submenu' => [
-                    ['href' => 'purchases.php',    'label' => 'View All'],
-                    ['href' => 'new-purchase.php', 'label' => 'New Purchase'],
+                    ['href' => 'purchases.php',       'label' => 'View All'],
+                    ['href' => 'new-purchase.php',    'label' => 'New Purchase'],
+                    ['href' => 'purchase_advice.php', 'label' => 'Purchase Advice'],
                 ],
             ],
             [
@@ -32,6 +33,7 @@ $nav = [
             ],
             // ['href' => 'suppliers.php',  'icon' => '⊙',  'label' => 'Suppliers'],
              ['href' => 'wishlist.php',   'icon' => '★',  'label' => 'Wishlist'],
+             ['href' => 'notes.php',      'icon' => '✎',  'label' => 'Notes'],
         ]
     ],
     'finance' => [
