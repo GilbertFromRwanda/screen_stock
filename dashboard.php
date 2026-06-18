@@ -43,7 +43,8 @@ $user_id    = (int)$_SESSION['user_id'];
     <div class="main-content">
 
         <!-- Stats Grid -->
-        <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+            <h1 style="margin:0;">Dashboard</h1>
             <button id="moneyToggleBtn" onclick="toggleMoneyFormat()"
                 style="padding:5px 14px;border:1px solid var(--gray-300);border-radius:99px;background:#fff;font-size:12px;cursor:pointer;color:var(--secondary);white-space:nowrap;">
                 Show full

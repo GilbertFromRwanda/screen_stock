@@ -34,7 +34,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_expense'])) {
     $amount       = mysqli_real_escape_string($conn, $_POST['amount']);
     $expense_date = mysqli_real_escape_string($conn, $_POST['expense_date']);
 
+    $old_expense = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,description,category,amount,expense_date FROM expenses WHERE id=$id")) ?: [];
     $upd = mysqli_query($conn, "UPDATE expenses SET description='$description', category='$category', amount='$amount', expense_date='$expense_date' WHERE id=$id");
+    if ($upd) {
+        logActivity($conn, (int)$_SESSION['user_id'], 'Edit Expense', "Edited expense: $description",
+            'expenses', $id, $old_expense,
+            ['description' => $description, 'category' => $category, 'amount' => $amount, 'expense_date' => $expense_date]
+        );
+    }
     if ($is_ajax) { header('Content-Type: application/json'); echo json_encode($upd ? ['success' => true] : ['success' => false, 'message' => mysqli_error($conn)]); exit; }
     $_SESSION['flash_success'] = $upd ? "Expense updated." : "Error: " . mysqli_error($conn);
     header("Location: expenses.php"); exit;
@@ -42,7 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_expense'])) {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
-    mysqli_query($conn, "DELETE FROM expenses WHERE id=" . (int)$_GET['delete']);
+    $del_id      = (int)$_GET['delete'];
+    $old_expense = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,description,category,amount,expense_date FROM expenses WHERE id=$del_id")) ?: [];
+    mysqli_query($conn, "DELETE FROM expenses WHERE id=$del_id");
+    logActivity($conn, (int)$_SESSION['user_id'], 'Delete Expense', "Deleted expense: " . ($old_expense['description'] ?? ''),
+        'expenses', $del_id, $old_expense, []);
     $_SESSION['flash_success'] = "Expense deleted.";
     header("Location: expenses.php"); exit;
 }

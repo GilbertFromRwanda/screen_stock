@@ -56,14 +56,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $q = "INSERT INTO users (company_id,username,password,email,full_name,role,status,created_at)
                       VALUES ($cid_sql,'$username','$password','$email','$full_name','$role','$status',NOW())";
                 if (mysqli_query($conn, $q)) {
+                    $new_user_id = (int)mysqli_insert_id($conn);
                     $success = "User added successfully!";
-                    logActivity($conn, $_SESSION['user_id'], 'Add User', "Added user: $username");
+                    logActivity($conn, (int)$_SESSION['user_id'], 'Add User', "Added user: $username",
+                        'users', $new_user_id, [],
+                        ['username' => $username, 'email' => $_POST['email'], 'full_name' => $full_name, 'role' => $role, 'status' => $status]
+                    );
                 } else {
                     $error = "Error adding user: " . mysqli_error($conn);
                 }
             }
         } else {
             $user_id      = (int)$_POST['user_id'];
+            $old_user     = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,username,email,full_name,role,status FROM users WHERE id=$user_id")) ?: [];
             $check_result = mysqli_query($conn, "SELECT id FROM users WHERE (username='$username' OR email='$email') AND id!=$user_id");
             if (mysqli_num_rows($check_result) > 0) {
                 $error = "Username or email already exists!";
@@ -75,7 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
                 if (mysqli_query($conn, $q)) {
                     $success = "User updated successfully!";
-                    logActivity($conn, $_SESSION['user_id'], 'Edit User', "Edited user: $username");
+                    logActivity($conn, (int)$_SESSION['user_id'], 'Edit User', "Edited user: $username",
+                        'users', $user_id, $old_user,
+                        ['username' => $username, 'email' => $_POST['email'], 'full_name' => $full_name, 'role' => $role, 'status' => $status, 'password_changed' => !empty($_POST['password'])]
+                    );
                 } else {
                     $error = "Error updating user: " . mysqli_error($conn);
                 }
@@ -89,10 +97,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($user_id == $_SESSION['user_id']) {
             $error = "You cannot delete your own account!";
         } else {
-            $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT username FROM users WHERE id=$user_id"));
+            $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,username,email,full_name,role,status FROM users WHERE id=$user_id")) ?: [];
             if (mysqli_query($conn, "DELETE FROM users WHERE id=$user_id")) {
                 $success = "User deleted successfully!";
-                logActivity($conn, $_SESSION['user_id'], 'Delete User', "Deleted user: " . $row['username']);
+                logActivity($conn, (int)$_SESSION['user_id'], 'Delete User', "Deleted user: " . ($row['username'] ?? ''),
+                    'users', $user_id, $row, []);
             } else {
                 $error = "Error deleting user: " . mysqli_error($conn);
             }
@@ -169,7 +178,6 @@ function avatarColor($name) {
     return $colors[ord($name[0]) % count($colors)];
 }
 
-function logActivity(mysqli $_conn, int $_user_id, string $_action, string $_description): void {}
 ?>
 <!DOCTYPE html>
 <html lang="en">

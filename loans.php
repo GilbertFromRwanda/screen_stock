@@ -389,8 +389,15 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
             WHERE lc.id = $del_client_id
         ");
 
-        if ($ok) { mysqli_commit($conn); $_SESSION['flash_success'] = "Loan deleted."; }
-        else      { mysqli_rollback($conn); $_SESSION['flash_error'] = "Could not delete loan. Please try again."; }
+        if ($ok) {
+            mysqli_commit($conn);
+            $_SESSION['flash_success'] = "Loan deleted.";
+            logActivity($conn, (int)$_SESSION['user_id'], 'Delete Loan', "Deleted loan #{$del_id} for {$loan['client']}",
+                'loans', $del_id,
+                ['id' => $loan['id'], 'client' => $loan['client'], 'phone' => $loan['phone'], 'qty' => $loan['qty'], 'amount' => $loan['amount'], 'loan_date' => $loan['loan_date']],
+                []
+            );
+        } else { mysqli_rollback($conn); $_SESSION['flash_error'] = "Could not delete loan. Please try again."; }
     }
     header("Location: loans.php"); exit;
 }

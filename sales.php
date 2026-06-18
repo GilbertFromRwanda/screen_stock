@@ -56,6 +56,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
             require_once 'stock_value.php';
             recalcStockValue($conn, cid(), (int)$row['product_id']);
             $_SESSION['flash_success'] = "Bulk sale deleted and stock restored.";
+            logActivity($conn, (int)$_SESSION['user_id'], 'Delete Bulk Sale', "Deleted bulk sale #{$id} for " . ($row['customer_name'] ?: 'unknown'),
+                'sales_bulk', $id,
+                ['product_id' => $row['product_id'], 'quantity' => $row['quantity'], 'package_price' => $row['package_price'], 'total_amount' => $row['total_amount'], 'customer_name' => $row['customer_name'], 'sale_date' => $row['sale_date']],
+                []
+            );
         } else {
             mysqli_rollback($conn);
             $_SESSION['flash_error'] = "Could not delete bulk sale. Please try again.";
@@ -86,6 +91,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
         require_once 'stock_value.php';
         recalcStockValue($conn, cid(), (int)$old['product_id']);
         $_SESSION['flash_success'] = "Bulk sale updated.";
+        logActivity($conn, (int)$_SESSION['user_id'], 'Edit Bulk Sale', "Edited bulk sale #{$id}",
+            'sales_bulk', $id,
+            ['quantity' => $old['quantity'], 'package_price' => $old['package_price'], 'total_amount' => $old['total_amount'], 'customer_name' => $old['customer_name'], 'cash_amount' => $old['cash_amount'], 'momo_amount' => $old['momo_amount'], 'loan_amount' => $old['loan_amount'], 'sale_date' => $old['sale_date']],
+            ['quantity' => $new_qty, 'package_price' => $new_price, 'total_amount' => $total_amount, 'customer_name' => $customer_name, 'cash_amount' => $cash_amount, 'momo_amount' => $momo_amount, 'loan_amount' => $loan_amount, 'sale_date' => $sale_date]
+        );
     }
     header("Location: sales.php?tab=bulk"); exit;
 }
@@ -133,6 +143,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale']))
             require_once 'stock_value.php';
             recalcStockValue($conn, cid(), (int)$row['product_id']);
             $_SESSION['flash_success'] = "Retail sale deleted and stock restored.";
+            logActivity($conn, (int)$_SESSION['user_id'], 'Delete Retail Sale', "Deleted retail sale #{$id} for " . ($row['customer_name'] ?: 'unknown'),
+                'sales_retail', $id,
+                ['product_id' => $row['product_id'], 'pieces_sold' => $row['pieces_sold'], 'retail_price' => $row['retail_price'], 'total_amount' => $row['total_amount'], 'customer_name' => $row['customer_name'], 'sale_date' => $row['sale_date']],
+                []
+            );
         } else {
             mysqli_rollback($conn);
             $_SESSION['flash_error'] = "Could not delete retail sale. Please try again.";
@@ -163,6 +178,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
         require_once 'stock_value.php';
         recalcStockValue($conn, cid(), (int)$old['product_id']);
         $_SESSION['flash_success'] = "Retail sale updated.";
+        logActivity($conn, (int)$_SESSION['user_id'], 'Edit Retail Sale', "Edited retail sale #{$id}",
+            'sales_retail', $id,
+            ['pieces_sold' => $old['pieces_sold'], 'retail_price' => $old['retail_price'], 'total_amount' => $old['total_amount'], 'customer_name' => $old['customer_name'], 'cash_amount' => $old['cash_amount'], 'momo_amount' => $old['momo_amount'], 'loan_amount' => $old['loan_amount'], 'sale_date' => $old['sale_date']],
+            ['pieces_sold' => $new_qty, 'retail_price' => $new_price, 'total_amount' => $total_amount, 'customer_name' => $customer_name, 'cash_amount' => $cash_amount, 'momo_amount' => $momo_amount, 'loan_amount' => $loan_amount, 'sale_date' => $sale_date]
+        );
     }
     header("Location: sales.php?tab=retail"); exit;
 }
@@ -178,6 +198,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_external_sale']
         }
         mysqli_query($conn, "DELETE FROM sales_external WHERE id=$id");
         $_SESSION['flash_success'] = "External sale deleted.";
+        logActivity($conn, (int)$_SESSION['user_id'], 'Delete External Sale', "Deleted external sale #{$id} for " . ($row['customer_name'] ?: 'unknown'),
+            'sales_external', $id,
+            ['product_name' => $row['product_name'], 'quantity' => $row['quantity'], 'unit_price' => $row['unit_price'], 'total_amount' => $row['total_amount'], 'customer_name' => $row['customer_name'], 'sale_date' => $row['sale_date']],
+            []
+        );
     }
     header("Location: sales.php?tab=external"); exit;
 }
@@ -196,8 +221,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_external_sale']))
     $sale_date     = mysqli_real_escape_string($conn, $_POST['sale_date']);
     $total_amount  = $quantity * $unit_price;
 
+    $old_ext = mysqli_fetch_assoc(mysqli_query($conn, "SELECT product_name,quantity,unit_price,total_amount,customer_name,cash_amount,momo_amount,loan_amount,my_revenue,sale_date FROM sales_external WHERE id=$id")) ?: [];
     mysqli_query($conn, "UPDATE sales_external SET product_name='$product_name', quantity=$quantity, unit_price=$unit_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, my_revenue=$my_revenue, sale_date='$sale_date' WHERE id=$id");
     $_SESSION['flash_success'] = "External sale updated.";
+    logActivity($conn, (int)$_SESSION['user_id'], 'Edit External Sale', "Edited external sale #{$id}",
+        'sales_external', $id,
+        $old_ext,
+        ['product_name' => $product_name, 'quantity' => $quantity, 'unit_price' => $unit_price, 'total_amount' => $total_amount, 'customer_name' => $customer_name, 'cash_amount' => $cash_amount, 'momo_amount' => $momo_amount, 'loan_amount' => $loan_amount, 'my_revenue' => $my_revenue, 'sale_date' => $sale_date]
+    );
     header("Location: sales.php?tab=external"); exit;
 }
 
@@ -874,6 +905,21 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             border-bottom-color: var(--primary);
             background: var(--white);
         }
+        .has-loan-row { background: #fffbeb !important; }
+        .has-loan-row:hover { background: #fef3c7 !important; }
+        .loan-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            background: #fef3c7;
+            color: #b45309;
+            border: 1px solid #fde68a;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .4px;
+            vertical-align: middle;
+            margin-right: 2px;
+        }
     </style>
 </head>
 <body>
@@ -990,7 +1036,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             $price_diff = $row['package_price'] - $default_price;
                             $diff_class = $price_diff > 0 ? 'text-danger' : ($price_diff < 0 ? 'text-success' : '');
                         ?>
-                        <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php endif; ?>>
+                        <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php elseif($row['loan_amount']>0): ?>class="has-loan-row"<?php endif; ?>>
                             <td>
                                 <?php if($row['refunded']): ?>
                                 <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
@@ -1018,7 +1064,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
                             <td><?php echo $row['cash_amount'] > 0 ? 'RWF '.number_format($row['cash_amount'],0) : '—'; ?></td>
                             <td><?php echo $row['momo_amount'] > 0 ? 'RWF '.number_format($row['momo_amount'],0) : '—'; ?></td>
-                            <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
+                            <td><?php if($row['loan_amount'] > 0): ?><span class="loan-badge">LOAN</span> RWF <?php echo number_format($row['loan_amount'],0); ?><?php else: ?>—<?php endif; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
                         </tr>
@@ -1055,7 +1101,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             $price_diff = $actual_per_piece - $default_price;
                             $diff_class = $price_diff > 0.005 ? 'text-danger' : ($price_diff < -0.005 ? 'text-success' : '');
                         ?>
-                        <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php endif; ?>>
+                        <tr id="sale-row-<?php echo $row['id']; ?>" <?php if($row['refunded']): ?>style="opacity:.6;"<?php elseif($row['loan_amount']>0): ?>class="has-loan-row"<?php endif; ?>>
                             <td>
                                 <?php if($row['refunded']): ?>
                                 <span style="display:inline-block;padding:3px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;font-size:12px;font-weight:600;">&#10006; Refunded</span>
@@ -1083,7 +1129,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <td>RWF <?php echo number_format($row['total_amount'], 0); ?></td>
                             <td><?php echo $row['cash_amount'] > 0 ? 'RWF '.number_format($row['cash_amount'],0) : '—'; ?></td>
                             <td><?php echo $row['momo_amount'] > 0 ? 'RWF '.number_format($row['momo_amount'],0) : '—'; ?></td>
-                            <td><?php echo $row['loan_amount'] > 0 ? 'RWF '.number_format($row['loan_amount'],0) : '—'; ?></td>
+                            <td><?php if($row['loan_amount'] > 0): ?><span class="loan-badge">LOAN</span> RWF <?php echo number_format($row['loan_amount'],0); ?><?php else: ?>—<?php endif; ?></td>
                             <td><?php echo htmlspecialchars($row['customer_name'] ?? 'N/A'); ?></td>
                             <td><?php echo htmlspecialchars($row['seller_name'] ?? '—'); ?></td>
                         </tr>

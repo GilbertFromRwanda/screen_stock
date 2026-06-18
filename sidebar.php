@@ -76,7 +76,7 @@ try {
             <?php endif; ?>
 
             <?php if (in_array($role,['admin','manager','superadmin'])): ?>
-            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php']); ?>
+            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php']); ?>
             <div class="tn-dropdown<?= $aa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#9881; Admin <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
@@ -84,6 +84,7 @@ try {
                     <a href="companies.php"  class="tn-drop-item<?= $current_page==='companies.php' ?' active':'' ?>">Companies</a>
                     <?php endif; ?>
                     <a href="users.php"      class="tn-drop-item<?= $current_page==='users.php'     ?' active':'' ?>">Users</a>
+                    <a href="audit_log.php"  class="tn-drop-item<?= $current_page==='audit_log.php' ?' active':'' ?>">Audit Log</a>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
                     <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>">Run Updates</a>
                     <a href="database.php"   class="tn-drop-item<?= $current_page==='database.php'  ?' active':'' ?>">Database</a>

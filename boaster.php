@@ -49,8 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_boaster'])) {
 
 // ── Delete Entry ────────────────────────────────────────────────────────────────
 if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
-    $del_id = (int)$_GET['delete'];
+    $del_id     = (int)$_GET['delete'];
+    $old_boast  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,giver,amount,date,description,phone FROM boaster WHERE id=$del_id")) ?: [];
     mysqli_query($conn, "DELETE FROM boaster WHERE id = $del_id");
+    logActivity($conn, (int)$_SESSION['user_id'], 'Delete Boaster', "Deleted boaster entry #{$del_id}",
+        'boaster', $del_id, $old_boast, []);
     $_SESSION['flash_success'] = "Entry deleted.";
     header("Location: boaster.php");
     exit;

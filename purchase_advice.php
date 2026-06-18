@@ -270,6 +270,13 @@ foreach ($products as $p) {
         .rev-bar-bg    { flex:1; height:5px; background:var(--gray-200); border-radius:3px; overflow:hidden; }
         .rev-bar-fill  { height:100%; background:var(--primary); border-radius:3px; }
 
+        /* ── Sortable headers ── */
+        .adv-table th[data-sort] { cursor:pointer; user-select:none; white-space:nowrap; }
+        .adv-table th[data-sort]:hover { background:var(--gray-100); }
+        .sort-icon { display:inline-block; margin-left:4px; opacity:.35; font-size:10px; }
+        .adv-table th.sort-asc  .sort-icon,
+        .adv-table th.sort-desc .sort-icon { opacity:1; }
+
         .no-data { text-align:center; padding:60px 20px; color:var(--secondary); }
         .no-data-icon { font-size:48px; opacity:.35; margin-bottom:12px; }
 
@@ -407,6 +414,22 @@ foreach ($products as $p) {
                 <option value="monitor">Monitor</option>
                 <option value="ok">Well Stocked</option>
             </select>
+            <select id="advSort" onchange="applyDropdownSort()"
+                    style="padding:7px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:var(--white);">
+                <option value="">Sort by…</option>
+                <option value="revenue-desc">Revenue ↓ (highest first)</option>
+                <option value="revenue-asc">Revenue ↑ (lowest first)</option>
+                <option value="revshare-desc">Rev Share ↓ (highest first)</option>
+                <option value="revshare-asc">Rev Share ↑ (lowest first)</option>
+                <option value="tier-desc">Status (urgent first)</option>
+                <option value="tier-asc">Status (well stocked first)</option>
+                <option value="daily-desc">Daily Sales ↓</option>
+                <option value="daily-asc">Daily Sales ↑</option>
+                <option value="days-asc">Stock Left ↑ (lowest first)</option>
+                <option value="days-desc">Stock Left ↓ (highest first)</option>
+                <option value="name-asc">Product Name A–Z</option>
+                <option value="name-desc">Product Name Z–A</option>
+            </select>
             <button class="btn btn-secondary" onclick="exportCSV()" style="margin-left:auto;font-size:12px;">⬇ Export CSV</button>
         </div>
 
@@ -415,12 +438,12 @@ foreach ($products as $p) {
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Product</th>
-                        <th>Stock Left</th>
-                        <th>Daily Sales</th>
-                        <th>Revenue (<?php echo $days; ?>d)</th>
-                        <th>Rev Share</th>
-                        <th>Status</th>
+                        <th data-sort="name" onclick="sortTable(this)">Product <span class="sort-icon">⇅</span></th>
+                        <th data-sort="days" onclick="sortTable(this)">Stock Left <span class="sort-icon">⇅</span></th>
+                        <th data-sort="daily" onclick="sortTable(this)">Daily Sales <span class="sort-icon">⇅</span></th>
+                        <th data-sort="revenue" onclick="sortTable(this)">Revenue (<?php echo $days; ?>d) <span class="sort-icon">⇅</span></th>
+                        <th data-sort="revshare" onclick="sortTable(this)">Rev Share <span class="sort-icon">⇅</span></th>
+                        <th data-sort="tier" onclick="sortTable(this)">Status <span class="sort-icon">⇅</span></th>
                         <th>Advice</th>
                         <th></th>
                     </tr>
@@ -466,7 +489,13 @@ foreach ($products as $p) {
                 ?>
                 <tr data-name="<?php echo strtolower(htmlspecialchars($p['name'])); ?>"
                     data-cat="<?php echo strtolower(htmlspecialchars($p['category'] ?? '')); ?>"
-                    data-cls="<?php echo $p['cls']; ?>">
+                    data-cls="<?php echo $p['cls']; ?>"
+                    data-tier="<?php echo $p['tier']; ?>"
+                    data-revenue="<?php echo $p['revenue']; ?>"
+                    data-revshare="<?php echo $p['rev_share']; ?>"
+                    data-daily="<?php echo round($p['daily'], 2); ?>"
+                    data-days="<?php echo $p['days_left'] === PHP_INT_MAX ? 99999 : round($p['days_left'], 1); ?>"
+                    data-stock="<?php echo $p['stock_pcs']; ?>">
                     <td style="color:var(--secondary);font-size:12px;"><?php echo $i + 1; ?></td>
                     <td>
                         <div style="font-weight:600;font-size:13px;"><?php echo htmlspecialchars($p['name']); ?></div>
@@ -703,12 +732,71 @@ function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+var _sortCol = null, _sortDir = 1;
+
+function sortTable(th) {
+    var col = th.dataset.sort;
+    if (_sortCol === col) {
+        _sortDir *= -1;
+    } else {
+        _sortCol = col;
+        _sortDir = col === 'name' ? 1 : -1;
+    }
+
+    document.querySelectorAll('#advTable thead th[data-sort]').forEach(function(h) {
+        h.classList.remove('sort-asc', 'sort-desc');
+        h.querySelector('.sort-icon').textContent = '⇅';
+    });
+    th.classList.add(_sortDir === 1 ? 'sort-asc' : 'sort-desc');
+    th.querySelector('.sort-icon').textContent = _sortDir === 1 ? '↑' : '↓';
+
+    applySortToBody(col, _sortDir);
+    document.getElementById('advSort').value = '';
+}
+
+function applyDropdownSort() {
+    var val = document.getElementById('advSort').value;
+    if (!val) return;
+    var parts = val.split('-');
+    var dir   = parts.pop() === 'asc' ? 1 : -1;
+    var col   = parts.join('-');
+
+    _sortCol = col;
+    _sortDir = dir;
+
+    document.querySelectorAll('#advTable thead th[data-sort]').forEach(function(h) {
+        h.classList.remove('sort-asc', 'sort-desc');
+        h.querySelector('.sort-icon').textContent = '⇅';
+        if (h.dataset.sort === col) {
+            h.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+            h.querySelector('.sort-icon').textContent = dir === 1 ? '↑' : '↓';
+        }
+    });
+
+    applySortToBody(col, dir);
+}
+
+function applySortToBody(col, dir) {
+    var tbody = document.querySelector('#advTable tbody');
+    var rows  = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+        var av = a.dataset[col] || '';
+        var bv = b.dataset[col] || '';
+        if (col !== 'name') {
+            return (parseFloat(av) - parseFloat(bv)) * dir;
+        } else {
+            return av.localeCompare(bv) * dir;
+        }
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+    renumberVisible();
+}
+
 function filterTable() {
     var search = document.getElementById('advSearch').value.toLowerCase();
     var cat    = document.getElementById('advCat').value.toLowerCase();
     var status = document.getElementById('advStatus').value;
     var rows   = document.querySelectorAll('#advTable tbody tr');
-    var idx    = 1;
     rows.forEach(function(row) {
         var name = row.dataset.name || '';
         var rc   = row.dataset.cat  || '';
@@ -717,7 +805,14 @@ function filterTable() {
                 && (!cat    || rc === cat)
                 && (!status || cls === status);
         row.style.display = show ? '' : 'none';
-        if (show) row.cells[0].textContent = idx++;
+    });
+    renumberVisible();
+}
+
+function renumberVisible() {
+    var idx = 1;
+    document.querySelectorAll('#advTable tbody tr').forEach(function(row) {
+        if (row.style.display !== 'none') row.cells[0].textContent = idx++;
     });
 }
 

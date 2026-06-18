@@ -93,6 +93,13 @@ body {
     background: var(--white);
 }
 
+.main-content h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 1%;
+}
+
 /* Cards */
 .stats-grid {
     display: grid;

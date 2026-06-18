@@ -30,7 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } else {
-            $company_id = (int)$_POST['company_id'];
+            $company_id  = (int)$_POST['company_id'];
+            $old_company = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,name,email,phone,address,status FROM companies WHERE id=$company_id")) ?: [];
             $check = mysqli_query($conn, "SELECT id FROM companies WHERE name='$name' AND id!=$company_id");
             if (mysqli_num_rows($check) > 0) {
                 $error = "Another company with that name already exists.";
@@ -38,6 +39,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $q = "UPDATE companies SET name='$name',email='$email',phone='$phone',address='$address',status='$status' WHERE id=$company_id";
                 if (mysqli_query($conn, $q)) {
                     $success = "Company updated successfully!";
+                    logActivity($conn, (int)$_SESSION['user_id'], 'Edit Company', "Edited company: $name",
+                        'companies', $company_id, $old_company,
+                        ['name' => $name, 'email' => $email, 'phone' => $phone, 'address' => $address, 'status' => $status]
+                    );
                 } else {
                     $error = "Error: " . mysqli_error($conn);
                 }
@@ -46,13 +51,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (isset($_POST['delete_company'])) {
-        $company_id = (int)$_POST['company_id'];
+        $company_id  = (int)$_POST['company_id'];
+        $old_company = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,name,email,phone,address,status FROM companies WHERE id=$company_id")) ?: [];
         $users_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM users WHERE company_id=$company_id"))['cnt'];
         if ($users_count > 0) {
             $error = "Cannot delete: this company has $users_count user(s) assigned to it.";
         } else {
             if (mysqli_query($conn, "DELETE FROM companies WHERE id=$company_id")) {
                 $success = "Company deleted.";
+                logActivity($conn, (int)$_SESSION['user_id'], 'Delete Company', "Deleted company: " . ($old_company['name'] ?? ''),
+                    'companies', $company_id, $old_company, []);
             } else {
                 $error = "Error: " . mysqli_error($conn);
             }
