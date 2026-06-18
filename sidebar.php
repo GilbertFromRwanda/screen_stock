@@ -102,6 +102,7 @@ $role = $_SESSION['role'] ?? 'staff';
 <!-- Quick-access bar -->
 <div class="quickbar" id="quickbar">
     <span class="qb-label">Quick:</span>
+    <a href="sales.php"         class="qb-btn qb-sale">Sales</a>
     <a href="sale_bulk.php"     class="qb-btn qb-sale">+ Bulk Sale</a>
     <a href="sale_retail.php"   class="qb-btn qb-sale">+ Retail Sale</a>
     <a href="sale_external.php" class="qb-btn qb-sale">+ Ext. Sale</a>

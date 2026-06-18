@@ -458,6 +458,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     <title>Loans</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/loans.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
 <body>
 <div class="dashboard-container">
@@ -550,14 +551,15 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                     <div class="act-menu-wrap">
                         <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                         <div class="act-menu">
+                              <?php if ($outstanding > 0): ?>
+                            <div class="act-menu-sep"></div>
+                            <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
+                            <?php endif; ?>
                             <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
                             <div class="act-menu-sep"></div>
                             <button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
-                            <?php if ($outstanding > 0): ?>
-                            <div class="act-menu-sep"></div>
-                            <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
-                            <?php endif; ?>
+                          
                         </div>
                     </div>
                 </td>
