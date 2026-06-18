@@ -1,6 +1,14 @@
 <?php
 $current_page = basename($_SERVER['PHP_SELF']);
 $role = $_SESSION['role'] ?? 'staff';
+try {
+    $sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+    socket_connect($sock, '8.8.8.8', 80);
+    socket_getsockname($sock, $_nav_server_ip);
+    socket_close($sock);
+} catch (Throwable $e) {
+    $_nav_server_ip = gethostbyname(gethostname());
+}
 ?>
 <nav class="topnav" id="topnav">
     <div class="topnav-inner">
@@ -109,6 +117,10 @@ $role = $_SESSION['role'] ?? 'staff';
     <a href="new-purchase.php"  class="qb-btn qb-buy">+ Purchase</a>
     <a href="expenses.php"      class="qb-btn qb-exp">+ Expense</a>
     <a href="loans.php"         class="qb-btn qb-loan">+ Loan by Client</a>
+    <span class="qb-ip">
+        &#128187; <span id="qb-ip-text"><?= htmlspecialchars($_nav_server_ip) ?></span>
+        <button class="qb-ip-copy" onclick="qbCopyIP()" title="Copy IP">&#128203;</button>
+    </span>
 </div>
 
 <style>
@@ -238,6 +250,22 @@ $role = $_SESSION['role'] ?? 'staff';
 .qb-buy  { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
 .qb-exp  { background: #fef3c7; color: #b45309; border-color: #fde68a; }
 .qb-loan { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
+.qb-ip {
+    margin-left: auto; flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; color: #475569;
+    font-family: monospace; letter-spacing: .3px;
+    background: #f1f5f9; border: 1px solid #e2e8f0;
+    border-radius: 99px; padding: 2px 6px 2px 10px;
+    white-space: nowrap;
+}
+.qb-ip-copy {
+    background: none; border: none; cursor: pointer;
+    padding: 1px 3px; border-radius: 4px; font-size: 12px;
+    line-height: 1; color: #94a3b8;
+    transition: color .15s, background .15s;
+}
+.qb-ip-copy:hover { color: #3b82f6; background: #dbeafe; }
 
 /* Push page content below topnav + quickbar */
 .main-content { margin-left: 0 !important; margin-top: calc(var(--tn-h) + var(--qb-h)); }
@@ -316,4 +344,16 @@ $role = $_SESSION['role'] ?? 'staff';
         });
     });
 })();
+
+window.qbCopyIP = function () {
+    var ip = document.getElementById('qb-ip-text').textContent.trim();
+    var path = window.location.pathname.replace(/\/[^\/]*$/, '/');
+    var url = 'http://' + ip + path;
+    navigator.clipboard.writeText(url).then(function () {
+        var btn = document.querySelector('.qb-ip-copy');
+        btn.textContent = '✓';
+        btn.style.color = '#16a34a';
+        setTimeout(function () { btn.textContent = '📋'; btn.style.color = ''; }, 1500);
+    });
+};
 </script>

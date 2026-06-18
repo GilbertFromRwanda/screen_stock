@@ -10,7 +10,10 @@
       "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" status)",
       "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" diff --stat)",
       "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" diff)",
-      "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" add css/sales.css css/style.css sales.php .claude/settings.json)"
+      "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" add css/sales.css css/style.css sales.php .claude/settings.json)",
+      "Bash(git -C c:/xampp/htdocs/mine/screen_stock commit -m ' *)",
+      "Bash(git -C \"c:/xampp/htdocs/mine/screen_stock\" push)",
+      "Bash(git checkout *)"
     ]
   }
 }
