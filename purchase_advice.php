@@ -76,9 +76,12 @@ SELECT
      WHERE pu.product_id = p.id $cid_and
      ORDER BY pu.purchase_date DESC LIMIT 1) AS last_cost,
 
-    (SELECT pu.quantity FROM purchases pu
+    (SELECT ROUND(AVG(pu.quantity)) FROM purchases pu
+     WHERE pu.product_id = p.id $cid_and) AS avg_buy_qty,
+
+    (SELECT pu.id FROM purchases pu
      WHERE pu.product_id = p.id $cid_and
-     ORDER BY pu.purchase_date DESC LIMIT 1) AS avg_buy_qty
+     ORDER BY pu.purchase_date DESC LIMIT 1) AS last_purchase_id
 
 FROM products p
 LEFT JOIN stock s
@@ -154,9 +157,10 @@ while ($r = mysqli_fetch_assoc($res)) {
         'last_qty'    => (int)$r['last_buy_qty'],
         'last_cost'   => (float)$r['last_cost'],
         'pkg_price'   => (float)$r['pkg_price'],
-        'tier'        => $tier,
-        'badge'       => $badge,
-        'cls'         => $cls,
+        'tier'            => $tier,
+        'badge'           => $badge,
+        'cls'             => $cls,
+        'last_purchase_id'=> $r['last_purchase_id'] ? (int)$r['last_purchase_id'] : null,
     ];
 }
 
@@ -170,6 +174,8 @@ foreach ($products as &$p) {
     $p['rev_share'] = $total_revenue > 0 ? round($p['revenue'] / $total_revenue * 100, 1) : 0;
 }
 unset($p);
+
+$max_rev_share = $products ? max(1, max(array_column($products, 'rev_share'))) : 1;
 
 // Summary counts
 $counts = [4 => 0, 3 => 0, 2 => 0, 1 => 0, 0 => 0];
@@ -263,6 +269,13 @@ foreach ($products as $p) {
         .rev-bar-wrap  { display:flex; align-items:center; gap:6px; font-size:11px; }
         .rev-bar-bg    { flex:1; height:5px; background:var(--gray-200); border-radius:3px; overflow:hidden; }
         .rev-bar-fill  { height:100%; background:var(--primary); border-radius:3px; }
+
+        /* ── Sortable headers ── */
+        .adv-table th[data-sort] { cursor:pointer; user-select:none; white-space:nowrap; }
+        .adv-table th[data-sort]:hover { background:var(--gray-100); }
+        .sort-icon { display:inline-block; margin-left:4px; opacity:.35; font-size:10px; }
+        .adv-table th.sort-asc  .sort-icon,
+        .adv-table th.sort-desc .sort-icon { opacity:1; }
 
         .no-data { text-align:center; padding:60px 20px; color:var(--secondary); }
         .no-data-icon { font-size:48px; opacity:.35; margin-bottom:12px; }
@@ -376,18 +389,63 @@ foreach ($products as $p) {
             <p>No product data found for this period.</p>
         </div>
         <?php else: ?>
+
+        <!-- Filter bar -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+            <input type="text" id="advSearch" placeholder="Search product…"
+                   oninput="filterTable()"
+                   style="flex:1;min-width:160px;max-width:280px;padding:7px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;">
+            <select id="advCat" onchange="filterTable()"
+                    style="padding:7px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:var(--white);">
+                <option value="">All categories</option>
+                <?php
+                $cats = array_unique(array_filter(array_column($products, 'category')));
+                sort($cats);
+                foreach ($cats as $cat): ?>
+                <option value="<?php echo htmlspecialchars($cat); ?>"><?php echo htmlspecialchars($cat); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select id="advStatus" onchange="filterTable()"
+                    style="padding:7px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:var(--white);">
+                <option value="">All statuses</option>
+                <option value="out">Out of Stock</option>
+                <option value="urgent">Order Now</option>
+                <option value="soon">Order Soon</option>
+                <option value="monitor">Monitor</option>
+                <option value="ok">Well Stocked</option>
+            </select>
+            <select id="advSort" onchange="applyDropdownSort()"
+                    style="padding:7px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:var(--white);">
+                <option value="">Sort by…</option>
+                <option value="revenue-desc">Revenue ↓ (highest first)</option>
+                <option value="revenue-asc">Revenue ↑ (lowest first)</option>
+                <option value="revshare-desc">Rev Share ↓ (highest first)</option>
+                <option value="revshare-asc">Rev Share ↑ (lowest first)</option>
+                <option value="tier-desc">Status (urgent first)</option>
+                <option value="tier-asc">Status (well stocked first)</option>
+                <option value="daily-desc">Daily Sales ↓</option>
+                <option value="daily-asc">Daily Sales ↑</option>
+                <option value="days-asc">Stock Left ↑ (lowest first)</option>
+                <option value="days-desc">Stock Left ↓ (highest first)</option>
+                <option value="name-asc">Product Name A–Z</option>
+                <option value="name-desc">Product Name Z–A</option>
+            </select>
+            <button class="btn btn-secondary" onclick="exportCSV()" style="margin-left:auto;font-size:12px;">⬇ Export CSV</button>
+        </div>
+
         <div class="table-responsive">
-            <table class="table adv-table">
+            <table class="table adv-table" id="advTable">
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Product</th>
-                        <th>Stock Left</th>
-                        <th>Daily Sales</th>
-                        <th>Revenue (<?php echo $days; ?>d)</th>
-                        <th>Rev Share</th>
-                        <th>Status</th>
+                        <th data-sort="name" onclick="sortTable(this)">Product <span class="sort-icon">⇅</span></th>
+                        <th data-sort="days" onclick="sortTable(this)">Stock Left <span class="sort-icon">⇅</span></th>
+                        <th data-sort="daily" onclick="sortTable(this)">Daily Sales <span class="sort-icon">⇅</span></th>
+                        <th data-sort="revenue" onclick="sortTable(this)">Revenue (<?php echo $days; ?>d) <span class="sort-icon">⇅</span></th>
+                        <th data-sort="revshare" onclick="sortTable(this)">Rev Share <span class="sort-icon">⇅</span></th>
+                        <th data-sort="tier" onclick="sortTable(this)">Status <span class="sort-icon">⇅</span></th>
                         <th>Advice</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -424,12 +482,20 @@ foreach ($products as $p) {
                     switch ($p['tier']) {
                         case 4: $when = 'Immediately — out of stock'; break;
                         case 3: $when = 'Order within ' . max(1, round($p['days_left'])) . ' day(s)'; break;
-                        case 2: $when = 'Order within this week'; break;
+                        case 2: $when = 'Order within ~' . max(1, round($p['days_left'])) . ' day(s)'; break;
                         case 1: $when = 'Plan order this month'; break;
                         default: $when = 'Not urgent'; break;
                     }
                 ?>
-                <tr>
+                <tr data-name="<?php echo strtolower(htmlspecialchars($p['name'])); ?>"
+                    data-cat="<?php echo strtolower(htmlspecialchars($p['category'] ?? '')); ?>"
+                    data-cls="<?php echo $p['cls']; ?>"
+                    data-tier="<?php echo $p['tier']; ?>"
+                    data-revenue="<?php echo $p['revenue']; ?>"
+                    data-revshare="<?php echo $p['rev_share']; ?>"
+                    data-daily="<?php echo round($p['daily'], 2); ?>"
+                    data-days="<?php echo $p['days_left'] === PHP_INT_MAX ? 99999 : round($p['days_left'], 1); ?>"
+                    data-stock="<?php echo $p['stock_pcs']; ?>">
                     <td style="color:var(--secondary);font-size:12px;"><?php echo $i + 1; ?></td>
                     <td>
                         <div style="font-weight:600;font-size:13px;"><?php echo htmlspecialchars($p['name']); ?></div>
@@ -474,7 +540,7 @@ foreach ($products as $p) {
                     <td style="min-width:90px;">
                         <div class="rev-bar-wrap">
                             <div class="rev-bar-bg">
-                                <div class="rev-bar-fill" style="width:<?php echo min(100, $p['rev_share'] * 3); ?>%"></div>
+                                <div class="rev-bar-fill" style="width:<?php echo min(100, round($p['rev_share'] / $max_rev_share * 100)); ?>%"></div>
                             </div>
                             <span><?php echo $p['rev_share']; ?>%</span>
                         </div>
@@ -497,6 +563,15 @@ foreach ($products as $p) {
                         <div class="advice-how" style="color:var(--secondary);">🛒 <?php echo $how; ?></div>
                         <?php endif; ?>
                         <div class="advice-when <?php echo $when_cls; ?>">⏰ <?php echo $when; ?></div>
+                    </td>
+                    <td>
+                        <?php if ($p['last_purchase_id']): ?>
+                        <a href="new-purchase.php?repeat=<?php echo $p['last_purchase_id']; ?>"
+                           class="btn btn-secondary"
+                           style="font-size:11px;padding:4px 10px;white-space:nowrap;">
+                            🛒 Buy
+                        </a>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -526,6 +601,7 @@ var PRODUCTS = <?php
         'badge'     => $p['badge'],
         'cls'       => $p['cls'],
         'revenue'   => $p['revenue'],
+        'rev_share' => $p['rev_share'],
     ], $products), JSON_HEX_TAG | JSON_HEX_AMP);
 ?>;
 
@@ -654,6 +730,119 @@ function clearPlan() {
 
 function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+var _sortCol = null, _sortDir = 1;
+
+function sortTable(th) {
+    var col = th.dataset.sort;
+    if (_sortCol === col) {
+        _sortDir *= -1;
+    } else {
+        _sortCol = col;
+        _sortDir = col === 'name' ? 1 : -1;
+    }
+
+    document.querySelectorAll('#advTable thead th[data-sort]').forEach(function(h) {
+        h.classList.remove('sort-asc', 'sort-desc');
+        h.querySelector('.sort-icon').textContent = '⇅';
+    });
+    th.classList.add(_sortDir === 1 ? 'sort-asc' : 'sort-desc');
+    th.querySelector('.sort-icon').textContent = _sortDir === 1 ? '↑' : '↓';
+
+    applySortToBody(col, _sortDir);
+    document.getElementById('advSort').value = '';
+}
+
+function applyDropdownSort() {
+    var val = document.getElementById('advSort').value;
+    if (!val) return;
+    var parts = val.split('-');
+    var dir   = parts.pop() === 'asc' ? 1 : -1;
+    var col   = parts.join('-');
+
+    _sortCol = col;
+    _sortDir = dir;
+
+    document.querySelectorAll('#advTable thead th[data-sort]').forEach(function(h) {
+        h.classList.remove('sort-asc', 'sort-desc');
+        h.querySelector('.sort-icon').textContent = '⇅';
+        if (h.dataset.sort === col) {
+            h.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+            h.querySelector('.sort-icon').textContent = dir === 1 ? '↑' : '↓';
+        }
+    });
+
+    applySortToBody(col, dir);
+}
+
+function applySortToBody(col, dir) {
+    var tbody = document.querySelector('#advTable tbody');
+    var rows  = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+        var av = a.dataset[col] || '';
+        var bv = b.dataset[col] || '';
+        if (col !== 'name') {
+            return (parseFloat(av) - parseFloat(bv)) * dir;
+        } else {
+            return av.localeCompare(bv) * dir;
+        }
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+    renumberVisible();
+}
+
+function filterTable() {
+    var search = document.getElementById('advSearch').value.toLowerCase();
+    var cat    = document.getElementById('advCat').value.toLowerCase();
+    var status = document.getElementById('advStatus').value;
+    var rows   = document.querySelectorAll('#advTable tbody tr');
+    rows.forEach(function(row) {
+        var name = row.dataset.name || '';
+        var rc   = row.dataset.cat  || '';
+        var cls  = row.dataset.cls  || '';
+        var show = (!search || name.includes(search))
+                && (!cat    || rc === cat)
+                && (!status || cls === status);
+        row.style.display = show ? '' : 'none';
+    });
+    renumberVisible();
+}
+
+function renumberVisible() {
+    var idx = 1;
+    document.querySelectorAll('#advTable tbody tr').forEach(function(row) {
+        if (row.style.display !== 'none') row.cells[0].textContent = idx++;
+    });
+}
+
+function exportCSV() {
+    var headers = ['#','Product','Category','Stock (pcs)','Daily Sales (pcs/day)','Revenue','Rev Share %','Status','Suggested (pkgs)','Cost/pkg'];
+    var rows = [headers];
+    PRODUCTS.forEach(function(p, i) {
+        rows.push([
+            i + 1,
+            p.name,
+            p.category || '',
+            '',
+            '',
+            p.revenue,
+            p.rev_share !== undefined ? p.rev_share : '',
+            p.badge,
+            p.suggested,
+            p.last_cost
+        ]);
+    });
+    var csv = rows.map(function(r) {
+        return r.map(function(c) {
+            var s = String(c);
+            return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g,'""') + '"' : s;
+        }).join(',');
+    }).join('\n');
+    var a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = 'purchase_advice.csv';
+    a.click();
 }
 </script>
 </body>

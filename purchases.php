@@ -145,6 +145,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
                 recalcStockValue($conn, cid(), (int)$product_id);
             }
             $_SESSION['flash_success'] = "Purchase updated successfully and stock adjusted";
+            logActivity($conn, (int)$_SESSION['user_id'], 'Edit Purchase', "Edited purchase #{$purchase_id}",
+                'purchases', $purchase_id,
+                ['product_id' => $old['product_id'], 'supplier_id' => $old['supplier_id'], 'quantity' => $old['quantity'], 'pieces_per_qty' => $old['pieces_per_qty'], 'cost_price' => $old['cost_price'], 'package_price' => $old['package_price'], 'retail_price' => $old['retail_price'], 'purchase_date' => $old['purchase_date']],
+                ['product_id' => $product_id, 'supplier_id' => $_POST['supplier_id'], 'quantity' => $quantity, 'pieces_per_qty' => $pieces_per_qty, 'cost_price' => $cost_price, 'package_price' => $package_price, 'retail_price' => $retail_price, 'purchase_date' => $purchase_date]
+            );
         } else {
             $_SESSION['flash_error'] = "Error updating purchase: " . mysqli_error($conn);
         }

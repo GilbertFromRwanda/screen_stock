@@ -193,6 +193,11 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
         mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$con['qty']} WHERE product_id = {$con['product_id']}");
         mysqli_query($conn, "DELETE FROM consumption WHERE id=$del_id");
         $_SESSION['flash_success'] = "Consumption record deleted.";
+        logActivity($conn, (int)$_SESSION['user_id'], 'Delete Consumption', "Deleted consumption #{$del_id}",
+            'consumption', $del_id,
+            ['id' => $con['id'], 'product_id' => $con['product_id'], 'qty' => $con['qty']],
+            []
+        );
     }
     header("Location: consumption.php");
     exit;

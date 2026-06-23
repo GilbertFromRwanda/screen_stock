@@ -57,4 +57,32 @@ function redirect($url) {
     header("Location: $url");
     exit();
 }
+function logActivity(
+    mysqli $conn,
+    int $user_id,
+    string $action,
+    string $description,
+    string $table_name = '',
+    int $record_id = 0,
+    array $old_values = [],
+    array $new_values = []
+): void {
+    $company_id = cid();
+    $cid_sql    = $company_id !== null ? (int)$company_id : 'NULL';
+    $action_esc = mysqli_real_escape_string($conn, $action);
+    $table_esc  = mysqli_real_escape_string($conn, $table_name);
+    $old_sql    = !empty($old_values)
+        ? "'" . mysqli_real_escape_string($conn, json_encode($old_values, JSON_UNESCAPED_UNICODE)) . "'"
+        : 'NULL';
+    $new_sql    = !empty($new_values)
+        ? "'" . mysqli_real_escape_string($conn, json_encode($new_values, JSON_UNESCAPED_UNICODE)) . "'"
+        : 'NULL';
+    $ip_esc     = mysqli_real_escape_string($conn, $_SERVER['REMOTE_ADDR'] ?? '');
+    $rec_id     = $record_id > 0 ? $record_id : 'NULL';
+
+    mysqli_query($conn, "
+        INSERT INTO audit_log (company_id, user_id, action, table_name, record_id, old_values, new_values, ip_address)
+        VALUES ($cid_sql, $user_id, '$action_esc', '$table_esc', $rec_id, $old_sql, $new_sql, '$ip_esc')
+    ");
+}
 ?>

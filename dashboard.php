@@ -7,14 +7,6 @@ $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good
 $first_name = htmlspecialchars(explode(' ', $_SESSION['full_name'] ?? $_SESSION['username'])[0]);
 $user_role  = $_SESSION['role'] ?? 'user';
 $user_id    = (int)$_SESSION['user_id'];
-try {
-    $sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-    socket_connect($sock, '8.8.8.8', 80);
-    socket_getsockname($sock, $server_ip);
-    socket_close($sock);
-} catch (Throwable $e) {
-    $server_ip = gethostbyname(gethostname());
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -50,30 +42,14 @@ try {
 
     <div class="main-content">
 
-        <!-- Welcome -->
-        <div class="welcome-message">
-            <div>
-                <h2>Welcome back, <?= $first_name; ?>! 👋</h2>
-                <p><?= date('l, F j, Y'); ?> - Here's your business overview</p>
-                <p style="margin:4px 0 0;font-size:12px;color:var(--secondary);">
-                    🖥 Server IP:
-                    <span style="font-family:monospace;font-weight:600;color:var(--dark);
-                                 background:var(--gray-100);border:1px solid var(--gray-200);
-                                 border-radius:5px;padding:1px 7px;">
-                        <?= htmlspecialchars($server_ip) ?>
-                    </span>
-                </p>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;">
-                <button id="moneyToggleBtn" onclick="toggleMoneyFormat()"
-                    style="padding:6px 14px;border:1px solid var(--gray-300);border-radius:99px;background:#fff;font-size:12px;cursor:pointer;color:var(--secondary);white-space:nowrap;">
-                    Show full
-                </button>
-                <div class="welcome-time"><?= $greeting; ?></div>
-            </div>
-        </div>
-
         <!-- Stats Grid -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+            <h1 style="margin:0;">Dashboard</h1>
+            <button id="moneyToggleBtn" onclick="toggleMoneyFormat()"
+                style="padding:5px 14px;border:1px solid var(--gray-300);border-radius:99px;background:#fff;font-size:12px;cursor:pointer;color:var(--secondary);white-space:nowrap;">
+                Show full
+            </button>
+        </div>
         <div class="stats-grid">
 
             <div class="stat-card">

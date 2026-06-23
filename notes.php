@@ -40,7 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_note'])) {
         echo json_encode(['success' => false, 'message' => 'Title and note are required.']);
         exit;
     }
+    $old_note = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,title,note FROM notes WHERE id=$id AND user_id=$user_id $cid_and")) ?: [];
     $upd = mysqli_query($conn, "UPDATE notes SET title='$title', note='$note' WHERE id=$id AND user_id=$user_id $cid_and");
+    if ($upd) {
+        logActivity($conn, $user_id, 'Edit Note', "Edited note: $title",
+            'notes', $id, $old_note, ['title' => $title, 'note' => $note]);
+    }
     header('Content-Type: application/json');
     echo json_encode($upd ? ['success' => true] : ['success' => false, 'message' => mysqli_error($conn)]);
     exit;
@@ -48,7 +53,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_note'])) {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
-    mysqli_query($conn, "DELETE FROM notes WHERE id=" . (int)$_GET['delete'] . " AND user_id=$user_id $cid_and");
+    $del_id   = (int)$_GET['delete'];
+    $old_note = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,title,note FROM notes WHERE id=$del_id AND user_id=$user_id $cid_and")) ?: [];
+    mysqli_query($conn, "DELETE FROM notes WHERE id=$del_id AND user_id=$user_id $cid_and");
+    logActivity($conn, $user_id, 'Delete Note', "Deleted note: " . ($old_note['title'] ?? ''),
+        'notes', $del_id, $old_note, []);
     header('Location: notes.php'); exit;
 }
 

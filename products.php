@@ -178,11 +178,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $unit_measure  = mysqli_real_escape_string($conn, $_POST['edit_unit_measure']);
     $unit_price    = mysqli_real_escape_string($conn, $_POST['edit_unit_price']);
 
+    $old_product = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,name,category,reorder_level,unit_measure,unit_price FROM products WHERE id=$id")) ?: [];
+
     if (product_exists($conn, $name, $category, $id)) {
         $_SESSION['flash_error'] = "Another product named \"$name\" already exists in the \"$category\" category.";
     } elseif (mysqli_query($conn, "UPDATE products SET name='$name', category='$category', reorder_level='$reorder_level',
                               unit_measure='$unit_measure', unit_price='$unit_price' WHERE id=$id")) {
         $_SESSION['flash_success'] = "Product updated successfully";
+        logActivity($conn, (int)$_SESSION['user_id'], 'Edit Product', "Edited product: $name",
+            'products', $id, $old_product,
+            ['name' => $name, 'category' => $category, 'reorder_level' => $reorder_level, 'unit_measure' => $unit_measure, 'unit_price' => $unit_price]
+        );
     } else {
         $_SESSION['flash_error'] = "Error updating product: " . mysqli_error($conn);
     }
@@ -192,8 +198,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
 
 // Handle Delete Product
 if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
-    $id = (int)$_GET['delete'];
+    $id          = (int)$_GET['delete'];
+    $old_product = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,name,category,reorder_level,unit_measure,unit_price FROM products WHERE id=$id")) ?: [];
     mysqli_query($conn, "UPDATE products SET deleted=1 WHERE id=$id");
+    logActivity($conn, (int)$_SESSION['user_id'], 'Delete Product', "Deleted product: " . ($old_product['name'] ?? ''),
+        'products', $id, $old_product, []);
     header("Location: products.php");
     exit;
 }

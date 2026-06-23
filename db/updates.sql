@@ -48,6 +48,25 @@ CREATE TABLE IF NOT EXISTS `notes` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
+-- Audit log: tracks edit and delete actions with old/new values
+CREATE TABLE IF NOT EXISTS `audit_log` (
+    `id`          INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `company_id`  INT           DEFAULT NULL,
+    `user_id`     INT           DEFAULT NULL,
+    `action`      VARCHAR(100)  NOT NULL,
+    `table_name`  VARCHAR(100)  DEFAULT NULL,
+    `record_id`   INT           DEFAULT NULL,
+    `old_values`  TEXT          DEFAULT NULL,
+    `new_values`  TEXT          DEFAULT NULL,
+    `ip_address`  VARCHAR(45)   DEFAULT NULL,
+    `created_at`  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_audit_company` (`company_id`),
+    INDEX `idx_audit_user`    (`user_id`),
+    INDEX `idx_audit_table`   (`table_name`),
+    INDEX `idx_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
 -- Wishlist: products clients want that are not yet in stock
 CREATE TABLE IF NOT EXISTS wishlist (
     id           INT AUTO_INCREMENT PRIMARY KEY,
