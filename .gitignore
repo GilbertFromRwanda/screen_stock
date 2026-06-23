@@ -2,3 +2,5 @@ config.php
 license.dat
 keygen.php
 logs/
+config.bat
+node_modules
