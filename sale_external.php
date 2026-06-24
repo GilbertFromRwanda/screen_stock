@@ -705,6 +705,10 @@ function toggleExtShortcut(type) {
         document.getElementById('ext_loan').value = type === 'loan' ? total : 0;
     }
     calcExtSplit();
+    if (type === 'loan' && document.getElementById('ext_is_loan').checked) {
+        var lf = document.getElementById('ext_loan_fields');
+        setTimeout(function() { lf.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+    }
 }
 
 function handleExtSubmit() {

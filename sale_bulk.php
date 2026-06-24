@@ -715,6 +715,10 @@ function toggleBulkShortcut(type) {
         document.getElementById('bulk_loan_split').value = type === 'loan' ? total : 0;
     }
     calcBulkSplit();
+    if (type === 'loan' && document.getElementById('bulk_is_loan').checked) {
+        var lf = document.getElementById('bulk_loan_fields');
+        setTimeout(function() { lf.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+    }
 }
 
 function handleBulkSubmit() {

@@ -715,6 +715,10 @@ function toggleRetailShortcut(type) {
         document.getElementById('retail_loan_split').value = type === 'loan' ? total : 0;
     }
     calcRetailSplit();
+    if (type === 'loan' && document.getElementById('retail_is_loan').checked) {
+        var lf = document.getElementById('retail_loan_fields');
+        setTimeout(function() { lf.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+    }
 }
 
 function handleRetailSubmit() {

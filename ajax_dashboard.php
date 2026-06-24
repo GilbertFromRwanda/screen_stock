@@ -81,80 +81,183 @@ $today_momo = (float)$pay['momo'];
 $today_loan = (float)$pay['loan'];
 
 // ── Profit ────────────────────────────────────────────────────────────────────
-$today_profit = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT
-      COALESCE((SELECT SUM(sb.total_amount-(pu.cost_price*sb.quantity/COALESCE(NULLIF(sb.level_divisor,0),1)))
-                FROM sales_bulk sb JOIN purchases pu ON pu.product_id=sb.product_id
-                WHERE sb.sale_date='$today' AND sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
-                AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sb.product_id AND p2.purchase_date<=sb.sale_date " . cidAndFor('p2') . " ORDER BY p2.purchase_date DESC LIMIT 1)),0)
-     +COALESCE((SELECT SUM(sr.total_amount-((pu.cost_price/NULLIF(s.pieces_per_package,0))*sr.pieces_sold))
-                FROM sales_retail sr JOIN purchases pu ON pu.product_id=sr.product_id LEFT JOIN stock s ON sr.product_id=s.product_id
-                WHERE sr.sale_date='$today' AND sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
-                AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sr.product_id AND p2.purchase_date<=sr.sale_date " . cidAndFor('p2') . " ORDER BY p2.purchase_date DESC LIMIT 1)),0)
-     +COALESCE((SELECT SUM(my_revenue) FROM sales_external WHERE sale_date='$today' AND refunded=0 $ca),0) v
+// Cost computed with COALESCE(0) so sales without a purchase record contribute
+// 0 cost rather than being dropped by an INNER JOIN (matches chart calculation).
+// Stock join also company-filtered to avoid row duplication in multi-company setup.
+$today_bulk_cost = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(
+        COALESCE(
+            (SELECT cost_price FROM purchases pu2
+             WHERE pu2.product_id = sb.product_id AND pu2.purchase_date <= sb.sale_date
+             " . cidAndFor('pu2') . " ORDER BY purchase_date DESC LIMIT 1), 0
+        ) * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)
+    ),0) v
+    FROM sales_bulk sb
+    WHERE sb.sale_date='$today' AND sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
 "))['v'] ?? 0);
+
+$today_retail_cost = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(
+        COALESCE(
+            (SELECT pu.cost_price / NULLIF(s.pieces_per_package,0)
+             FROM purchases pu
+             JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
+             WHERE pu.product_id = sr.product_id AND pu.purchase_date <= sr.sale_date
+             " . cidAndFor('pu') . " ORDER BY pu.purchase_date DESC LIMIT 1), 0
+        ) * sr.pieces_sold
+    ),0) v
+    FROM sales_retail sr
+    WHERE sr.sale_date='$today' AND sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
+"))['v'] ?? 0);
+
+// External my_revenue is pure profit (no COGS), already in today_t
+$today_profit = $today_t - $today_bulk_cost - $today_retail_cost;
 
 $week_profit = (float)(mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_profit),0) v FROM weekly_revenue WHERE week_start_date='$week_start' $ca"))['v'] ?? 0);
 
 // ── Chart data (current week: Sunday – Saturday) ──────────────────────────────
-$chart_labels = []; $chart_revenue = []; $chart_cost = []; $chart_profit = [];
+$chart_labels = [];
+$chart_revenue = [];
+$chart_cost = [];
+$chart_profit = [];
 
-$week_sun_chart = date('Y-m-d', strtotime('sunday last week'));
-$week_sat_chart = date('Y-m-d', strtotime('saturday this week'));
-if (date('w') == 0) {
+// Calculate week range (Sunday to Saturday)
+$today_weekday = date('w'); // 0 = Sunday, 6 = Saturday
+
+if ($today_weekday == 0) {
+    // Today is Sunday - current week is today to next Saturday
     $week_sun_chart = date('Y-m-d');
-    $week_sat_chart = date('Y-m-d', strtotime('saturday next week'));
+    $week_sat_chart = date('Y-m-d', strtotime('+6 days'));
+} else {
+    // Today is Monday-Saturday - current week is last Sunday to this Saturday
+    $week_sun_chart = date('Y-m-d', strtotime('last sunday'));
+    $week_sat_chart = date('Y-m-d', strtotime('saturday this week'));
 }
 
-$chart_q = mysqli_query($conn, "
-    SELECT dates.date,
+// Escape values for SQL safety
+$week_sun_chart_escaped = mysqli_real_escape_string($conn, $week_sun_chart);
+$week_sat_chart_escaped = mysqli_real_escape_string($conn, $week_sat_chart);
+
+// Function to add company/tenant filtering (define if not exists)
+if (!function_exists('cidAndFor')) {
+    function cidAndFor($alias) {
+        global $company_id; // Assuming you have a company ID variable
+        if (isset($company_id) && $company_id > 0) {
+            return " AND $alias.company_id = " . intval($company_id);
+        }
+        return "";
+    }
+}
+
+// Build the query
+$chart_query = "
+    SELECT 
+        dates.date,
         COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0) + COALESCE(ext.revenue, 0) AS total_revenue,
-        COALESCE(bulk.cost,    0) + COALESCE(retail.cost,    0) AS total_cost,
+        COALESCE(bulk.cost, 0) + COALESCE(retail.cost, 0) AS total_cost,
         (COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0) + COALESCE(ext.revenue, 0))
-        - (COALESCE(bulk.cost, 0) + COALESCE(retail.cost, 0))   AS profit
+        - (COALESCE(bulk.cost, 0) + COALESCE(retail.cost, 0)) AS profit
     FROM (
-        SELECT DATE('$week_sun_chart') + INTERVAL seq DAY AS date
-        FROM (SELECT 0 seq UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6) x
+        SELECT DATE('$week_sun_chart_escaped') + INTERVAL seq DAY AS date
+        FROM (
+            SELECT 0 seq UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 
+            UNION SELECT 4 UNION SELECT 5 UNION SELECT 6
+        ) x
     ) dates
     LEFT JOIN (
-        SELECT sale_date,
+        SELECT 
+            sale_date,
             SUM(total_amount) AS revenue,
-            SUM(COALESCE((SELECT cost_price FROM purchases pu2
-                          WHERE pu2.product_id = sb.product_id AND pu2.purchase_date <= sb.sale_date " . cidAndFor('pu2') . "
-                          ORDER BY purchase_date DESC LIMIT 1), 0)
-                * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)) AS cost
+            SUM(
+                COALESCE(
+                    (SELECT cost_price 
+                     FROM purchases pu2
+                     WHERE pu2.product_id = sb.product_id 
+                       AND pu2.purchase_date <= sb.sale_date 
+                       " . cidAndFor('pu2') . "
+                     ORDER BY purchase_date DESC 
+                     LIMIT 1), 
+                    0
+                ) * sb.quantity / COALESCE(NULLIF(sb.level_divisor, 0), 1)
+            ) AS cost
         FROM sales_bulk sb
-        WHERE sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
+        WHERE sb.refunded = 0 
+          AND sb.has_loan = 0 
+          " . cidAndFor('sb') . "
         GROUP BY sale_date
     ) AS bulk ON bulk.sale_date = dates.date
     LEFT JOIN (
-        SELECT sale_date,
+        SELECT 
+            sale_date,
             SUM(total_amount) AS revenue,
-            SUM(COALESCE(
-                (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0)
-                 FROM purchases pu
-                 JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
-                 WHERE pu.product_id = sr.product_id AND pu.purchase_date <= sr.sale_date " . cidAndFor('pu') . "
-                 ORDER BY pu.purchase_date DESC LIMIT 1), 0
-            ) * sr.pieces_sold) AS cost
+            SUM(
+                COALESCE(
+                    (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0)
+                     FROM purchases pu
+                     JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
+                     WHERE pu.product_id = sr.product_id 
+                       AND pu.purchase_date <= sr.sale_date 
+                       " . cidAndFor('pu') . "
+                     ORDER BY pu.purchase_date DESC 
+                     LIMIT 1), 
+                    0
+                ) * sr.pieces_sold
+            ) AS cost
         FROM sales_retail sr
-        WHERE sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
+        WHERE sr.refunded = 0 
+          AND sr.has_loan = 0 
+          " . cidAndFor('sr') . "
         GROUP BY sale_date
     ) AS retail ON retail.sale_date = dates.date
     LEFT JOIN (
-        SELECT sale_date, SUM(my_revenue) AS revenue
+        SELECT 
+            sale_date, 
+            SUM(my_revenue) AS revenue
         FROM sales_external se
-        WHERE se.refunded=0 " . cidAndFor('se') . "
+        WHERE se.refunded = 0 
+        " . cidAndFor('se') . "
         GROUP BY sale_date
     ) AS ext ON ext.sale_date = dates.date
     ORDER BY dates.date ASC
-");
-while ($r = mysqli_fetch_assoc($chart_q)) {
-    $chart_labels[]  = date('D', strtotime($r['date']));
-    $chart_revenue[] = (float)$r['total_revenue'];
-    $chart_cost[]    = (float)$r['total_cost'];
-    $chart_profit[]  = (float)$r['profit'];
+";
+
+// Execute query with error handling
+$chart_q = mysqli_query($conn, $chart_query);
+
+if (!$chart_q) {
+    // Log error and handle gracefully
+    error_log("Chart query failed: " . mysqli_error($conn));
+    // You might want to set default values or show an error message
+    $chart_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    $chart_revenue = [0, 0, 0, 0, 0, 0, 0];
+    $chart_cost = [0, 0, 0, 0, 0, 0, 0];
+    $chart_profit = [0, 0, 0, 0, 0, 0, 0];
+} else {
+    // Process results
+    while ($r = mysqli_fetch_assoc($chart_q)) {
+        $chart_labels[] = date('D', strtotime($r['date'])); // Mon, Tue, Wed, etc.
+        $chart_revenue[] = (float)$r['total_revenue'];
+        $chart_cost[] = (float)$r['total_cost'];
+        $chart_profit[] = (float)$r['profit'];
+    }
+    
+    // Ensure we have exactly 7 days of data (fill missing if needed)
+    while (count($chart_labels) < 7) {
+        $chart_labels[] = date('D', strtotime('+' . count($chart_labels) . ' days', strtotime($week_sun_chart)));
+        $chart_revenue[] = 0;
+        $chart_cost[] = 0;
+        $chart_profit[] = 0;
+    }
 }
+
+// Optional: Debug info (remove in production)
+/*
+echo "Week range: $week_sun_chart to $week_sat_chart<br>";
+echo "Labels: " . implode(', ', $chart_labels) . "<br>";
+echo "Revenue: " . implode(', ', $chart_revenue) . "<br>";
+echo "Cost: " . implode(', ', $chart_cost) . "<br>";
+echo "Profit: " . implode(', ', $chart_profit) . "<br>";
+*/
 
 // ── Low stock ─────────────────────────────────────────────────────────────────
 $low_stock = [];

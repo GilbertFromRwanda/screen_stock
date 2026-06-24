@@ -49,20 +49,21 @@ try {
                     <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>">New External Sale</a>
                 </div>
             </div>
+              <?php $fa = in_array($current_page,['loans.php','all_loans.php']); ?>
+            <div class="tn-dropdown<?= $fa?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">Loan <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    
+                    <a href="loans.php"    class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>">Loans by Client</a>
+                    <a href="all_loans.php"class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
+                </div>
+            </div>
+           
 
             <a href="wishlist.php" class="tn-item<?= $current_page==='wishlist.php'?' active':'' ?>">&#9733; Wishlist</a>
             <a href="notes.php"    class="tn-item<?= $current_page==='notes.php'   ?' active':'' ?>">&#10000; Notes</a>
+            <a href="losses.php"   class="tn-item<?= $current_page==='losses.php'   ?' active':'' ?>">&#10005; Loss</a>
 
-            <?php $fa = in_array($current_page,['expenses.php','loans.php','all_loans.php','losses.php']); ?>
-            <div class="tn-dropdown<?= $fa?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">Finance <span class="tn-chev">&#9660;</span></button>
-                <div class="tn-drop-menu">
-                    <a href="expenses.php" class="tn-drop-item<?= $current_page==='expenses.php' ?' active':'' ?>">Expenses</a>
-                    <a href="loans.php"    class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>">Loans by Client</a>
-                    <a href="all_loans.php"class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
-                    <a href="losses.php"   class="tn-drop-item<?= $current_page==='losses.php'   ?' active':'' ?>">Losses</a>
-                </div>
-            </div>
 
             <?php if (in_array($role,['admin','manager','superadmin'])): ?>
             <?php $ra = in_array($current_page,['summary-revenue.php','revenue.php']); ?>

@@ -148,11 +148,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
 // ── AJAX: Preview Global Loan Payment ─────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_loan_payment'])) {
     $total         = (float)$_POST['total_amount'];
-    $client_filter = mysqli_real_escape_string($conn, trim($_POST['client_filter'] ?? ''));
+    $client_id = (int)($_POST['client_id'] ?? 0);
+    $gloan_sort    = $_POST['gloan_sort'] ?? 'date_asc';
 
-    $having = "balance > 0";
     $cid_and = cidAnd();
-    $client_where = $client_filter ? "AND l.client LIKE '%$client_filter%'" : "";
+    $client_where = $client_id > 0 ? "AND l.client_id = $client_id" : "";
+
+    $order_by = match($gloan_sort) {
+        'date_desc'    => 'l.loan_date DESC, l.id DESC',
+        'balance_desc' => 'balance DESC, l.id ASC',
+        'balance_asc'  => 'balance ASC, l.id ASC',
+        default        => 'l.loan_date ASC, l.id ASC',
+    };
 
     $unpaid = mysqli_query($conn, "
         SELECT l.id,
@@ -165,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_loan_pa
         LEFT JOIN products p ON p.id = l.product_id
         LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_sum ON lp_sum.loan_id = l.id
         WHERE l.amount > COALESCE(lp_sum.paid, 0) $cid_and $client_where
-        ORDER BY l.loan_date ASC, l.id ASC
+        ORDER BY $order_by
     ");
 
     $remaining = $total;
@@ -194,9 +201,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_loan_pa
 // ── AJAX: Execute Global Loan Payment ─────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payment'])) {
     $total         = (float)mysqli_real_escape_string($conn, $_POST['total_amount']);
-    $client_filter = mysqli_real_escape_string($conn, trim($_POST['client_filter'] ?? ''));
+    $client_id     = (int)($_POST['client_id'] ?? 0);
     $payment_date  = date('Y-m-d');
     $cid_and       = cidAnd();
+    $gloan_sort    = $_POST['gloan_sort'] ?? 'date_asc';
 
     if ($total <= 0) {
         header('Content-Type: application/json');
@@ -204,7 +212,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
         exit;
     }
 
-    $client_where = $client_filter ? "AND l.client LIKE '%$client_filter%'" : "";
+    $client_where = $client_id > 0 ? "AND l.client_id = $client_id" : "";
+
+    $order_by = match($gloan_sort) {
+        'date_desc'    => 'l.loan_date DESC, l.id DESC',
+        'balance_desc' => 'balance DESC, l.id ASC',
+        'balance_asc'  => 'balance ASC, l.id ASC',
+        default        => 'l.loan_date ASC, l.id ASC',
+    };
 
     $unpaid = mysqli_query($conn, "
         SELECT l.id, l.amount, l.client_id,
@@ -214,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
         FROM loans l
         LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_sum ON lp_sum.loan_id = l.id
         WHERE l.amount > COALESCE(lp_sum.paid, 0) $cid_and $client_where
-        ORDER BY l.loan_date ASC, l.id ASC
+        ORDER BY $order_by
     ");
 
     $remaining     = $total;
@@ -357,6 +372,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['recalc_client_balance'
     exit;
 }
 
+// ── AJAX: Get Clients Table Data ───────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_clients_json'])) {
+    $ca = cidAnd();
+    $clients = [];
+    $qr = mysqli_query($conn, "
+        SELECT id AS client_id, name, phone,
+               total_loans AS loan_count,
+               paid_amount + unpaid_amount AS total_loaned,
+               paid_amount AS total_paid
+        FROM loan_clients WHERE 1=1 $ca
+        ORDER BY updated_at DESC
+    ");
+    while ($row = mysqli_fetch_assoc($qr)) $clients[] = $row;
+
+    $st = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT COUNT(DISTINCT l.id)        AS total_loans,
+               COUNT(DISTINCT l.client)    AS total_clients,
+               COALESCE(SUM(l.amount), 0)  AS total_amount,
+               COALESCE(SUM(lp_s.paid), 0) AS total_paid
+        FROM loans l
+        LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_s
+               ON lp_s.loan_id = l.id
+        WHERE 1=1 $ca
+    "));
+    header('Content-Type: application/json');
+    echo json_encode([
+        'clients'     => $clients,
+        'stats'       => $st,
+        'outstanding' => (float)$st['total_amount'] - (float)$st['total_paid'],
+    ]);
+    exit;
+}
+
 // ── Delete Loan ────────────────────────────────────────────────────────────────
 if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
     $del_id = (int)$_GET['delete'];
@@ -456,6 +504,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
     WHERE 1=1 $cid_and
 "));
 $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -465,7 +514,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     <title>Loans</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/loans.css">
-    <link rel="stylesheet" href="css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
 <body>
 <div class="dashboard-container">
@@ -476,12 +525,14 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <div class="loans-header">
             <h1>Loans</h1>
             <div style="display:flex;gap:10px;">
+                <div id="global-pay-btn-wrap">
                 <?php if ($stats_outstanding > 0): ?>
                 <button onclick="openGlobalLoanPay()" class="btn btn-secondary"
                     style="border-color:var(--warning);color:var(--warning);font-weight:600;">
                     Global Pay &nbsp;<span style="background:var(--warning);color:#fff;border-radius:99px;padding:1px 8px;font-size:12px;">RWF <?php echo number_format($stats_outstanding, 0); ?></span>
                 </button>
                 <?php endif; ?>
+                </div>
                 <button onclick="openModal('addLoanModal')" class="btn btn-primary">+ New Loan</button>
             </div>
         </div>
@@ -490,20 +541,20 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <div class="loans-summary">
             <div class="loan-card">
                 <div class="loan-card-label">Total Loans</div>
-                <div class="loan-card-value"><?php echo number_format($stats['total_loans']); ?></div>
-                <div class="loan-card-sub"><?php echo $stats['total_clients']; ?> client<?php echo $stats['total_clients'] != 1 ? 's' : ''; ?></div>
+                <div class="loan-card-value" id="stat-total-loans"><?php echo number_format($stats['total_loans']); ?></div>
+                <div class="loan-card-sub" id="stat-clients-sub"><?php echo $stats['total_clients']; ?> client<?php echo $stats['total_clients'] != 1 ? 's' : ''; ?></div>
             </div>
             <div class="loan-card green">
                 <div class="loan-card-label">Total Loaned</div>
-                <div class="loan-card-value">RWF <?php echo number_format($stats['total_amount'], 0); ?></div>
+                <div class="loan-card-value" id="stat-total-loaned">RWF <?php echo number_format($stats['total_amount'], 0); ?></div>
             </div>
             <div class="loan-card orange">
                 <div class="loan-card-label">Total Collected</div>
-                <div class="loan-card-value success">RWF <?php echo number_format($stats['total_paid'], 0); ?></div>
+                <div class="loan-card-value success" id="stat-total-paid">RWF <?php echo number_format($stats['total_paid'], 0); ?></div>
             </div>
             <div class="loan-card red">
                 <div class="loan-card-label">Outstanding</div>
-                <div class="loan-card-value <?php echo $stats_outstanding > 0 ? 'danger' : 'success'; ?>">
+                <div class="loan-card-value <?php echo $stats_outstanding > 0 ? 'danger' : 'success'; ?>" id="stat-outstanding">
                     RWF <?php echo number_format($stats_outstanding, 0); ?>
                 </div>
             </div>
@@ -528,6 +579,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <?php if (isset($success)): ?><div class="alert alert-success"><?php echo $success; ?></div><?php endif; ?>
 
         <!-- Loan clients table -->
+        <div id="clients-table-wrap">
         <?php if (empty($clients_data)): ?>
             <div style="text-align:center;padding:48px;color:var(--secondary);">No loan clients found.</div>
         <?php else: ?>
@@ -560,7 +612,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                         <div class="act-menu">
                               <?php if ($outstanding > 0): ?>
                             <div class="act-menu-sep"></div>
-                            <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
+                            <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo (int)$c['client_id']; ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
                             <?php endif; ?>
                             <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
@@ -586,6 +638,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         </table>
         </div>
         <?php endif; ?>
+        </div><!-- /clients-table-wrap -->
     </div>
 </div>
 
@@ -593,10 +646,20 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 <div id="globalLoanPayModal" class="modal">
     <div class="modal-content" style="max-width:600px;">
         <span class="close" onclick="closeModal('globalLoanPayModal')">&times;</span>
-        <h2>Global Loan Payment</h2>
-        <p style="color:var(--secondary);font-size:13px;margin-bottom:20px;">
-            Distributes payment across all unpaid loans — oldest first.
-        </p>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 style="margin:0;">Global Loan Payment</h2>
+            <button id="gloanExportBtn" onclick="exportGlobalLoanPreview()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">&#8681; Export &amp; Share</button>
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+            <label>Prioritize loans by</label>
+            <select id="gloan_sort" onchange="scheduleLoanPreview()" style="max-width:280px;">
+                <option value="date_asc">Oldest first</option>
+                <option value="date_desc">Newest first</option>
+                <option value="balance_desc">Highest balance first</option>
+                <option value="balance_asc">Lowest balance first</option>
+                <option value="manual">Manual selection (choose loans)</option>
+            </select>
+        </div>
         <div id="globalLoanPayAlert" class="alert" style="display:none;"></div>
         <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
             <div class="form-group" style="flex:1;min-width:160px;margin-bottom:0;">
@@ -606,8 +669,12 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             </div>
             <div class="form-group" style="flex:1;min-width:160px;margin-bottom:0;">
                 <label>Filter by Client <small style="font-weight:400;">(optional)</small></label>
-                <input type="text" id="gloan_client" placeholder="Leave blank for all"
-                    oninput="scheduleLoanPreview()">
+                <select id="gloan_client" onchange="scheduleLoanPreview()">
+                    <option value="">All clients</option>
+                    <?php foreach ($clients_data as $c): ?>
+                    <option value="<?php echo (int)$c['client_id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
         </div>
         <div id="globalLoanPreview" style="display:none;">
@@ -618,6 +685,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 <table style="width:100%;border-collapse:collapse;font-size:13px;">
                     <thead>
                         <tr style="background:var(--gray-100);">
+                            <th id="gloan_chk_th" style="display:none;padding:9px 8px;width:32px;"><input type="checkbox" id="gloan_select_all" checked title="Select / deselect all" onchange="document.querySelectorAll('.gloan-row-chk').forEach(function(c){c.checked=document.getElementById('gloan_select_all').checked;});recalcManualSummary();" style="width:15px;height:15px;cursor:pointer;"></th>
                             <th style="padding:9px 12px;text-align:left;font-size:11px;color:var(--secondary);text-transform:uppercase;">Date</th>
                             <th style="padding:9px 12px;text-align:left;font-size:11px;color:var(--secondary);text-transform:uppercase;">Product</th>
                             <th style="padding:9px 12px;text-align:left;font-size:11px;color:var(--secondary);text-transform:uppercase;">Client</th>
@@ -632,7 +700,6 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         </div>
         <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
             <button id="globalLoanPayBtn" class="btn btn-primary" onclick="execGlobalLoanPay()" disabled>Apply Payment</button>
-            <button id="gloanExportBtn" onclick="exportGlobalLoanPreview()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;">&#8681; Export &amp; Share</button>
             <button class="btn btn-secondary" onclick="closeModal('globalLoanPayModal')">Cancel</button>
         </div>
     </div>
@@ -958,7 +1025,8 @@ function exportClientPayments() {
 function exportGlobalLoanPreview() {
     if (!_gloanPreviewRows.length) { alert('No preview data to export.'); return; }
     var amount = document.getElementById('gloan_amount').value;
-    var client = document.getElementById('gloan_client').value.trim();
+    var clientSel = document.getElementById('gloan_client');
+    var client = clientSel.value ? clientSel.options[clientSel.selectedIndex].text : '';
     var subtitle = 'Amount: RWF ' + parseFloat(amount).toLocaleString() + (client ? '  |  Client: ' + client : '');
     var waLines = ['Global Loan Payment Preview', subtitle, new Date().toLocaleDateString(), ''];
     var totalBalance = 0, totalWillPay = 0, pdfRows = [];
@@ -1126,12 +1194,12 @@ ajaxForm('addLoanForm', 'addLoanAlert', 'add_loan', function() {
     document.getElementById('loanPriceHint').textContent = '';
     document.getElementById('loan_product_search').value = '';
     document.getElementById('loan_product_id').value = '';
-    location.reload();
+    reloadClientsTable();
 });
 
 ajaxForm('paymentForm', 'paymentAlert', 'add_payment', function() {
     closeModal('paymentModal');
-    location.reload();
+    reloadClientsTable();
 });
 
 function openPayment(btn) {
@@ -1191,7 +1259,7 @@ function recalcClientBalance(clientId, btn) {
     fetch('loans.php', { method: 'POST', body: fd })
         .then(function(r) { return r.json(); })
         .then(function(res) {
-            if (res.success) { location.reload(); }
+            if (res.success) { reloadClientsTable(); }
             else { alert('Recalculate failed: ' + (res.message || 'unknown error')); }
         });
 }
@@ -1339,6 +1407,7 @@ function renderClientLoans() {
 function openGlobalLoanPay() {
     document.getElementById('gloan_amount').value  = '';
     document.getElementById('gloan_client').value  = '';
+    document.getElementById('gloan_sort').value    = 'date_asc';
     document.getElementById('globalLoanPreview').style.display = 'none';
     document.getElementById('globalLoanPayAlert').style.display = 'none';
     document.getElementById('globalLoanPayBtn').disabled = true;
@@ -1347,9 +1416,9 @@ function openGlobalLoanPay() {
     openModal('globalLoanPayModal');
 }
 
-function openGlobalLoanPayFor(clientName, outstanding) {
+function openGlobalLoanPayFor(clientId, outstanding) {
     document.getElementById('gloan_amount').value  = outstanding;
-    document.getElementById('gloan_client').value  = clientName;
+    document.getElementById('gloan_client').value  = clientId;
     document.getElementById('globalLoanPreview').style.display = 'none';
     document.getElementById('globalLoanPayAlert').style.display = 'none';
     document.getElementById('globalLoanPayBtn').disabled = true;
@@ -1371,10 +1440,16 @@ function loadLoanPreview() {
 
     if (amount <= 0) { preview.style.display = 'none'; btn.disabled = true; document.getElementById('gloanExportBtn').style.display = 'none'; return; }
 
+    var sort     = document.getElementById('gloan_sort').value;
+    var isManual = sort === 'manual';
+    document.getElementById('gloan_chk_th').style.display = isManual ? '' : 'none';
+    if (isManual) document.getElementById('gloan_select_all').checked = true;
+
     var data = new FormData();
     data.append('preview_global_loan_payment', '1');
     data.append('total_amount', amount);
-    data.append('client_filter', client);
+    data.append('client_id', client);
+    data.append('gloan_sort', isManual ? 'date_asc' : sort);
 
     fetch('loans.php', { method: 'POST', body: data })
         .then(function(r) { return r.json(); })
@@ -1387,7 +1462,7 @@ function loadLoanPreview() {
             document.getElementById('gloanExportBtn').style.display = _gloanPreviewRows.length ? 'inline-block' : 'none';
 
             if (!res.rows || res.rows.length === 0) {
-                body.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--secondary);">No unpaid loans found.</td></tr>';
+                body.innerHTML = '<tr><td colspan="' + (isManual ? 6 : 5) + '" style="padding:16px;text-align:center;color:var(--secondary);">No unpaid loans found.</td></tr>';
                 btn.disabled = true;
                 preview.style.display = 'block';
                 return;
@@ -1400,17 +1475,32 @@ function loadLoanPreview() {
                 tr.style.borderBottom = '1px solid var(--gray-200)';
                 var statusColor = willPay <= 0 ? '#94a3b8' : (row.full ? 'var(--success)' : 'var(--warning)');
                 var payLabel    = willPay <= 0 ? '—' : 'RWF ' + willPay.toLocaleString();
-                tr.innerHTML =
+
+                var chkCell = isManual
+                    ? '<td style="padding:9px 8px;"><input type="checkbox" class="gloan-row-chk" checked ' +
+                      'data-id="' + row.id + '" data-balance="' + row.balance + '" ' +
+                      'data-label="' + String(row.label || '').replace(/"/g, '&quot;') + '" ' +
+                      'data-client="' + String(row.client || '').replace(/"/g, '&quot;') + '" ' +
+                      'data-date="' + row.date + '" ' +
+                      'onchange="recalcManualSummary()" style="width:15px;height:15px;cursor:pointer;"></td>'
+                    : '';
+
+                tr.innerHTML = chkCell +
                     '<td style="padding:9px 12px;">' + row.date + '</td>' +
                     '<td style="padding:9px 12px;">' + row.label + '</td>' +
                     '<td style="padding:9px 12px;color:var(--secondary);">' + (row.client || '-') + '</td>' +
                     '<td style="padding:9px 12px;text-align:right;">RWF ' + parseFloat(row.balance).toLocaleString() + '</td>' +
-                    '<td style="padding:9px 12px;text-align:right;font-weight:600;color:' + statusColor + ';">' + payLabel + '</td>';
+                    '<td class="gloan-pay-cell" style="padding:9px 12px;text-align:right;font-weight:600;color:' + statusColor + ';">' + payLabel + '</td>';
                 body.appendChild(tr);
-                if (willPay >= row.balance) covered++;
-                else if (willPay > 0)       partial++;
-                else                        skipped++;
+
+                if (!isManual) {
+                    if (willPay >= row.balance) covered++;
+                    else if (willPay > 0)       partial++;
+                    else                        skipped++;
+                }
             });
+
+            if (isManual) { recalcManualSummary(); return; }
 
             var applied = amount - res.leftover;
             var parts = [];
@@ -1427,6 +1517,45 @@ function loadLoanPreview() {
         });
 }
 
+function recalcManualSummary() {
+    var amount    = parseFloat(document.getElementById('gloan_amount').value) || 0;
+    var remaining = amount;
+    var covered = 0, partial = 0, skipped = 0;
+    var newRows   = [];
+
+    document.querySelectorAll('#loanPreviewBody .gloan-pay-cell').forEach(function(cell) {
+        cell.style.color = '#94a3b8'; cell.textContent = '—';
+    });
+
+    document.querySelectorAll('#loanPreviewBody .gloan-row-chk').forEach(function(chk) {
+        var balance = parseFloat(chk.dataset.balance);
+        var payCell = chk.closest('tr').querySelector('.gloan-pay-cell');
+        if (!chk.checked) { skipped++; return; }
+        var pay  = Math.min(remaining, balance);
+        var full = pay >= balance;
+        payCell.style.color = pay <= 0 ? '#94a3b8' : (full ? 'var(--success)' : 'var(--warning)');
+        payCell.textContent = pay <= 0 ? '—' : 'RWF ' + pay.toLocaleString();
+        remaining -= pay;
+        if (full) covered++; else if (pay > 0) partial++; else skipped++;
+        newRows.push({ id: chk.dataset.id, label: chk.dataset.label, client: chk.dataset.client,
+            date: chk.dataset.date, balance: balance, will_pay: pay, full: full });
+    });
+
+    _gloanPreviewRows = newRows;
+    var applied = amount - Math.max(0, remaining);
+    var parts = [];
+    if (covered) parts.push('<span style="color:var(--success);">&#10003; ' + covered + ' fully paid</span>');
+    if (partial) parts.push('<span style="color:var(--warning);">~ ' + partial + ' partial</span>');
+    if (skipped) parts.push('<span style="color:var(--secondary);">' + skipped + ' skipped</span>');
+    if (remaining > 0) parts.push('<span style="color:var(--danger);">RWF ' + Math.round(remaining).toLocaleString() + ' leftover</span>');
+    document.getElementById('loanPreviewSummary').innerHTML =
+        parts.join('&nbsp;&nbsp;&middot;&nbsp;&nbsp;') +
+        '<br><small>Total applied: <strong>RWF ' + Math.round(applied).toLocaleString() + '</strong></small>';
+    document.getElementById('globalLoanPreview').style.display = 'block';
+    document.getElementById('globalLoanPayBtn').disabled = (applied <= 0);
+    document.getElementById('gloanExportBtn').style.display = newRows.length ? 'inline-block' : 'none';
+}
+
 function execGlobalLoanPay() {
     var amount  = parseFloat(document.getElementById('gloan_amount').value) || 0;
     var client  = document.getElementById('gloan_client').value.trim();
@@ -1434,20 +1563,23 @@ function execGlobalLoanPay() {
     var alertBox = document.getElementById('globalLoanPayAlert');
 
     if (amount <= 0) return;
+    if (!confirm('Apply payment of RWF ' + amount.toLocaleString() + '?\nThis cannot be undone.')) return;
     btn.disabled = true; btn.textContent = 'Applying...';
     alertBox.style.display = 'none';
 
+    var sort = document.getElementById('gloan_sort').value;
     var data = new FormData();
     data.append('exec_global_loan_payment', '1');
     data.append('total_amount', amount);
-    data.append('client_filter', client);
+    data.append('client_id', client);
+    data.append('gloan_sort', sort);
 
     fetch('loans.php', { method: 'POST', body: data })
         .then(function(r) { return r.json(); })
         .then(function(res) {
             if (res.success) {
                 closeModal('globalLoanPayModal');
-                location.reload();
+                reloadClientsTable();
             } else {
                 alertBox.className = 'alert alert-danger';
                 alertBox.textContent = res.message || 'An error occurred.';
@@ -1473,6 +1605,98 @@ function viewClientPayments(clientId, clientName) {
 
     openModal('clientPaymentsModal');
     loadClientPayments();
+}
+
+// ── AJAX: Reload clients table without full page refresh ───────────────────────
+function _escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function reloadClientsTable() {
+    var wrap = document.getElementById('clients-table-wrap');
+    wrap.innerHTML = '<div style="text-align:center;padding:48px;color:var(--secondary);"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+
+    var fd = new FormData();
+    fd.append('get_clients_json', '1');
+
+    fetch('loans.php', { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _updateLoanStats(data.stats, data.outstanding);
+            _updateClientDropdown(data.clients);
+            _renderClientsTable(data.clients);
+            filterClientTable();
+        })
+        .catch(function() {
+            wrap.innerHTML = '<div style="text-align:center;padding:48px;color:var(--danger);">Failed to reload. <a href="loans.php">Refresh page</a></div>';
+        });
+}
+
+function _updateLoanStats(stats, outstanding) {
+    document.getElementById('stat-total-loans').textContent  = parseInt(stats.total_loans).toLocaleString();
+    document.getElementById('stat-clients-sub').textContent  = stats.total_clients + ' client' + (stats.total_clients != 1 ? 's' : '');
+    document.getElementById('stat-total-loaned').textContent = 'RWF ' + parseFloat(stats.total_amount).toLocaleString();
+    document.getElementById('stat-total-paid').textContent   = 'RWF ' + parseFloat(stats.total_paid).toLocaleString();
+    var outEl = document.getElementById('stat-outstanding');
+    outEl.textContent = 'RWF ' + Math.abs(parseFloat(outstanding)).toLocaleString();
+    outEl.className = 'loan-card-value ' + (outstanding > 0 ? 'danger' : 'success');
+    var gpw = document.getElementById('global-pay-btn-wrap');
+    gpw.innerHTML = outstanding > 0
+        ? '<button onclick="openGlobalLoanPay()" class="btn btn-secondary" style="border-color:var(--warning);color:var(--warning);font-weight:600;">Global Pay &nbsp;<span style="background:var(--warning);color:#fff;border-radius:99px;padding:1px 8px;font-size:12px;">RWF ' + parseFloat(outstanding).toLocaleString() + '</span></button>'
+        : '';
+}
+
+function _updateClientDropdown(clients) {
+    var sel = document.getElementById('gloan_client');
+    var cur = sel ? sel.value : '';
+    var html = '<option value="">All clients</option>';
+    (clients || []).forEach(function(c) {
+        html += '<option value="' + c.client_id + '"' + (c.client_id == cur ? ' selected' : '') + '>' + _escHtml(c.name) + '</option>';
+    });
+    if (sel) sel.innerHTML = html;
+}
+
+function _renderClientsTable(clients) {
+    var wrap = document.getElementById('clients-table-wrap');
+    if (!clients || !clients.length) {
+        wrap.innerHTML = '<div style="text-align:center;padding:48px;color:var(--secondary);">No loan clients found.</div>';
+        return;
+    }
+    var html = '<div style="overflow-x:auto;"><table class="table" id="tbl-loan-clients" style="min-width:700px;">' +
+        '<thead><tr><th>Actions</th><th>#</th><th>Client</th><th>Phone</th><th>Loans</th><th>Total Loaned</th><th>Paid</th><th>Outstanding</th><th>Status</th></tr></thead><tbody>';
+
+    clients.forEach(function(c, i) {
+        var outstanding = parseFloat(c.total_loaned) - parseFloat(c.total_paid);
+        var status, badge;
+        if (outstanding <= 0)                         { status = 'Paid';    badge = 'badge-paid'; }
+        else if (parseFloat(c.total_paid) > 0)        { status = 'Partial'; badge = 'badge-partial'; }
+        else                                          { status = 'Unpaid';  badge = 'badge-unpaid'; }
+
+        var payBtn = outstanding > 0
+            ? '<div class="act-menu-sep"></div><button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(' + c.client_id + ',' + outstanding + ');closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>'
+            : '';
+
+        html += '<tr data-status="' + status.toLowerCase() + '">' +
+            '<td><div class="act-menu-wrap"><button class="act-btn" title="Actions" onclick="toggleActMenu(this)">&#8942;</button>' +
+            '<div class="act-menu">' + payBtn +
+            '<button class="act-item" onclick="viewClientLoans(' + JSON.stringify(c.name) + ',' + parseInt(c.client_id) + ');closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>' +
+            '<button class="act-item" onclick="viewClientPayments(' + parseInt(c.client_id) + ',' + JSON.stringify(c.name) + ');closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>' +
+            '<div class="act-menu-sep"></div>' +
+            '<button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(' + parseInt(c.client_id) + ',this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>' +
+            '</div></div></td>' +
+            '<td style="color:var(--secondary);">' + (i + 1) + '</td>' +
+            '<td style="font-weight:600;">' + _escHtml(c.name) + '</td>' +
+            '<td style="color:var(--secondary);">' + (c.phone ? _escHtml(c.phone) : '&mdash;') + '</td>' +
+            '<td>' + parseInt(c.loan_count) + '</td>' +
+            '<td>RWF ' + parseFloat(c.total_loaned).toLocaleString() + '</td>' +
+            '<td>RWF ' + parseFloat(c.total_paid).toLocaleString() + '</td>' +
+            '<td class="' + (outstanding > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(outstanding).toLocaleString() + '</strong></td>' +
+            '<td><span class="' + badge + '">' + status + '</span></td>' +
+            '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    wrap.innerHTML = html;
 }
 
 function loadClientPayments() {

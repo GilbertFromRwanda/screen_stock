@@ -19,8 +19,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'profitability') {
             COALESCE(SUM(sr.total_amount),0) retail_rev,
             COALESCE(SUM(sb.total_amount),0)+COALESCE(SUM(sr.total_amount),0) total_rev
         FROM products p
-        LEFT JOIN sales_bulk sb ON p.id=sb.product_id " . cidAndFor('sb') . "
-        LEFT JOIN sales_retail sr ON p.id=sr.product_id " . cidAndFor('sr') . "
+        LEFT JOIN sales_bulk sb ON p.id=sb.product_id AND sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
+        LEFT JOIN sales_retail sr ON p.id=sr.product_id AND sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
         GROUP BY p.id HAVING total_rev > 0 ORDER BY total_rev DESC
     ");
     while ($r = mysqli_fetch_assoc($q)) $products[] = $r;
@@ -61,7 +61,7 @@ function updateWeeklyRevenue(mysqli $conn): void {
     $bulk_query = mysqli_query($conn, "
         SELECT sb.*,
             p.name as product_name,
-            (SELECT cost_price FROM purchases WHERE product_id = sb.product_id $cid_and ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
+            (SELECT cost_price FROM purchases WHERE product_id = sb.product_id AND purchase_date <= sb.sale_date $cid_and ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
             (SELECT package_price FROM stock WHERE product_id = sb.product_id $cid_and) as default_price,
             COALESCE(NULLIF(sb.level_divisor, 0), 1) as effective_divisor
         FROM sales_bulk sb
@@ -84,7 +84,7 @@ function updateWeeklyRevenue(mysqli $conn): void {
     $retail_query = mysqli_query($conn, "
         SELECT sr.*,
             p.name as product_name,
-            (SELECT cost_price FROM purchases pur WHERE pur.product_id = sr.product_id " . cidAndFor('pur') . " ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
+            (SELECT cost_price FROM purchases pur WHERE pur.product_id = sr.product_id AND pur.purchase_date <= sr.sale_date " . cidAndFor('pur') . " ORDER BY purchase_date DESC LIMIT 1) as last_cost_price,
             COALESCE(s.pieces_per_package, 1) as pieces_per_package,
             s.retail_price as default_price
         FROM sales_retail sr
@@ -181,12 +181,12 @@ $current_week_sales = mysqli_query($conn, "
         sb.package_price as selling_price,
         sb.total_amount,
         COALESCE(pu.cost_price, 0) as purchase_price,
-        COALESCE(pu.cost_price * sb.quantity, 0) as total_cost,
-        (sb.total_amount - COALESCE(pu.cost_price * sb.quantity, 0)) as profit,
+        COALESCE(pu.cost_price * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1), 0) as total_cost,
+        (sb.total_amount - COALESCE(pu.cost_price * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1), 0)) as profit,
         ROUND(
             CASE
                 WHEN sb.total_amount > 0
-                THEN ((sb.total_amount - COALESCE(pu.cost_price * sb.quantity, 0)) / sb.total_amount * 100)
+                THEN ((sb.total_amount - COALESCE(pu.cost_price * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1), 0)) / sb.total_amount * 100)
                 ELSE 0
             END, 2
         ) as margin,
@@ -194,7 +194,8 @@ $current_week_sales = mysqli_query($conn, "
     FROM sales_bulk sb
     JOIN products p ON sb.product_id = p.id
     LEFT JOIN purchases pu ON pu.product_id = sb.product_id AND pu.company_id = sb.company_id
-    WHERE sb.sale_date BETWEEN '$filter_from' AND '$filter_to' " . cidAndFor('sb') . "
+    WHERE sb.sale_date BETWEEN '$filter_from' AND '$filter_to'
+      AND sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
     AND pu.id = (
         SELECT id FROM purchases p2
         WHERE p2.product_id = sb.product_id " . cidAndFor('p2') . "
@@ -227,7 +228,8 @@ $current_week_sales = mysqli_query($conn, "
     JOIN products p ON sr.product_id = p.id
     LEFT JOIN purchases pu ON pu.product_id = sr.product_id AND pu.company_id = sr.company_id
     LEFT JOIN stock s ON sr.product_id = s.product_id AND s.company_id = sr.company_id
-    WHERE sr.sale_date BETWEEN '$filter_from' AND '$filter_to' " . cidAndFor('sr') . "
+    WHERE sr.sale_date BETWEEN '$filter_from' AND '$filter_to'
+      AND sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
     AND pu.id = (
         SELECT id FROM purchases p2
         WHERE p2.product_id = sr.product_id " . cidAndFor('p2') . "
@@ -281,8 +283,8 @@ $daily_revenue_query = mysqli_query($conn, "
     LEFT JOIN (
         SELECT sale_date,
             SUM(total_amount) as revenue,
-            SUM(COALESCE((SELECT cost_price FROM purchases pu2 WHERE pu2.product_id = sb.product_id " . cidAndFor('pu2') . " ORDER BY purchase_date DESC LIMIT 1), 0) * sb.quantity) as cost
-        FROM sales_bulk sb WHERE 1=1 " . cidAndFor('sb') . "
+            SUM(COALESCE((SELECT cost_price FROM purchases pu2 WHERE pu2.product_id = sb.product_id AND pu2.purchase_date <= sb.sale_date " . cidAndFor('pu2') . " ORDER BY purchase_date DESC LIMIT 1), 0) * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)) as cost
+        FROM sales_bulk sb WHERE sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
         GROUP BY sale_date
     ) as bulk ON bulk.sale_date = dates.date
     LEFT JOIN (
@@ -291,7 +293,7 @@ $daily_revenue_query = mysqli_query($conn, "
             SUM(COALESCE(
                 (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0) FROM purchases pu JOIN stock s ON s.product_id = pu.product_id AND s.company_id = pu.company_id WHERE pu.product_id = sr.product_id " . cidAndFor('pu') . " ORDER BY pu.purchase_date DESC LIMIT 1), 0
             ) * sr.pieces_sold) as cost
-        FROM sales_retail sr WHERE 1=1 " . cidAndFor('sr') . "
+        FROM sales_retail sr WHERE sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
         GROUP BY sale_date
     ) as retail ON retail.sale_date = dates.date
     ORDER BY dates.date ASC
@@ -302,27 +304,41 @@ while ($row = mysqli_fetch_assoc($daily_revenue_query)) {
     $daily_data[] = $row;
 }
 
-// Today's profit
+// Today's profit — company-filtered, COALESCE(0) for missing purchases, correct divisor
 $today = date('Y-m-d');
-$today_profit_query = mysqli_query($conn, "
-    SELECT
-        COALESCE((SELECT SUM(total_amount) FROM sales_bulk WHERE sale_date = '$today'), 0) +
-        COALESCE((SELECT SUM(total_amount) FROM sales_retail WHERE sale_date = '$today'), 0) as today_sales,
-        COALESCE((
-            SELECT SUM(sb.total_amount - (COALESCE((SELECT cost_price FROM purchases WHERE product_id = sb.product_id ORDER BY purchase_date DESC LIMIT 1), 0) * sb.quantity))
-            FROM sales_bulk sb WHERE sb.sale_date = '$today'
-        ), 0) +
-        COALESCE((
-            SELECT SUM(sr.total_amount - (COALESCE(
-                (SELECT cost_price / NULLIF(s.pieces_per_package, 0) FROM purchases pu, stock s WHERE pu.product_id = sr.product_id AND s.product_id = sr.product_id ORDER BY pu.purchase_date DESC LIMIT 1), 0
-            ) * sr.pieces_sold))
-            FROM sales_retail sr WHERE sr.sale_date = '$today'
-        ), 0) as today_profit
-");
-$today_data = mysqli_fetch_assoc($today_profit_query);
-$today_sales = $today_data['today_sales'] ?? 0;
-$today_profit = $today_data['today_profit'] ?? 0;
-$today_cost = $today_sales - $today_profit;
+$today_sales = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE((SELECT SUM(total_amount) FROM sales_bulk   WHERE sale_date='$today' AND refunded=0 AND has_loan=0 $cid_and),0)
+          +COALESCE((SELECT SUM(total_amount) FROM sales_retail WHERE sale_date='$today' AND refunded=0 AND has_loan=0 $cid_and),0) v
+"))['v'] ?? 0);
+
+$today_bulk_cost = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(
+        COALESCE(
+            (SELECT cost_price FROM purchases pu2
+             WHERE pu2.product_id = sb.product_id AND pu2.purchase_date <= sb.sale_date
+             " . cidAndFor('pu2') . " ORDER BY purchase_date DESC LIMIT 1), 0
+        ) * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)
+    ),0) v
+    FROM sales_bulk sb
+    WHERE sb.sale_date='$today' AND sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
+"))['v'] ?? 0);
+
+$today_retail_cost = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COALESCE(SUM(
+        COALESCE(
+            (SELECT pu.cost_price / NULLIF(s.pieces_per_package,0)
+             FROM purchases pu
+             JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
+             WHERE pu.product_id = sr.product_id AND pu.purchase_date <= sr.sale_date
+             " . cidAndFor('pu') . " ORDER BY pu.purchase_date DESC LIMIT 1), 0
+        ) * sr.pieces_sold
+    ),0) v
+    FROM sales_retail sr
+    WHERE sr.sale_date='$today' AND sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
+"))['v'] ?? 0);
+
+$today_cost   = $today_bulk_cost + $today_retail_cost;
+$today_profit = $today_sales - $today_cost;
 $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
 ?>
 
