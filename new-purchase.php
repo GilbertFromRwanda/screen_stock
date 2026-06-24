@@ -2,17 +2,6 @@
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 
-// Ensure purchase_levels table exists
-mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `purchase_levels` (
-    `id`             INT AUTO_INCREMENT PRIMARY KEY,
-    `purchase_id`    INT NOT NULL,
-    `level_order`    TINYINT NOT NULL,
-    `level_name`     VARCHAR(100) NOT NULL,
-    `qty_per_parent` INT NOT NULL DEFAULT 1,
-    `selling_price`  DECIMAL(10,2) NOT NULL DEFAULT 0,
-    INDEX (`purchase_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
-
 // ── AJAX: last purchase cost hint ────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'last_purchase') {
     header('Content-Type: application/json');
@@ -21,6 +10,17 @@ if (isset($_GET['action']) && $_GET['action'] === 'last_purchase') {
         "SELECT purchase_date, cost_price FROM purchases WHERE product_id = $pid ORDER BY id DESC LIMIT 1"
     )) : null;
     echo json_encode($r ?: null);
+    exit;
+}
+
+// ── AJAX: currency rates ──────────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'get_rates') {
+    header('Content-Type: application/json');
+    $cid_check = cid() !== null ? "company_id = " . cid() : "company_id IS NULL";
+    $r = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT usd_rate, foreign_rate, foreign_name FROM currency_rates WHERE $cid_check LIMIT 1"
+    ));
+    echo json_encode($r ?: ['usd_rate' => 1300, 'foreign_rate' => 1, 'foreign_name' => 'USD']);
     exit;
 }
 
@@ -45,10 +45,27 @@ if (isset($_GET['repeat'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json');
 
+    // ── Save currency rates ───────────────────────────────────────────────────
+    if (($_POST['action'] ?? '') === 'save_rates') {
+        $usd_rate     = max(0.0001, (float)($_POST['usd_rate']     ?? 1300));
+        $foreign_rate = max(0.0001, (float)($_POST['foreign_rate'] ?? 1));
+        $raw          = preg_replace('/[^A-Za-z]/', '', $_POST['foreign_name'] ?? 'USD');
+        $foreign_name = strtoupper(substr($raw, 0, 10)) ?: 'USD';
+        $cid_val      = cidSql();
+        $cid_check    = cid() !== null ? "company_id = " . cid() : "company_id IS NULL";
+        if (mysqli_num_rows(mysqli_query($conn, "SELECT id FROM currency_rates WHERE $cid_check")) > 0) {
+            mysqli_query($conn, "UPDATE currency_rates SET usd_rate=$usd_rate, foreign_rate=$foreign_rate, foreign_name='$foreign_name' WHERE $cid_check");
+        } else {
+            mysqli_query($conn, "INSERT INTO currency_rates (company_id, usd_rate, foreign_rate, foreign_name) VALUES ($cid_val, $usd_rate, $foreign_rate, '$foreign_name')");
+        }
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     $product_id    = (int)($_POST['product_id'] ?? 0);
     $supplier_id   = empty($_POST['supplier_id']) ? 'NULL' : (int)$_POST['supplier_id'];
     $quantity      = max(1, (int)($_POST['quantity'] ?? 1));
-    $cost_price    = max(0, (float)($_POST['cost_price'] ?? 0));
+    $cost_price    = max(0, (float)str_replace(',', '', $_POST['cost_price'] ?? '0'));
     $purchase_date = mysqli_real_escape_string($conn, $_POST['purchase_date'] ?? date('Y-m-d'));
 
     $names  = array_values($_POST['level_name']  ?? []);
@@ -64,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'order'          => count($levels) + 1,
             'name'           => $name,
             'qty_per_parent' => ($i === 0) ? 1 : max(1, (int)($qtys[$i] ?? 1)),
-            'price'          => max(0, (float)($prices[$i] ?? 0)),
+            'price'          => max(0, (float)str_replace(',', '', $prices[$i] ?? '0')),
         ];
     }
 
@@ -155,9 +172,9 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
     <link rel="stylesheet" href="css/style.css">
     <style>
         .page-header {
-            display: flex; align-items: center; gap: 16px; margin-bottom: 28px;
+            display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
         }
-        .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+        .page-header h1 { margin: 0; font-size: 18px; font-weight: 700; }
         .back-link {
             display: inline-flex; align-items: center; gap: 6px;
             color: var(--secondary); text-decoration: none; font-size: 14px;
@@ -167,21 +184,21 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
         .back-link:hover { background: var(--gray-100); }
 
         .form-grid {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
         }
         @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
 
         .card {
             background: var(--white); border: 1px solid var(--gray-200);
-            border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm);
+            border-radius: 12px; padding: 18px 20px; box-shadow: var(--shadow-sm);
         }
         .card-title {
-            font-size: 14px; font-weight: 700; text-transform: uppercase;
+            font-size: 13px; font-weight: 700; text-transform: uppercase;
             letter-spacing: .5px; color: var(--secondary);
-            margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--gray-200);
+            margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--gray-200);
         }
 
-        .form-group { margin-bottom: 16px; }
+        .form-group { margin-bottom: 12px; }
         .form-group label {
             display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--dark);
         }
@@ -274,6 +291,43 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
             justify-content: flex-end; margin-top: 8px;
         }
 
+        /* Multi-step */
+        .steps-wrap {
+            display: flex; align-items: flex-start; margin-bottom: 24px;
+        }
+        .step-ind {
+            display: flex; flex-direction: column; align-items: center; gap: 5px; flex-shrink: 0;
+        }
+        .step-circle {
+            width: 30px; height: 30px; border-radius: 50%;
+            border: 2px solid var(--gray-300); background: var(--white);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 700; color: var(--secondary);
+            transition: background .2s, border-color .2s, color .2s;
+        }
+        .step-ind.active .step-circle { border-color: var(--primary); background: var(--primary); color: #fff; }
+        .step-ind.done   .step-circle { border-color: #16a34a; background: #16a34a; color: #fff; }
+        .step-lbl { font-size: 11px; font-weight: 600; color: var(--secondary); white-space: nowrap; }
+        .step-ind.active .step-lbl { color: var(--primary); }
+        .step-ind.done   .step-lbl { color: #16a34a; }
+        .step-ind:hover .step-circle { opacity: .8; }
+        .step-line {
+            flex: 1; height: 2px; background: var(--gray-200);
+            margin: 0 6px; margin-top: 14px; transition: background .3s;
+        }
+        .step-line.done { background: #16a34a; }
+
+        /* Step panels */
+        .step-panel { display: none; }
+        .step-panel.active { display: block; }
+
+        /* Step navigation */
+        .step-nav {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-top: 20px; gap: 12px;
+        }
+        .step-nav-right { display: flex; gap: 10px; }
+
         /* Preset examples */
         .preset-label {
             font-size: 11px; font-weight: 700; text-transform: uppercase;
@@ -314,6 +368,72 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
             .level-badge { writing-mode: horizontal-tb; grid-column: 1 / -1; }
             .btn-remove { grid-column: 2; justify-self: end; }
         }
+
+        /* Currency rates box */
+        .rates-box {
+            background: var(--gray-100); border: 1px solid var(--gray-200);
+            border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px;
+        }
+        .rates-box-header {
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .rates-box-title {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: .5px; color: var(--secondary);
+        }
+        .btn-save-rates {
+            padding: 4px 12px; font-size: 12px; font-weight: 600;
+            background: var(--primary); color: #fff; border: none;
+            border-radius: var(--radius); cursor: pointer; transition: background .15s;
+        }
+        .btn-save-rates:hover { background: #1d4ed8; }
+        .btn-save-rates:disabled { opacity: .6; cursor: not-allowed; }
+        .rates-row {
+            display: flex; align-items: center; gap: 7px; margin-bottom: 7px; font-size: 13px;
+        }
+        .rates-row:last-child { margin-bottom: 0; }
+        .rates-row input {
+            padding: 5px 8px; border: 1px solid var(--gray-300);
+            border-radius: var(--radius); font-size: 13px; background: var(--white);
+        }
+        .rates-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+        .rates-row .r-name { width: 62px; font-weight: 600; }
+        .rates-row .r-val  { width: 90px; }
+
+        /* Triple cost-price inputs */
+        .cost-inputs { display: flex; align-items: flex-end; gap: 6px; margin-top: 4px; }
+        .cost-input-wrap { flex: 1; min-width: 0; }
+        .cost-currency-label {
+            font-size: 11px; font-weight: 700; color: var(--secondary);
+            margin-bottom: 4px; text-align: center; text-transform: uppercase;
+        }
+        .cost-arrow { color: var(--gray-400); font-size: 18px; padding-bottom: 8px; flex-shrink: 0; }
+
+        /* Expense + final cost */
+        .cost-expense-wrap {
+            margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-200);
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .cost-expense-row, .cost-final-row {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .cost-expense-label {
+            width: 82px; font-size: 13px; font-weight: 600;
+            color: var(--secondary); text-align: right; flex-shrink: 0;
+        }
+        .cost-expense-unit { font-size: 13px; color: var(--secondary); }
+        .cost-expense-row input {
+            flex: 1; padding: 7px 10px; border: 1px solid var(--gray-300);
+            border-radius: var(--radius); font-size: 14px; background: var(--white);
+        }
+        .cost-expense-row input:focus {
+            outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.1);
+        }
+        .cost-final-row input {
+            flex: 1; padding: 7px 10px; border: 1px solid #6ee7b7;
+            border-radius: var(--radius); font-size: 14px; font-weight: 700;
+            background: #f0fdf4; color: var(--dark);
+        }
     </style>
 </head>
 <body>
@@ -328,78 +448,149 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 
         <form id="purchaseForm">
 
-            <div class="form-grid">
+            <!-- ── Step indicator ─────────────────────────────────────────── -->
+            <div class="steps-wrap">
+                <div class="step-ind active" id="step-ind-1" onclick="goStep(1)" style="cursor:pointer;">
+                    <div class="step-circle">1</div>
+                    <div class="step-lbl">Product</div>
+                </div>
+                <div class="step-line" id="line-1-2"></div>
+                <div class="step-ind" id="step-ind-2" onclick="goStep(2)" style="cursor:pointer;">
+                    <div class="step-circle">2</div>
+                    <div class="step-lbl">Cost</div>
+                </div>
+                <div class="step-line" id="line-2-3"></div>
+                <div class="step-ind" id="step-ind-3" onclick="goStep(3)" style="cursor:pointer;">
+                    <div class="step-circle">3</div>
+                    <div class="step-lbl">Packaging</div>
+                </div>
+            </div>
 
-                <!-- ── Basic info ──────────────────────────────────────────── -->
+            <!-- ── Step 1: Product & Details ──────────────────────────────── -->
+            <div class="step-panel active" id="panel-1">
                 <div class="card">
-                    <div class="card-title">Purchase Info</div>
+                    <div class="card-title">Product & Details</div>
 
-                    <div class="form-group">
-                        <label>Product *</label>
-                        <div class="searchable-wrap" id="productWrap">
-                            <input type="hidden" id="product_id" name="product_id">
-                            <input type="text" id="product_search" placeholder="Search product…"
-                                   autocomplete="off">
-                            <div class="searchable-dropdown" id="product_dropdown">
-                                <?php foreach ($products as $p): ?>
-                                    <div class="sd-option" data-value="<?= $p['id'] ?>">
-                                        <?= htmlspecialchars($p['category'] . ' — ' . $p['name']) ?>
-                                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px;">
+                        <div class="form-group">
+                            <label>Product *</label>
+                            <div class="searchable-wrap" id="productWrap">
+                                <input type="hidden" id="product_id" name="product_id">
+                                <input type="text" id="product_search" placeholder="Search product…" autocomplete="off">
+                                <div class="searchable-dropdown" id="product_dropdown">
+                                    <?php foreach ($products as $p): ?>
+                                        <div class="sd-option" data-value="<?= $p['id'] ?>">
+                                            <?= htmlspecialchars($p['category'] . ' — ' . $p['name']) ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Purchase Date *</label>
+                            <input type="date" name="purchase_date" id="purchase_date" value="<?= date('Y-m-d') ?>">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Supplier</label>
+                            <select name="supplier_id">
+                                <option value="">— None —</option>
+                                <?php foreach ($suppliers as $s): ?>
+                                    <option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['name']) ?></option>
                                 <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label id="qty-label">Quantity Purchased *</label>
+                            <input type="text" name="quantity" id="quantity" min="1" value="1" oninput="updateSummary()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Step 2: Cost ────────────────────────────────────────────── -->
+            <div class="step-panel" id="panel-2">
+                <div class="card">
+                    <div class="card-title">Cost Price</div>
+
+                    <div class="rates-box">
+                        <div class="rates-box-header" onclick="toggleRates()" style="cursor:pointer;user-select:none;">
+                            <span class="rates-box-title">Exchange Rates</span>
+                            <span id="rates-summary" style="flex:1;font-size:11px;color:var(--secondary);margin:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
+                            <span id="rates-chevron" style="font-size:11px;color:var(--secondary);">&#9660; Edit</span>
+                        </div>
+                        <div id="rates-inputs" style="display:none;">
+                            <div class="rates-row" style="margin-top:8px;">
+                                <span>1 USD =</span>
+                                <input type="text" id="foreign_rate" class="r-val" value="1" placeholder="e.g. 7.2" oninput="onRateChange()">
+                                <input type="text" id="foreign_name" class="r-name" value="USD" maxlength="10" placeholder="e.g. CNY" oninput="onRateChange()">
+                            </div>
+                            <div class="rates-row">
+                                <span>1 USD =</span>
+                                <input type="text" id="usd_rate" class="r-val" value="1300" placeholder="e.g. 1300" oninput="onRateChange()">
+                                <span>RWF</span>
+                            </div>
+                            <div style="text-align:right;margin-top:8px;">
+                                <button type="button" id="saveRatesBtn" class="btn-save-rates" onclick="saveRates()">Save Rates</button>
                             </div>
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label>Purchase Date *</label>
-                        <input type="date" name="purchase_date" id="purchase_date"
-                               value="<?= date('Y-m-d') ?>">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Supplier</label>
-                        <select name="supplier_id">
-                            <option value="">— None —</option>
-                            <?php foreach ($suppliers as $s): ?>
-                                <option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- ── Quantity & Cost ─────────────────────────────────────── -->
-                <div class="card">
-                    <div class="card-title">Quantity & Cost</div>
-
-                    <div class="form-group">
-                        <label id="qty-label">Quantity Purchased *</label>
-                        <input type="text" name="quantity" id="quantity" min="1" value="1"
-                               oninput="updateSummary()">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Cost Price per unit (RWF) *</label>
-                        <input type="text" name="cost_price" id="cost_price" min="0" step="1"
-                               placeholder="0" oninput="updateSummary();suggestPrices()">
+                        <label>Cost Price per unit *</label>
+                        <div class="cost-inputs">
+                            <div class="cost-input-wrap">
+                                <div class="cost-currency-label" id="foreign_label">—</div>
+                                <input type="text" id="cost_foreign" placeholder="0"
+                                       oninput="syncFromForeign()" onfocus="rawInput(this)" onblur="fmtInput(this,4)">
+                            </div>
+                            <span class="cost-arrow">→</span>
+                            <div class="cost-input-wrap">
+                                <div class="cost-currency-label">USD</div>
+                                <input type="text" id="cost_usd" placeholder="0"
+                                       oninput="syncFromUSD()" onfocus="rawInput(this)" onblur="fmtInput(this,4)">
+                            </div>
+                            <span class="cost-arrow">→</span>
+                            <div class="cost-input-wrap">
+                                <div class="cost-currency-label">RWF</div>
+                                <input type="text" id="cost_rwf_converted" placeholder="0"
+                                       oninput="syncFromConverted()" onfocus="rawInput(this)" onblur="fmtInput(this,0)">
+                            </div>
+                        </div>
+                        <div class="cost-expense-wrap" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                            <div class="cost-expense-row" style="flex:1;min-width:160px;">
+                                <span class="cost-expense-label">+ Expense</span>
+                                <input type="text" id="expense_rwf" placeholder="0"
+                                       oninput="updateFinalCost()" onfocus="rawInput(this)" onblur="fmtInput(this,0)">
+                                <span class="cost-expense-unit">RWF</span>
+                            </div>
+                            <div class="cost-final-row" style="flex:1;min-width:160px;">
+                                <span class="cost-expense-label">= Final Cost</span>
+                                <input type="text" id="cost_price" name="cost_price" placeholder="0" readonly>
+                                <span class="cost-expense-unit">RWF</span>
+                            </div>
+                        </div>
                         <div id="last-purchase-hint" style="font-size:12px;color:var(--secondary);margin-top:4px;min-height:16px;"></div>
                     </div>
 
                     <div class="form-group">
-                        <label for="suggest_rate">% Markup <small style="color:var(--secondary);font-weight:400;">(e.g. 5 = add 5% on cost)</small></label>
-                        <input type="text" id="suggest_rate" value="5" style="max-width:120px;"
-                               oninput="suggestPrices()">
+                        <label for="suggest_rate">% Markup <small style="color:var(--secondary);font-weight:400;">(e.g. 23 = add 23% on cost)</small></label>
+                        <input type="text" id="suggest_rate" value="23" style="max-width:120px;" oninput="suggestPrices()">
                     </div>
                 </div>
+            </div>
 
-                <!-- ── Packaging levels ────────────────────────────────────── -->
-                <div class="card levels-card">
+            <!-- ── Step 3: Packaging & Review ─────────────────────────────── -->
+            <div class="step-panel" id="panel-3">
+                <div class="card" style="margin-bottom:16px;">
                     <div class="card-title">Packaging Levels</div>
                     <p style="font-size:13px;color:var(--secondary);margin-bottom:16px;">
                         Define each level from the biggest container down to the smallest unit.
                         Clients can buy at any level. Set the selling price for each level.
                     </p>
 
-                    <!-- Preset examples -->
                     <span class="preset-label">Load an example to get started:</span>
                     <div class="preset-cards">
                         <button type="button" class="preset-card" onclick="loadPreset('single',this)">
@@ -428,7 +619,6 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                     <button type="button" class="add-level-btn" onclick="addLevel()">+ Add Level</button>
                 </div>
 
-                <!-- ── Live summary ────────────────────────────────────────── -->
                 <div class="summary-box">
                     <div class="summary-title">Breakdown Summary</div>
                     <div class="summary-chain" id="summaryChain">
@@ -436,16 +626,21 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                     </div>
                     <div class="summary-total" id="summaryTotal"></div>
                 </div>
-
-                <!-- ── Actions ────────────────────────────────────────────── -->
-                <div class="form-actions">
-                    <a href="purchases.php" class="btn btn-secondary">Cancel</a>
-                    <button type="button" class="btn btn-primary" id="saveBtn" onclick="submitPurchase()">
-                        Save Purchase
-                    </button>
-                </div>
-
             </div>
+
+            <!-- ── Step navigation ────────────────────────────────────────── -->
+            <div class="step-nav">
+                <a href="purchases.php" class="btn btn-secondary">Cancel</a>
+                <div class="step-nav-right">
+                    <button type="button" class="btn btn-secondary" id="backBtn"
+                            onclick="goStep(currentStep - 1)" style="display:none">&#8592; Back</button>
+                    <button type="button" class="btn btn-primary" id="nextBtn"
+                            onclick="goStep(currentStep + 1)">Next &#8594;</button>
+                    <button type="button" class="btn btn-primary" id="saveBtn"
+                            onclick="submitPurchase()" style="display:none">Save Purchase</button>
+                </div>
+            </div>
+
         </form>
     </div>
 </div>
@@ -454,6 +649,191 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 <div class="toast" id="toast"></div>
 
 <script>
+// ── Multi-step navigation ─────────────────────────────────────────────────────
+var currentStep = 1;
+var totalSteps  = 3;
+
+function goStep(n) {
+    if (n < 1 || n > totalSteps) return;
+    if (n > currentStep && !validateStep(currentStep)) return;
+
+    document.getElementById('panel-' + currentStep).classList.remove('active');
+    document.getElementById('panel-' + n).classList.add('active');
+
+    for (var i = 1; i <= totalSteps; i++) {
+        var ind = document.getElementById('step-ind-' + i);
+        ind.classList.remove('active', 'done');
+        if (i < n)        ind.classList.add('done');
+        else if (i === n) ind.classList.add('active');
+    }
+    for (var j = 1; j < totalSteps; j++) {
+        document.getElementById('line-' + j + '-' + (j + 1)).classList.toggle('done', j < n);
+    }
+
+    currentStep = n;
+    document.getElementById('backBtn').style.display = n > 1           ? '' : 'none';
+    document.getElementById('nextBtn').style.display = n < totalSteps  ? '' : 'none';
+    document.getElementById('saveBtn').style.display = n === totalSteps ? '' : 'none';
+}
+
+function validateStep(step) {
+    if (step === 1) {
+        if (!document.getElementById('product_id').value) {
+            showToast('Please select a product.', 'error'); return false;
+        }
+        if ((parseInt(document.getElementById('quantity').value) || 0) < 1) {
+            showToast('Quantity must be at least 1.', 'error'); return false;
+        }
+    }
+    return true;
+}
+
+// ── Number formatting helpers ─────────────────────────────────────────────────
+function fmtNum(n, maxDec) {
+    var v = parseFloat(String(n || '').replace(/,/g, ''));
+    if (isNaN(v) || v === 0) return '';
+    return v.toLocaleString('en-US', { maximumFractionDigits: maxDec !== undefined ? maxDec : 0 });
+}
+function parseNum(s) {
+    return parseFloat(String(s || '').replace(/,/g, '')) || 0;
+}
+function fmtInput(el, dec) {
+    var v = parseNum(el.value);
+    el.value = v ? fmtNum(v, dec) : '';
+}
+function rawInput(el) {
+    var v = parseNum(el.value);
+    el.value = v ? v : '';
+}
+
+// ── Currency rates ────────────────────────────────────────────────────────────
+var currentRates = { usd_rate: 1300, foreign_rate: 1, foreign_name: 'USD' };
+
+function loadRates() {
+    fetch('new-purchase.php?action=get_rates')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d) return;
+            currentRates = d;
+            document.getElementById('usd_rate').value     = d.usd_rate;
+            document.getElementById('foreign_rate').value = d.foreign_rate;
+            document.getElementById('foreign_name').value = d.foreign_name;
+            updateForeignLabel();
+            updateRatesSummary();
+        })
+        .catch(function() {});
+}
+
+function saveRates() {
+    var usdRate     = parseFloat(document.getElementById('usd_rate').value)     || 0;
+    var foreignRate = parseFloat(document.getElementById('foreign_rate').value) || 0;
+    var foreignName = document.getElementById('foreign_name').value.trim().toUpperCase().replace(/[^A-Z]/g,'').slice(0, 10);
+    if (usdRate <= 0 || foreignRate <= 0 || !foreignName) {
+        showToast('Enter valid rates and currency name.', 'error'); return;
+    }
+    currentRates = { usd_rate: usdRate, foreign_rate: foreignRate, foreign_name: foreignName };
+    updateForeignLabel();
+
+    var btn = document.getElementById('saveRatesBtn');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+
+    var fd = new FormData();
+    fd.append('action', 'save_rates');
+    fd.append('usd_rate', usdRate);
+    fd.append('foreign_rate', foreignRate);
+    fd.append('foreign_name', foreignName);
+
+    fetch('new-purchase.php', { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            showToast(d.ok ? 'Rates saved.' : 'Failed to save rates.', d.ok ? 'success' : 'error');
+            btn.textContent = 'Save Rates'; btn.disabled = false;
+            updateRatesSummary();
+            if (d.ok) toggleRates();
+            syncFromConverted();
+        })
+        .catch(function() {
+            showToast('Network error.', 'error');
+            btn.textContent = 'Save Rates'; btn.disabled = false;
+        });
+}
+
+function updateForeignLabel() {
+    document.getElementById('foreign_label').textContent = currentRates.foreign_name || '—';
+}
+
+function updateRatesSummary() {
+    var fr = parseNum(document.getElementById('foreign_rate').value) || 1;
+    var fn = (document.getElementById('foreign_name').value.trim() || 'USD').toUpperCase();
+    var ur = parseNum(document.getElementById('usd_rate').value) || 1300;
+    document.getElementById('rates-summary').textContent =
+        '1 USD = ' + fmtNum(fr, 4) + ' ' + fn + ' • 1 USD = ' + fmtNum(ur) + ' RWF';
+}
+
+function toggleRates() {
+    var panel   = document.getElementById('rates-inputs');
+    var chevron = document.getElementById('rates-chevron');
+    var open    = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : '';
+    chevron.innerHTML   = open ? '&#9660; Edit' : '&#9650; Done';
+}
+
+function onRateChange() {
+    var usdRate     = parseFloat(document.getElementById('usd_rate').value)     || 0;
+    var foreignRate = parseFloat(document.getElementById('foreign_rate').value) || 0;
+    var foreignName = document.getElementById('foreign_name').value.trim() || '—';
+    currentRates = { usd_rate: usdRate, foreign_rate: foreignRate, foreign_name: foreignName };
+    updateForeignLabel();
+    updateRatesSummary();
+    syncFromConverted();
+}
+
+// Rates: 1 USD = foreignRate [foreign], 1 USD = usdRate RWF
+// foreign → USD = foreign / foreignRate  → RWF = USD × usdRate
+// USD    → foreign = USD × foreignRate   → RWF = USD × usdRate
+// RWF    → USD = RWF / usdRate           → foreign = USD × foreignRate
+
+function updateFinalCost() {
+    var converted = parseNum(document.getElementById('cost_rwf_converted').value);
+    var expense   = parseNum(document.getElementById('expense_rwf').value);
+    var final     = converted + expense;
+    document.getElementById('cost_price').value = final > 0 ? fmtNum(Math.round(final)) : '';
+    updateSummary(); suggestPrices();
+}
+
+function syncFromForeign() {
+    var v           = parseNum(document.getElementById('cost_foreign').value);
+    var usdRate     = parseNum(currentRates.usd_rate)     || 1;
+    var foreignRate = parseNum(currentRates.foreign_rate) || 1;
+    var usd = foreignRate > 0 ? v / foreignRate : 0;
+    var rwf = usd * usdRate;
+    document.getElementById('cost_usd').value           = fmtNum(usd, 4);
+    document.getElementById('cost_rwf_converted').value = fmtNum(Math.round(rwf));
+    updateFinalCost();
+}
+
+function syncFromUSD() {
+    var v           = parseNum(document.getElementById('cost_usd').value);
+    var usdRate     = parseNum(currentRates.usd_rate)     || 1;
+    var foreignRate = parseNum(currentRates.foreign_rate) || 1;
+    var foreign = v * foreignRate;
+    var rwf     = v * usdRate;
+    document.getElementById('cost_foreign').value       = fmtNum(foreign, 4);
+    document.getElementById('cost_rwf_converted').value = fmtNum(Math.round(rwf));
+    updateFinalCost();
+}
+
+function syncFromConverted() {
+    var v           = parseNum(document.getElementById('cost_rwf_converted').value);
+    var usdRate     = parseNum(currentRates.usd_rate)     || 1;
+    var foreignRate = parseNum(currentRates.foreign_rate) || 1;
+    var usd     = usdRate > 0 ? v / usdRate : 0;
+    var foreign = usd * foreignRate;
+    document.getElementById('cost_usd').value     = fmtNum(usd, 4);
+    document.getElementById('cost_foreign').value = fmtNum(foreign, 4);
+    updateFinalCost();
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function showToast(msg, type) {
     var t = document.getElementById('toast');
@@ -471,8 +851,8 @@ function submitPurchase() {
     var quantity  = parseInt(document.getElementById('quantity').value) || 0;
     if (quantity < 1) { showToast('Quantity must be at least 1.', 'error'); return; }
 
-    var costPrice = document.getElementById('cost_price').value;
-    if (!costPrice || parseFloat(costPrice) < 0) { showToast('Enter a valid cost price.', 'error'); return; }
+    var costPrice = parseNum(document.getElementById('cost_price').value);
+    if (costPrice < 0) { showToast('Enter a valid cost price.', 'error'); return; }
 
     var rows = document.getElementById('levelsContainer').querySelectorAll('.level-row');
     if (rows.length === 0) { showToast('Add at least one packaging level.', 'error'); return; }
@@ -503,6 +883,11 @@ function submitPurchase() {
             document.getElementById('product_id').value = '';
             document.getElementById('product_dropdown').classList.remove('open');
             document.getElementById('last-purchase-hint').textContent = '';
+            document.getElementById('cost_foreign').value = '';
+            document.getElementById('cost_usd').value = '';
+            document.getElementById('cost_rwf_converted').value = '';
+            document.getElementById('expense_rwf').value = '';
+            goStep(1);
             btn.disabled = false;
             btn.textContent = 'Save Purchase';
         } else {
@@ -603,7 +988,9 @@ function addLevel() {
 
         '<div class="form-group">' +
             '<label>Selling Price (RWF) <small class="level-price-hint" style="color:var(--secondary);font-weight:400;"></small></label>' +
-            '<input type="text" name="level_price[]" min="0" step="1" value="0" data-edited="0" oninput="this.dataset.edited=\'1\';updateSummary()">' +
+            '<input type="text" name="level_price[]" min="0" step="1" value="0" data-edited="0"' +
+            ' oninput="this.dataset.edited=\'1\';updateSummary()"' +
+            ' onfocus="rawInput(this)" onblur="fmtInput(this,0)">' +
         '</div>' +
 
         '<button type="button" class="btn-remove" onclick="removeLevel(this)"' +
@@ -657,7 +1044,7 @@ function updateLabels() {
 
 // ── Price suggestion (rate read from #suggest_rate input) ────────────────────
 function suggestPrices() {
-    var cost = parseFloat(document.getElementById('cost_price').value) || 0;
+    var cost = parseNum(document.getElementById('cost_price').value);
     if (cost <= 0) return;
     var pct = parseFloat(document.getElementById('suggest_rate').value) || 0;
     var rate = 1 + pct / 100;
@@ -671,7 +1058,7 @@ function suggestPrices() {
         }
         var priceInput = row.querySelector('input[name="level_price[]"]');
         if (priceInput && priceInput.dataset.edited === '0') {
-            priceInput.value = Math.round(cost / divisor * rate);
+            priceInput.value = fmtNum(Math.round(cost / divisor * rate));
         }
     });
     document.querySelectorAll('.level-price-hint').forEach(function(el) {
@@ -702,13 +1089,13 @@ function updateSummary() {
     });
     chain.innerHTML = parts.join('');
 
-    var costPrice = parseFloat(document.getElementById('cost_price').value) || 0;
+    var costPrice = parseNum(document.getElementById('cost_price').value);
     var totalCost = qty * costPrice;
     var topName   = rows[0].querySelector('input[name="level_name[]"]').value.trim() || 'unit';
     var botName   = rows[rows.length-1].querySelector('input[name="level_name[]"]').value.trim() || 'piece';
 
     var lastPriceInput = rows[rows.length - 1].querySelector('input[name="level_price[]"]');
-    var lastPrice    = parseFloat(lastPriceInput ? lastPriceInput.value : 0) || 0;
+    var lastPrice    = parseNum(lastPriceInput ? lastPriceInput.value : 0);
     var totalRevenue = running * lastPrice;
     var profit       = totalRevenue - totalCost;
     var profitPct    = totalCost > 0 ? Math.round(profit / totalCost * 100) : 0;
@@ -779,6 +1166,7 @@ function loadPreset(key, btn) {
     suggestPrices();
 }
 
+loadRates();
 loadPreset('two', document.querySelectorAll('.preset-card')[1]);
 
 <?php if ($repeat_data): ?>
@@ -791,7 +1179,7 @@ loadPreset('two', document.querySelectorAll('.preset-card')[1]);
     document.getElementById('product_search').value =
         (p.category ? p.category + ' — ' : '') + p.product_name;
     document.getElementById('quantity').value = p.quantity;
-    document.getElementById('cost_price').value = p.cost_price;
+    document.getElementById('cost_rwf_converted').value = p.cost_price;
 
     var container = document.getElementById('levelsContainer');
     container.innerHTML = '';
@@ -807,12 +1195,14 @@ loadPreset('two', document.querySelectorAll('.preset-card')[1]);
             if (qInput) qInput.value = lvl.qty_per_parent;
         }
         var pInput = row.querySelector('input[name="level_price[]"]');
-        if (pInput) { pInput.value = lvl.selling_price; pInput.dataset.edited = '0'; }
+        if (pInput) { pInput.value = fmtNum(lvl.selling_price); pInput.dataset.edited = '0'; }
     });
 
-    updateSummary();
+    syncFromConverted();
     updateLabels();
     fetchLastPurchase(p.product_id);
+    currentStep = 1;
+    goStep(3);
     showToast('Pre-filled from previous purchase — adjust as needed.', 'success');
 })();
 <?php endif; ?>
