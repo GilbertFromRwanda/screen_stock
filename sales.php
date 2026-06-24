@@ -8,11 +8,6 @@ if (!isLoggedIn()) {
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 
-// Auto-add level_divisor column to sales_bulk if missing (backward-compatible)
-if (mysqli_num_rows(mysqli_query($conn, "SHOW COLUMNS FROM sales_bulk LIKE 'level_divisor'")) == 0) {
-    mysqli_query($conn, "ALTER TABLE sales_bulk ADD COLUMN level_divisor INT NOT NULL DEFAULT 1 AFTER quantity");
-}
-
 // ── DELETE Bulk Sale ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
     $id = (int)$_POST['sale_id'];
@@ -305,6 +300,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
 
     if ($ok) {
         mysqli_commit($conn);
+
+        // Auto-add to wishlist — increment client_count if already pending, else insert
+        $wl = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM wishlist WHERE product_name='$product_name' AND status='pending' LIMIT 1"));
+        if ($wl) {
+            mysqli_query($conn, "UPDATE wishlist SET client_count = client_count + 1 WHERE id=" . (int)$wl['id']);
+        } else {
+            mysqli_query($conn, "INSERT INTO wishlist (product_name, client_count) VALUES ('$product_name', 1)");
+        }
+
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);

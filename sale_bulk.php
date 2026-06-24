@@ -185,6 +185,30 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             flex-shrink: 0;
         }
         .btn-step-back:hover { background: var(--gray-100); border-color: var(--gray-400); }
+
+        /* ── 3-col grid (replaces inline style so media queries can override) ── */
+        .form-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 24px; align-items: start; }
+
+        /* ── Responsive ─────────────────────────────────────────────────────── */
+        @media (max-width: 900px) {
+            .form-3col { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 640px) {
+            .sale-page-card { padding: 14px 12px; }
+            .sale-page-header { margin-bottom: 16px; gap: 8px; }
+            .sale-page-header h1 { font-size: 16px; }
+            .form-2col, .form-3col { grid-template-columns: 1fr; }
+            .steps-indicator { margin-bottom: 20px; }
+            .step-lbl { display: none; }
+            .step-circle { width: 28px; height: 28px; font-size: 12px; }
+            .step-connector { margin-bottom: 14px; }
+            .step-nav { flex-direction: column; }
+            .step-nav > * { width: 100%; }
+            .lvl-btn { min-width: 72px; padding: 6px 10px; }
+            .split-row { padding: 7px 8px; gap: 6px; }
+            .split-label { width: 52px; font-size: 12px; }
+            .price-input-group { flex-wrap: wrap; }
+        }
     </style>
 </head>
 <body>
@@ -224,7 +248,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 <div id="bulk_step_panel_1">
 
                     <!-- 3-column: Product | Quantity | Price -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 24px;align-items:start;">
+                    <div class="form-3col">
 
                         <!-- Col 1: Product + details + level -->
                         <div>
@@ -302,7 +326,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                 <div id="bulk_step_panel_2" style="display:none;">
 
                     <!-- Three-column layout -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 24px;align-items:start;">
+                    <div class="form-3col">
 
                         <!-- Col 1: Sale summary -->
                         <div>
