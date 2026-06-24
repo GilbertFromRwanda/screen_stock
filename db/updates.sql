@@ -15,65 +15,19 @@ INSERT IGNORE INTO `users` (`company_id`, `username`, `password`, `full_name`, `
 VALUES (NULL, 'superadmin', '$2y$10$.jJafyBL/kRUv1eQAomQQ.w5sLK2y.GZ4gsPDHfH2GqzAFPC.KsSW', 'Super Admin', 'superadmin', 'active');
 
 
--- ── stock_value_cache ────────────────────────────────────────────────────────
--- Stores pre-computed FIFO purchase cost and selling value per product per company.
--- Refreshed automatically on every purchase, sale, and stock change.
--- Use ajax_recalc_stock.php to force a full rebuild.
-CREATE TABLE IF NOT EXISTS `stock_value_cache` (
-    `id`         INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `company_id` INT           DEFAULT NULL,
-    `product_id` INT           NOT NULL,
-    `cost_wh`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `cost_rt`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `sell_wh`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `sell_rt`    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `updated_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_svc_company` (`company_id`),
-    INDEX `idx_svc_product` (`product_id`)
+
+
+
+-- Currency rates: per-company exchange rates for foreign → USD → RWF conversion on purchases
+CREATE TABLE IF NOT EXISTS `currency_rates` (
+    `id`           INT           AUTO_INCREMENT PRIMARY KEY,
+    `company_id`   INT           DEFAULT NULL,
+    `usd_rate`     DECIMAL(10,4) NOT NULL DEFAULT 1300.0000,
+    `foreign_rate` DECIMAL(10,4) NOT NULL DEFAULT 1.0000,
+    `foreign_name` VARCHAR(10)   NOT NULL DEFAULT 'USD',
+    `updated_at`   DATETIME      DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_cr_company` (`company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
--- Notes: personal notes per user with pin support
-CREATE TABLE IF NOT EXISTS `notes` (
-    `id`         INT AUTO_INCREMENT PRIMARY KEY,
-    `company_id` INT DEFAULT NULL,
-    `user_id`    INT NOT NULL,
-    `title`      VARCHAR(255) NOT NULL,
-    `note`       TEXT NOT NULL,
-    `is_pinned`  TINYINT(1) NOT NULL DEFAULT 0,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_notes_company` (`company_id`),
-    INDEX `idx_notes_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
--- Audit log: tracks edit and delete actions with old/new values
-CREATE TABLE IF NOT EXISTS `audit_log` (
-    `id`          INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `company_id`  INT           DEFAULT NULL,
-    `user_id`     INT           DEFAULT NULL,
-    `action`      VARCHAR(100)  NOT NULL,
-    `table_name`  VARCHAR(100)  DEFAULT NULL,
-    `record_id`   INT           DEFAULT NULL,
-    `old_values`  TEXT          DEFAULT NULL,
-    `new_values`  TEXT          DEFAULT NULL,
-    `ip_address`  VARCHAR(45)   DEFAULT NULL,
-    `created_at`  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_audit_company` (`company_id`),
-    INDEX `idx_audit_user`    (`user_id`),
-    INDEX `idx_audit_table`   (`table_name`),
-    INDEX `idx_audit_created` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
--- Wishlist: products clients want that are not yet in stock
-CREATE TABLE IF NOT EXISTS wishlist (
-    id           INT AUTO_INCREMENT PRIMARY KEY,
-    product_name VARCHAR(255) NOT NULL,
-    client_count INT          NOT NULL DEFAULT 1,
-    status       ENUM('pending','purchased') NOT NULL DEFAULT 'pending',
-    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    purchased_at DATETIME NULL
-);
 

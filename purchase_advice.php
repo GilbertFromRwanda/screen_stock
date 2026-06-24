@@ -280,6 +280,17 @@ foreach ($products as $p) {
         .no-data { text-align:center; padding:60px 20px; color:var(--secondary); }
         .no-data-icon { font-size:48px; opacity:.35; margin-bottom:12px; }
 
+        /* ── Priority modal ── */
+        .priority-opt {
+            display:flex; align-items:center; gap:10px; cursor:pointer;
+            padding:10px 14px; border:1.5px solid #e5e7eb; border-radius:8px;
+            font-size:13px; transition:border-color .15s, background .15s;
+        }
+        .priority-opt:has(input:checked) {
+            border-color:var(--primary,#3b82f6); background:#eff6ff;
+        }
+        .priority-opt input { accent-color:var(--primary,#3b82f6); }
+
         /* ── Budget planner ── */
         .budget-box {
             background:var(--white); border:1px solid var(--gray-200);
@@ -308,11 +319,17 @@ foreach ($products as $p) {
         .plan-table td, .plan-table th { font-size:12px; padding:8px 10px; }
         .plan-row-full    { background:#f0fdf4; }
         .plan-row-partial { background:#fffbeb; }
+        .plan-row-extra   { background:#eff6ff; }
         .plan-row-skip    { background:#fafafa; opacity:.55; }
         .qty-full    { color:#065f46; font-weight:700; }
         .qty-partial { color:#b45309; font-weight:700; }
+        .qty-extra   { color:#1d4ed8; font-weight:700; }
         .qty-skip    { color:#9ca3af; }
         .skip-reason { font-size:10px; color:#9ca3af; }
+        .extras-banner {
+            background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px;
+            padding:9px 14px; margin-bottom:12px; font-size:12px; color:#065f46;
+        }
     </style>
 </head>
 <body>
@@ -377,10 +394,36 @@ foreach ($products as $p) {
                            placeholder="e.g. 500000"
                            style="width:100%;">
                 </div>
-                <button class="btn btn-primary" onclick="runBudgetPlan()">Plan My Shopping</button>
+                <button class="btn btn-primary" onclick="showPriorityModal()">Plan My Shopping</button>
                 <button class="btn btn-secondary" onclick="clearPlan()" id="clearBtn" style="display:none;">Clear</button>
             </div>
             <div class="budget-result" id="budgetResult" style="display:none;"></div>
+        </div>
+
+        <!-- Priority Modal -->
+        <div id="priorityModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+            <div style="background:#fff;border-radius:12px;padding:28px 32px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+                <h4 style="margin:0 0 4px;font-size:15px;font-weight:700;">Choose Shopping Priority</h4>
+                <p style="margin:0 0 16px;font-size:12px;color:#6b7280;">How should items be ranked when allocating your budget?</p>
+                <div style="display:flex;flex-direction:column;gap:8px;" id="priorityOptions">
+                    <label class="priority-opt" data-val="urgency">
+                        <input type="radio" name="planPriority" value="urgency" checked>
+                        <span><strong>🚨 Urgency</strong> — Out of stock &amp; urgent items first</span>
+                    </label>
+                    <label class="priority-opt" data-val="revenue">
+                        <input type="radio" name="planPriority" value="revenue">
+                        <span><strong>💰 Revenue</strong> — Highest revenue-generating items first</span>
+                    </label>
+                    <label class="priority-opt" data-val="rev_share">
+                        <input type="radio" name="planPriority" value="rev_share">
+                        <span><strong>📊 Revenue Share</strong> — Items with biggest share of total sales first</span>
+                    </label>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:20px;">
+                    <button class="btn btn-secondary" onclick="closePriorityModal()" style="flex:1;">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmPlan()" style="flex:1;">Plan My Shopping</button>
+                </div>
+            </div>
         </div>
 
         <?php if (empty($products)): ?>
@@ -609,20 +652,48 @@ function fmt(n) {
     return 'RWF ' + Math.round(n).toLocaleString();
 }
 
-function runBudgetPlan() {
+function showPriorityModal() {
+    var budget = parseFloat(document.getElementById('budgetInput').value);
+    if (!budget || budget <= 0) {
+        alert('Please enter a valid budget amount.');
+        return;
+    }
+    document.getElementById('priorityModal').style.display = 'flex';
+}
+
+function closePriorityModal() {
+    document.getElementById('priorityModal').style.display = 'none';
+}
+
+function confirmPlan() {
+    var priority = document.querySelector('input[name="planPriority"]:checked').value;
+    closePriorityModal();
+    runBudgetPlan(priority);
+}
+
+function runBudgetPlan(priority) {
     var budget = parseFloat(document.getElementById('budgetInput').value);
     if (!budget || budget <= 0) {
         alert('Please enter a valid budget amount.');
         return;
     }
 
-    var remaining  = budget;
-    var plan       = [];   // { product, buy, cost, full }
-    var skipped    = [];   // { product, reason }
+    var sorted = PRODUCTS.slice().sort(function(a, b) {
+        if (priority === 'revenue') {
+            return b.revenue !== a.revenue ? b.revenue - a.revenue : b.tier - a.tier;
+        } else if (priority === 'rev_share') {
+            return b.rev_share !== a.rev_share ? b.rev_share - a.rev_share : b.tier - a.tier;
+        } else {
+            return b.tier !== a.tier ? b.tier - a.tier : b.revenue - a.revenue;
+        }
+    });
 
-    // Products are already sorted by tier desc → revenue desc (from PHP)
-    // Only consider products that need restocking and have a known cost
-    PRODUCTS.forEach(function(p) {
+    var remaining  = budget;
+    var plan       = [];
+    var skipped    = [];
+
+    // Pass 1: buy up to suggested qty for each product (fills to 30-day target)
+    sorted.forEach(function(p) {
         if (p.suggested <= 0 || p.last_cost <= 0) return;
 
         var can_afford = Math.floor(remaining / p.last_cost);
@@ -635,19 +706,29 @@ function runBudgetPlan() {
         var cost = buy * p.last_cost;
         remaining -= cost;
 
-        plan.push({
-            p:    p,
-            buy:  buy,
-            cost: cost,
-            full: buy >= p.suggested
-        });
+        plan.push({ p: p, buy: buy, cost: cost, full: buy >= p.suggested, extra: 0 });
     });
 
-    renderPlan(budget, remaining, plan, skipped);
+    // Pass 2: if budget still remains, spend it on extras (up to suggested qty more,
+    // targeting ~60-day coverage), in the same priority order
+    if (remaining > 0) {
+        plan.forEach(function(item) {
+            if (remaining <= 0 || item.p.last_cost > remaining) return;
+            var can_afford = Math.floor(remaining / item.p.last_cost);
+            var extra = Math.min(item.p.suggested, can_afford);
+            if (extra <= 0) return;
+            item.buy  += extra;
+            item.cost += extra * item.p.last_cost;
+            item.extra = extra;
+            remaining -= extra * item.p.last_cost;
+        });
+    }
+
+    renderPlan(budget, remaining, plan, skipped, priority);
     document.getElementById('clearBtn').style.display = '';
 }
 
-function renderPlan(budget, remaining, plan, skipped) {
+function renderPlan(budget, remaining, plan, skipped, priority) {
     var spent = budget - remaining;
     var box   = document.getElementById('budgetResult');
 
@@ -662,12 +743,25 @@ function renderPlan(budget, remaining, plan, skipped) {
     var rows = '';
     var cumulative = 0;
 
+    var hasExtras = plan.some(function(item) { return item.extra > 0; });
+
     plan.forEach(function(item, i) {
         cumulative += item.cost;
-        var rowCls  = item.full ? 'plan-row-full' : 'plan-row-partial';
-        var qtyCls  = item.full ? 'qty-full'      : 'qty-partial';
-        var qtyTxt  = item.buy + ' pkg' + (item.buy !== 1 ? 's' : '');
-        if (!item.full) qtyTxt += ' <span style="color:#9ca3af;font-weight:400;">of ' + item.p.suggested + '</span>';
+        var rowCls = item.extra > 0 ? 'plan-row-extra'
+                   : item.full      ? 'plan-row-full'
+                   :                  'plan-row-partial';
+        var qtyCls = item.extra > 0 ? 'qty-extra'
+                   : item.full      ? 'qty-full'
+                   :                  'qty-partial';
+        var base = item.buy - item.extra;
+        var qtyTxt;
+        if (item.extra > 0) {
+            qtyTxt = base + ' <span style="color:#9ca3af;font-size:11px;">+ '
+                   + item.extra + ' extra</span> pkg' + (item.buy !== 1 ? 's' : '');
+        } else {
+            qtyTxt = item.buy + ' pkg' + (item.buy !== 1 ? 's' : '');
+            if (!item.full) qtyTxt += ' <span style="color:#9ca3af;font-weight:400;">of ' + item.p.suggested + '</span>';
+        }
         rows += '<tr class="' + rowCls + '">'
             + '<td>' + (i + 1) + '</td>'
             + '<td><strong>' + esc(item.p.name) + '</strong>'
@@ -693,15 +787,25 @@ function renderPlan(budget, remaining, plan, skipped) {
             + '</tr>';
     });
 
+    var priorityLabel = priority === 'revenue' ? '💰 Revenue priority'
+                      : priority === 'rev_share' ? '📊 Revenue Share priority'
+                      : '🚨 Urgency priority';
+
+    var extrasBanner = hasExtras
+        ? '<div class="extras-banner">✅ Your budget covers all suggested restocking.'
+          + ' Extra stock was added to top products to use your remaining budget.</div>'
+        : '';
+
     box.innerHTML =
         '<div class="budget-result-header">'
-        + '<h4>Shopping Plan</h4>'
+        + '<h4>Shopping Plan <span style="font-size:11px;font-weight:400;color:#6b7280;margin-left:6px;">' + priorityLabel + '</span></h4>'
         + '<div class="budget-pills">'
         + '<span class="budget-pill pill-count">' + plan.length + ' product' + (plan.length !== 1 ? 's' : '') + ' selected</span>'
         + '<span class="budget-pill pill-spend">Spend: ' + fmt(spent) + '</span>'
         + '<span class="budget-pill pill-left">Remaining: ' + fmt(remaining) + '</span>'
         + '</div>'
         + '</div>'
+        + extrasBanner
         + '<div class="table-responsive">'
         + '<table class="table plan-table">'
         + '<thead><tr>'

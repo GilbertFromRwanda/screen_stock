@@ -39,19 +39,11 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-md);
             padding: 32px;
-            max-width: 960px;
         }
         .form-2col {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 0 20px;
-        }
-        .pay-sum-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            align-items: start;
-            margin-bottom: 16px;
         }
         .sale-page-header {
             display: flex;
@@ -122,6 +114,77 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             padding: 4px 8px; cursor: pointer; white-space: nowrap;
         }
         .default-price-badge:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+        /* Step indicator */
+        .steps-indicator {
+            display: flex;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+        .step-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        .step-circle {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 2px solid var(--gray-300);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 15px;
+            color: var(--secondary);
+            background: var(--white);
+            transition: background .2s, border-color .2s, color .2s;
+        }
+        .step-item.active .step-circle {
+            border-color: var(--primary);
+            background: var(--primary);
+            color: #fff;
+        }
+        .step-item.done .step-circle {
+            border-color: #16a34a;
+            background: #16a34a;
+            color: #fff;
+        }
+        .step-lbl {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray-400, #9ca3af);
+            white-space: nowrap;
+        }
+        .step-item.active .step-lbl { color: var(--primary); }
+        .step-item.done  .step-lbl  { color: #16a34a; }
+        .step-connector {
+            flex: 1;
+            height: 2px;
+            background: var(--gray-200);
+            margin: 0 10px 20px;
+            transition: background .3s;
+        }
+        .step-connector.done { background: #16a34a; }
+        .step-nav {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .btn-step-back {
+            padding: 10px 22px;
+            border: 1.5px solid var(--gray-300);
+            border-radius: var(--radius);
+            background: var(--white);
+            color: var(--dark);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+            flex-shrink: 0;
+        }
+        .btn-step-back:hover { background: var(--gray-100); border-color: var(--gray-400); }
     </style>
 </head>
 <body>
@@ -142,161 +205,208 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             </div>
             <div id="bulk_sale_alert" class="alert" style="display:none;margin-bottom:16px;"></div>
 
+            <!-- Step indicator -->
+            <div class="steps-indicator">
+                <div class="step-item active" id="bulk_step_dot_1">
+                    <div class="step-circle">1</div>
+                    <div class="step-lbl">Product</div>
+                </div>
+                <div class="step-connector" id="bulk_step_connector"></div>
+                <div class="step-item" id="bulk_step_dot_2">
+                    <div class="step-circle">2</div>
+                    <div class="step-lbl">Payment</div>
+                </div>
+            </div>
+
             <form method="POST" action="sales.php" id="bulkSaleForm">
-                <!-- Product -->
-                <div class="form-group">
-                    <label>Select Product*</label>
-                    <select id="bulk_product_id" name="product_id" required onchange="updateBulkProductDetails()" style="display:none">
-                        <option value="">Choose product...</option>
-                        <?php while ($row = mysqli_fetch_assoc($bulk_products)): ?>
-                            <option value="<?php echo $row['product_id']; ?>"
-                                    data-price="<?php echo $row['package_price']; ?>"
-                                    data-stock="<?php echo $row['quantity']; ?>"
-                                    data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                    data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                            </option>
-                        <?php endwhile; ?>
-                    </select>
-                    <div class="searchable-select" id="bulkProductSearchable">
-                        <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="bulk_product_dropdown">
-                            <?php
-                            mysqli_data_seek($bulk_products, 0);
-                            while ($row = mysqli_fetch_assoc($bulk_products)):
-                            ?>
-                                <div class="searchable-select-option"
-                                     data-value="<?php echo $row['product_id']; ?>"
-                                     data-price="<?php echo $row['package_price']; ?>"
-                                     data-stock="<?php echo $row['quantity']; ?>"
-                                     data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                     data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                    <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                </div>
-                            <?php endwhile; ?>
-                        </div>
-                    </div>
-                </div>
 
-                <div id="bulk_product_details" class="price-history" style="display:none;">
-                    <strong>Product Info:</strong> <span id="bulk_product_info"></span>
-                </div>
+                <!-- ═══════════ STEP 1 ═══════════ -->
+                <div id="bulk_step_panel_1">
 
-                <!-- Level selector -->
-                <div id="bulk_level_selector" style="display:none;margin-bottom:16px;">
-                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
-                    <div id="bulk_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-                </div>
+                    <!-- 3-column: Product | Quantity | Price -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 24px;align-items:start;">
 
-                <!-- Quantity + Price (2 columns) -->
-                <div class="form-2col">
-                    <div class="form-group">
-                        <label id="bulk_qty_label">Quantity (Packages)*</label>
-                        <input type="text" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
-                        <small id="bulk_stock_info" class="field-hint"></small>
-                        <small id="bulk_qty_error" class="field-error"></small>
-                    </div>
-                    <div class="form-group">
-                        <label>Selling Price (per package)*</label>
-                        <div class="price-input-group">
-                            <input type="text" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
-                            <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
-                        </div>
-                        <div id="bulk_price_warning" class="price-warning"></div>
-                    </div>
-                </div>
-
-                <!-- Customer -->
-                <div class="form-group">
-                    <label>Customer Name</label>
-                    <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
-                </div>
-
-                <!-- Payment shortcuts -->
-                <div class="form-group" style="margin:0 0 16px;display:flex;flex-wrap:wrap;gap:10px;">
-                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
-                        <span style="font-weight:700;font-size:14px;">Is Loan?</span>
-                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
-                    </label>
-                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
-                        <span style="font-weight:700;font-size:14px;">Is Cash?</span>
-                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
-                    </label>
-                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
-                        <span style="font-weight:700;font-size:14px;">Is Momo?</span>
-                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
-                    </label>
-                </div>
-
-                <!-- Payment split + Summary (side by side) -->
-                <div class="pay-sum-grid">
-                    <div id="bulk_payment_section" style="display:none;">
-                        <div class="form-group">
-                            <label>Payment Breakdown</label>
-                            <div class="split-payment-box">
-                                <div class="split-row">
-                                    <span class="split-label">Cash</span>
-                                    <input type="text" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
-                                </div>
-                                <div class="split-row">
-                                    <span class="split-label">Momo</span>
-                                    <input type="text" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
-                                </div>
-                                <div class="split-row">
-                                    <span class="split-label">Loan</span>
-                                    <input type="text" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
-                                </div>
-                                <div class="split-row split-remaining-row" id="bulk_remaining_row">
-                                    <span class="split-label">Remaining</span>
-                                    <span id="bulk_remaining">—</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="bulk_loan_fields" style="display:none;">
-                            <?php if ($loan_clients_arr): ?>
+                        <!-- Col 1: Product + details + level -->
+                        <div>
                             <div class="form-group">
-                                <label>Existing Client</label>
-                                <div class="searchable-select" id="bulkClientPickerWrap">
-                                    <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
-                                        placeholder="Search registered client..." autocomplete="off">
-                                    <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown">
-                                        <?php foreach ($loan_clients_arr as $c): ?>
+                                <label>Select Product*</label>
+                                <select id="bulk_product_id" name="product_id" required onchange="updateBulkProductDetails()" style="display:none">
+                                    <option value="">Choose product...</option>
+                                    <?php while ($row = mysqli_fetch_assoc($bulk_products)): ?>
+                                        <option value="<?php echo $row['product_id']; ?>"
+                                                data-price="<?php echo $row['package_price']; ?>"
+                                                data-stock="<?php echo $row['quantity']; ?>"
+                                                data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
+                                                data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
+                                            <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
+                                        </option>
+                                    <?php endwhile; ?>
+                                </select>
+                                <div class="searchable-select" id="bulkProductSearchable">
+                                    <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
+                                    <div class="searchable-select-dropdown" id="bulk_product_dropdown">
+                                        <?php
+                                        mysqli_data_seek($bulk_products, 0);
+                                        while ($row = mysqli_fetch_assoc($bulk_products)):
+                                        ?>
                                             <div class="searchable-select-option"
-                                                data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                                data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                                <?php echo htmlspecialchars($c['client']); ?>
-                                                <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                                <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                                <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
+                                                 data-value="<?php echo $row['product_id']; ?>"
+                                                 data-price="<?php echo $row['package_price']; ?>"
+                                                 data-stock="<?php echo $row['quantity']; ?>"
+                                                 data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
+                                                 data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
+                                                <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
                                             </div>
-                                        <?php endforeach; ?>
+                                        <?php endwhile; ?>
                                     </div>
                                 </div>
-                                <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
                             </div>
-                            <?php endif; ?>
-                            <div class="form-group">
-                                <label>Client Phone*</label>
-                                <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcBulkSplit()">
+                            <div id="bulk_product_details" class="price-history" style="display:none;">
+                                <strong>Product Info:</strong> <span id="bulk_product_info"></span>
+                            </div>
+                            <div id="bulk_level_selector" style="display:none;margin-bottom:16px;">
+                                <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
+                                <div id="bulk_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
                             </div>
                         </div>
+
+                        <!-- Col 2: Quantity -->
+                        <div class="form-group">
+                            <label id="bulk_qty_label">Quantity (Packages)*</label>
+                            <input type="text" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
+                            <small id="bulk_stock_info" class="field-hint"></small>
+                            <small id="bulk_qty_error" class="field-error"></small>
+                        </div>
+
+                        <!-- Col 3: Price -->
+                        <div class="form-group">
+                            <label>Selling Price (per package)*</label>
+                            <div class="price-input-group">
+                                <input type="text" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
+                                <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
+                            </div>
+                            <div id="bulk_price_warning" class="price-warning"></div>
+                        </div>
+
                     </div>
 
-                    <div class="sale-summary" id="bulk_summary" style="display:none;">
-                        <div class="summary-row"><span>Product</span><strong id="bulk_sum_product"></strong></div>
-                        <div class="summary-row"><span>Packages</span><strong id="bulk_sum_qty"></strong></div>
-                        <div class="summary-row"><span>Price/Package</span><strong id="bulk_sum_price"></strong></div>
-                        <div class="summary-row summary-total"><span>Total Amount</span><strong id="bulk_sum_total"></strong></div>
+                    <!-- Step 1 nav -->
+                    <div class="step-nav" style="justify-content:flex-end;">
+                        <button type="button" id="bulk_next_btn" class="btn btn-primary" disabled onclick="goToBulkStep2()" style="padding:10px 28px;">
+                            Next &rarr;
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ═══════════ STEP 2 ═══════════ -->
+                <div id="bulk_step_panel_2" style="display:none;">
+
+                    <!-- Three-column layout -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 24px;align-items:start;">
+
+                        <!-- Col 1: Sale summary -->
+                        <div>
+                            <div class="sale-summary" id="bulk_summary">
+                                <div class="summary-row"><span>Product</span><strong id="bulk_sum_product"></strong></div>
+                                <div class="summary-row"><span>Packages</span><strong id="bulk_sum_qty"></strong></div>
+                                <div class="summary-row"><span>Price/Package</span><strong id="bulk_sum_price"></strong></div>
+                                <div class="summary-row summary-total"><span>Total Amount</span><strong id="bulk_sum_total"></strong></div>
+                            </div>
+                        </div>
+
+                        <!-- Col 2: Customer + shortcuts + loan fields -->
+                        <div>
+                            <div class="form-group">
+                                <label>Customer Name</label>
+                                <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
+                            </div>
+
+                            <div class="form-group" style="margin:0 0 16px;display:flex;flex-direction:column;gap:8px;">
+                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                                    <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
+                                    <span style="font-weight:700;font-size:14px;">Is Loan?</span>
+                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
+                                </label>
+                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                                    <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
+                                    <span style="font-weight:700;font-size:14px;">Is Cash?</span>
+                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
+                                </label>
+                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                                    <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
+                                    <span style="font-weight:700;font-size:14px;">Is Momo?</span>
+                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
+                                </label>
+                            </div>
+
+                            <!-- Loan fields -->
+                            <div id="bulk_loan_fields" style="display:none;">
+                                <?php if ($loan_clients_arr): ?>
+                                <div class="form-group">
+                                    <label>Existing Client</label>
+                                    <div class="searchable-select" id="bulkClientPickerWrap">
+                                        <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
+                                            placeholder="Search registered client..." autocomplete="off">
+                                        <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown">
+                                            <?php foreach ($loan_clients_arr as $c): ?>
+                                                <div class="searchable-select-option"
+                                                    data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
+                                                    data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
+                                                    <?php echo htmlspecialchars($c['client']); ?>
+                                                    <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
+                                                    <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
+                                                    <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                                </div>
+                                <?php endif; ?>
+                                <div class="form-group">
+                                    <label>Client Phone*</label>
+                                    <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcBulkSplit()">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Col 3: Payment breakdown + Save -->
+                        <div id="bulk_payment_section">
+                            <div class="form-group">
+                                <label>Payment Breakdown</label>
+                                <div class="split-payment-box">
+                                    <div class="split-row">
+                                        <span class="split-label">Cash</span>
+                                        <input type="text" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
+                                    </div>
+                                    <div class="split-row">
+                                        <span class="split-label">Momo</span>
+                                        <input type="text" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
+                                    </div>
+                                    <div class="split-row">
+                                        <span class="split-label">Loan</span>
+                                        <input type="text" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
+                                    </div>
+                                    <div class="split-row split-remaining-row" id="bulk_remaining_row">
+                                        <span class="split-label">Remaining</span>
+                                        <span id="bulk_remaining">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="button" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()" style="width:100%;padding:12px;">
+                                Save Bulk Sale
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <!-- Step 2 nav -->
+                    <div class="step-nav">
+                        <button type="button" class="btn-step-back" onclick="goToBulkStep1()">&#8592; Back</button>
                     </div>
                 </div>
 
                 <input type="hidden" id="bulk_level_divisor" name="level_divisor" value="1">
-                <button type="button" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()" style="width:100%;padding:12px;">
-                    Save Bulk Sale
-                </button>
             </form>
         </div>
     </div>
@@ -305,11 +415,11 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 <script src="script.js"></script>
 <script>
 function initSearchableSelect(wrapperId, searchInputId, dropdownId, hiddenSelectId) {
-    var wrapper     = document.getElementById(wrapperId);
-    var searchInput = document.getElementById(searchInputId);
-    var dropdown    = document.getElementById(dropdownId);
+    var wrapper      = document.getElementById(wrapperId);
+    var searchInput  = document.getElementById(searchInputId);
+    var dropdown     = document.getElementById(dropdownId);
     var hiddenSelect = document.getElementById(hiddenSelectId);
-    var options     = dropdown.querySelectorAll('.searchable-select-option');
+    var options      = dropdown.querySelectorAll('.searchable-select-option');
     var hi = -1;
 
     searchInput.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
@@ -386,6 +496,27 @@ initLoanClientPicker('bulkClientPickerWrap', 'bulk_client_picker_search', 'bulk_
 
 var bulkCoreValid = false;
 
+/* ── Step navigation ── */
+function goToBulkStep2() {
+    if (!bulkCoreValid) return;
+    document.getElementById('bulk_step_panel_1').style.display = 'none';
+    document.getElementById('bulk_step_panel_2').style.display = 'block';
+    document.getElementById('bulk_step_dot_1').classList.remove('active');
+    document.getElementById('bulk_step_dot_1').classList.add('done');
+    document.getElementById('bulk_step_dot_2').classList.add('active');
+    document.getElementById('bulk_step_connector').classList.add('done');
+    calcBulkSplit();
+}
+
+function goToBulkStep1() {
+    document.getElementById('bulk_step_panel_2').style.display = 'none';
+    document.getElementById('bulk_step_panel_1').style.display = 'block';
+    document.getElementById('bulk_step_dot_2').classList.remove('active');
+    document.getElementById('bulk_step_dot_1').classList.remove('done');
+    document.getElementById('bulk_step_dot_1').classList.add('active');
+    document.getElementById('bulk_step_connector').classList.remove('done');
+}
+
 function updateBulkProductDetails() {
     var select = document.getElementById('bulk_product_id');
     var opt    = select.options[select.selectedIndex];
@@ -395,13 +526,12 @@ function updateBulkProductDetails() {
         document.getElementById('bulk_selling_price').value = '';
         document.getElementById('bulk_quantity').value = '';
         document.getElementById('bulk_quantity').max = '';
-        document.getElementById('bulk_summary').style.display = 'none';
-        document.getElementById('bulk_payment_section').style.display = 'none';
         document.getElementById('bulk_level_selector').style.display = 'none';
         document.getElementById('bulk_level_buttons').innerHTML = '';
         document.getElementById('bulk_qty_label').textContent = 'Quantity (Packages)*';
         document.getElementById('bulk_level_divisor').value = 1;
-        document.getElementById('bulk_submit_btn').disabled = true;
+        document.getElementById('bulk_next_btn').disabled = true;
+        bulkCoreValid = false;
         return;
     }
     var price = opt.dataset.price;
@@ -417,7 +547,6 @@ function updateBulkProductDetails() {
     document.getElementById('bulk_cash').value = 0;
     document.getElementById('bulk_momo').value = 0;
     document.getElementById('bulk_loan_split').value = 0;
-    document.getElementById('bulk_payment_section').style.display = 'none';
     calculateBulkTotal();
 
     document.getElementById('bulk_level_divisor').value = 1;
@@ -488,7 +617,6 @@ function calculateBulkTotal() {
     var total = qty * price;
     var qtyError     = document.getElementById('bulk_qty_error');
     var priceWarning = document.getElementById('bulk_price_warning');
-    var summary      = document.getElementById('bulk_summary');
     var valid = true;
 
     if (qty > stock) {
@@ -508,13 +636,14 @@ function calculateBulkTotal() {
 
     if (qty < 1 || price < 1) valid = false;
     bulkCoreValid = valid;
+    document.getElementById('bulk_next_btn').disabled = !valid;
 
     if (valid) {
         document.getElementById('bulk_sum_product').textContent = opt.dataset.productName;
         document.getElementById('bulk_sum_qty').textContent = qty;
         document.getElementById('bulk_sum_price').textContent = 'RWF ' + price.toLocaleString();
         document.getElementById('bulk_sum_total').textContent = 'RWF ' + total.toLocaleString();
-        summary.style.display = 'block';
+
         var isLoan = document.getElementById('bulk_is_loan').checked;
         var isCash = document.getElementById('bulk_is_cash').checked;
         var isMomo = document.getElementById('bulk_is_momo').checked;
@@ -536,11 +665,8 @@ function calculateBulkTotal() {
         } else if (cash===0 && momo===0 && loan===0) {
             document.getElementById('bulk_momo').value = total;
         }
-        document.getElementById('bulk_payment_section').style.display = 'block';
         calcBulkSplit();
     } else {
-        summary.style.display = 'none';
-        document.getElementById('bulk_payment_section').style.display = 'none';
         document.getElementById('bulk_submit_btn').disabled = true;
     }
 }
@@ -592,13 +718,13 @@ function toggleBulkShortcut(type) {
 }
 
 function handleBulkSubmit() {
-    var opt   = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
-    var qty   = parseInt(document.getElementById('bulk_quantity').value)||0;
-    var price = parseFloat(document.getElementById('bulk_selling_price').value);
-    var total = qty * price;
-    var cash  = parseFloat(document.getElementById('bulk_cash').value)||0;
-    var momo  = parseFloat(document.getElementById('bulk_momo').value)||0;
-    var loan  = parseFloat(document.getElementById('bulk_loan_split').value)||0;
+    var opt     = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
+    var qty     = parseInt(document.getElementById('bulk_quantity').value)||0;
+    var price   = parseFloat(document.getElementById('bulk_selling_price').value);
+    var total   = qty * price;
+    var cash    = parseFloat(document.getElementById('bulk_cash').value)||0;
+    var momo    = parseFloat(document.getElementById('bulk_momo').value)||0;
+    var loan    = parseFloat(document.getElementById('bulk_loan_split').value)||0;
     var divisor = parseInt(document.getElementById('bulk_level_divisor').value)||1;
     var pkgsDeducted = Math.ceil(qty / divisor);
     var activeBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
@@ -630,26 +756,7 @@ function handleBulkSubmit() {
         .then(function(res) {
             showSaleToast(res.message, res.success);
             if (res.success) {
-                // reset form to ready state
-                document.getElementById('bulk_product_search').value = '';
-                document.getElementById('bulk_product_id').value = '';
-                document.getElementById('bulk_product_details').style.display = 'none';
-                document.getElementById('bulk_level_selector').style.display = 'none';
-                document.getElementById('bulk_level_buttons').innerHTML = '';
-                document.getElementById('bulk_quantity').value = '';
-                document.getElementById('bulk_selling_price').value = '';
-                document.getElementById('bulk_customer').value = 'client';
-                document.getElementById('bulk_cash').value = 0;
-                document.getElementById('bulk_momo').value = 0;
-                document.getElementById('bulk_loan_split').value = 0;
-                document.getElementById('bulk_is_loan').checked = false;
-                document.getElementById('bulk_is_cash').checked = false;
-                document.getElementById('bulk_is_momo').checked = false;
-                document.getElementById('bulk_summary').style.display = 'none';
-                document.getElementById('bulk_payment_section').style.display = 'none';
-                document.getElementById('bulk_loan_fields').style.display = 'none';
-                document.getElementById('bulk_level_divisor').value = 1;
-                bulkCoreValid = false;
+                location.reload();
             }
             btn.textContent = 'Save Bulk Sale';
             btn.disabled = true;

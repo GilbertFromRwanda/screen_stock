@@ -85,12 +85,12 @@ $today_profit = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
     SELECT
       COALESCE((SELECT SUM(sb.total_amount-(pu.cost_price*sb.quantity/COALESCE(NULLIF(sb.level_divisor,0),1)))
                 FROM sales_bulk sb JOIN purchases pu ON pu.product_id=sb.product_id
-                WHERE sb.sale_date='$today' AND sb.refunded=0 AND sb.has_loan=0
-                AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sb.product_id AND p2.purchase_date<=sb.sale_date ORDER BY p2.purchase_date DESC LIMIT 1)),0)
-     +COALESCE((SELECT SUM(sr.total_amount-((pu.cost_price/NULLIF(s.pieces_per_package,1))*sr.pieces_sold))
+                WHERE sb.sale_date='$today' AND sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
+                AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sb.product_id AND p2.purchase_date<=sb.sale_date " . cidAndFor('p2') . " ORDER BY p2.purchase_date DESC LIMIT 1)),0)
+     +COALESCE((SELECT SUM(sr.total_amount-((pu.cost_price/NULLIF(s.pieces_per_package,0))*sr.pieces_sold))
                 FROM sales_retail sr JOIN purchases pu ON pu.product_id=sr.product_id LEFT JOIN stock s ON sr.product_id=s.product_id
-                WHERE sr.sale_date='$today' AND sr.refunded=0 AND sr.has_loan=0
-                AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sr.product_id AND p2.purchase_date<=sr.sale_date ORDER BY p2.purchase_date DESC LIMIT 1)),0)
+                WHERE sr.sale_date='$today' AND sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
+                AND pu.id=(SELECT id FROM purchases p2 WHERE p2.product_id=sr.product_id AND p2.purchase_date<=sr.sale_date " . cidAndFor('p2') . " ORDER BY p2.purchase_date DESC LIMIT 1)),0)
      +COALESCE((SELECT SUM(my_revenue) FROM sales_external WHERE sale_date='$today' AND refunded=0 $ca),0) v
 "))['v'] ?? 0);
 
@@ -108,9 +108,9 @@ if (date('w') == 0) {
 
 $chart_q = mysqli_query($conn, "
     SELECT dates.date,
-        COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0) AS total_revenue,
+        COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0) + COALESCE(ext.revenue, 0) AS total_revenue,
         COALESCE(bulk.cost,    0) + COALESCE(retail.cost,    0) AS total_cost,
-        (COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0))
+        (COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0) + COALESCE(ext.revenue, 0))
         - (COALESCE(bulk.cost, 0) + COALESCE(retail.cost, 0))   AS profit
     FROM (
         SELECT DATE('$week_sun_chart') + INTERVAL seq DAY AS date
@@ -120,7 +120,7 @@ $chart_q = mysqli_query($conn, "
         SELECT sale_date,
             SUM(total_amount) AS revenue,
             SUM(COALESCE((SELECT cost_price FROM purchases pu2
-                          WHERE pu2.product_id = sb.product_id " . cidAndFor('pu2') . "
+                          WHERE pu2.product_id = sb.product_id AND pu2.purchase_date <= sb.sale_date " . cidAndFor('pu2') . "
                           ORDER BY purchase_date DESC LIMIT 1), 0)
                 * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)) AS cost
         FROM sales_bulk sb
@@ -134,13 +134,19 @@ $chart_q = mysqli_query($conn, "
                 (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0)
                  FROM purchases pu
                  JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
-                 WHERE pu.product_id = sr.product_id " . cidAndFor('pu') . "
+                 WHERE pu.product_id = sr.product_id AND pu.purchase_date <= sr.sale_date " . cidAndFor('pu') . "
                  ORDER BY pu.purchase_date DESC LIMIT 1), 0
             ) * sr.pieces_sold) AS cost
         FROM sales_retail sr
         WHERE sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
         GROUP BY sale_date
     ) AS retail ON retail.sale_date = dates.date
+    LEFT JOIN (
+        SELECT sale_date, SUM(my_revenue) AS revenue
+        FROM sales_external se
+        WHERE se.refunded=0 " . cidAndFor('se') . "
+        GROUP BY sale_date
+    ) AS ext ON ext.sale_date = dates.date
     ORDER BY dates.date ASC
 ");
 while ($r = mysqli_fetch_assoc($chart_q)) {

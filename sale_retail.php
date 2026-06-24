@@ -36,19 +36,11 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-md);
             padding: 32px;
-            max-width: 960px;
         }
         .form-2col {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 0 20px;
-        }
-        .pay-sum-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            align-items: start;
-            margin-bottom: 16px;
         }
         .sale-page-header {
             display: flex;
@@ -119,6 +111,77 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             padding: 4px 8px; cursor: pointer; white-space: nowrap;
         }
         .default-price-badge:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+        /* Step indicator */
+        .steps-indicator {
+            display: flex;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+        .step-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        .step-circle {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 2px solid var(--gray-300);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 15px;
+            color: var(--secondary);
+            background: var(--white);
+            transition: background .2s, border-color .2s, color .2s;
+        }
+        .step-item.active .step-circle {
+            border-color: var(--primary);
+            background: var(--primary);
+            color: #fff;
+        }
+        .step-item.done .step-circle {
+            border-color: #16a34a;
+            background: #16a34a;
+            color: #fff;
+        }
+        .step-lbl {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray-400, #9ca3af);
+            white-space: nowrap;
+        }
+        .step-item.active .step-lbl { color: var(--primary); }
+        .step-item.done  .step-lbl  { color: #16a34a; }
+        .step-connector {
+            flex: 1;
+            height: 2px;
+            background: var(--gray-200);
+            margin: 0 10px 20px;
+            transition: background .3s;
+        }
+        .step-connector.done { background: #16a34a; }
+        .step-nav {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .btn-step-back {
+            padding: 10px 22px;
+            border: 1.5px solid var(--gray-300);
+            border-radius: var(--radius);
+            background: var(--white);
+            color: var(--dark);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+            flex-shrink: 0;
+        }
+        .btn-step-back:hover { background: var(--gray-100); border-color: var(--gray-400); }
     </style>
 </head>
 <body>
@@ -139,161 +202,210 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             </div>
             <div id="retail_sale_alert" class="alert" style="display:none;margin-bottom:16px;"></div>
 
+            <!-- Step indicator -->
+            <div class="steps-indicator">
+                <div class="step-item active" id="step_dot_1">
+                    <div class="step-circle">1</div>
+                    <div class="step-lbl">Product</div>
+                </div>
+                <div class="step-connector" id="step_connector"></div>
+                <div class="step-item" id="step_dot_2">
+                    <div class="step-circle">2</div>
+                    <div class="step-lbl">Payment</div>
+                </div>
+            </div>
+
             <form method="POST" action="sales.php" id="retailSaleForm">
-                <!-- Product -->
-                <div class="form-group">
-                    <label>Select Product*</label>
-                    <select id="retail_product_id" name="product_id" required onchange="updateRetailProductDetails()" style="display:none">
-                        <option value="">Choose product...</option>
-                        <?php while ($row = mysqli_fetch_assoc($retail_products)): ?>
-                            <option value="<?php echo $row['product_id']; ?>"
-                                    data-price="<?php echo $row['retail_price']; ?>"
-                                    data-stock="<?php echo $row['pieces_quantity']; ?>"
-                                    data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                    data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                            </option>
-                        <?php endwhile; ?>
-                    </select>
-                    <div class="searchable-select" id="retailProductSearchable">
-                        <input type="text" class="searchable-select-input" id="retail_product_search" placeholder="Search product..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="retail_product_dropdown">
-                            <?php
-                            mysqli_data_seek($retail_products, 0);
-                            while ($row = mysqli_fetch_assoc($retail_products)):
-                            ?>
-                                <div class="searchable-select-option"
-                                     data-value="<?php echo $row['product_id']; ?>"
-                                     data-price="<?php echo $row['retail_price']; ?>"
-                                     data-stock="<?php echo $row['pieces_quantity']; ?>"
-                                     data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                     data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                    <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                </div>
-                            <?php endwhile; ?>
-                        </div>
-                    </div>
-                </div>
 
-                <div id="retail_product_details" class="price-history" style="display:none;">
-                    <strong>Product Info:</strong> <span id="retail_product_info"></span>
-                </div>
+                <!-- ═══════════ STEP 1 ═══════════ -->
+                <div id="step_panel_1">
 
-                <!-- Level selector -->
-                <div id="retail_level_selector" style="display:none;margin-bottom:16px;">
-                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
-                    <div id="retail_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-                </div>
+                    <!-- 3-column: Product | Quantity | Price -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 24px;align-items:start;">
 
-                <!-- Quantity + Price (2 columns) -->
-                <div class="form-2col">
-                    <div class="form-group">
-                        <label id="retail_qty_label">Number of Pieces*</label>
-                        <input type="text" id="pieces_sold" name="pieces_sold" required min="1" value="1" oninput="calculateRetailTotal()">
-                        <small id="retail_stock_info" class="field-hint"></small>
-                        <small id="retail_qty_error" class="field-error"></small>
-                    </div>
-                    <div class="form-group">
-                        <label>Selling Price (per piece)*</label>
-                        <div class="price-input-group">
-                            <input type="text" id="retail_selling_price" name="selling_price" required min="1" oninput="calculateRetailTotal()">
-                            <span class="default-price-badge" onclick="setRetailDefaultPrice()">Use Default</span>
-                        </div>
-                        <div id="retail_price_warning" class="price-warning"></div>
-                    </div>
-                </div>
-
-                <!-- Customer -->
-                <div class="form-group">
-                    <label>Customer Name</label>
-                    <input type="text" id="retail_customer" name="customer_name" value="client" placeholder="Enter customer name">
-                </div>
-
-                <!-- Payment shortcuts -->
-                <div class="form-group" style="margin:0 0 16px;display:flex;flex-wrap:wrap;gap:10px;">
-                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="retail_is_loan" onchange="toggleRetailShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
-                        <span style="font-weight:700;font-size:14px;">Is Loan?</span>
-                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
-                    </label>
-                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="retail_is_cash" onchange="toggleRetailShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
-                        <span style="font-weight:700;font-size:14px;">Is Cash?</span>
-                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
-                    </label>
-                    <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                        <input type="checkbox" id="retail_is_momo" onchange="toggleRetailShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
-                        <span style="font-weight:700;font-size:14px;">Is Momo?</span>
-                        <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
-                    </label>
-                </div>
-
-                <!-- Payment split + Summary (side by side) -->
-                <div class="pay-sum-grid">
-                    <div id="retail_payment_section" style="display:none;">
-                        <div class="form-group">
-                            <label>Payment Breakdown</label>
-                            <div class="split-payment-box">
-                                <div class="split-row">
-                                    <span class="split-label">Cash</span>
-                                    <input type="text" id="retail_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcRetailSplit('cash')">
-                                </div>
-                                <div class="split-row">
-                                    <span class="split-label">Momo</span>
-                                    <input type="text" id="retail_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcRetailSplit('momo')">
-                                </div>
-                                <div class="split-row">
-                                    <span class="split-label">Loan</span>
-                                    <input type="text" id="retail_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcRetailSplit('loan')">
-                                </div>
-                                <div class="split-row split-remaining-row" id="retail_remaining_row">
-                                    <span class="split-label">Remaining</span>
-                                    <span id="retail_remaining">—</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="retail_loan_fields" style="display:none;">
-                            <?php if ($loan_clients_arr): ?>
+                        <!-- Col 1: Product + details + level -->
+                        <div>
                             <div class="form-group">
-                                <label>Existing Client</label>
-                                <div class="searchable-select" id="retailClientPickerWrap">
-                                    <input type="text" class="searchable-select-input" id="retail_client_picker_search"
-                                        placeholder="Search registered client..." autocomplete="off">
-                                    <div class="searchable-select-dropdown" id="retail_client_picker_dropdown">
-                                        <?php foreach ($loan_clients_arr as $c): ?>
+                                <label>Select Product*</label>
+                                <select id="retail_product_id" name="product_id" required onchange="updateRetailProductDetails()" style="display:none">
+                                    <option value="">Choose product...</option>
+                                    <?php while ($row = mysqli_fetch_assoc($retail_products)): ?>
+                                        <option value="<?php echo $row['product_id']; ?>"
+                                                data-price="<?php echo $row['retail_price']; ?>"
+                                                data-stock="<?php echo $row['pieces_quantity']; ?>"
+                                                data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
+                                                data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
+                                            <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
+                                        </option>
+                                    <?php endwhile; ?>
+                                </select>
+                                <div class="searchable-select" id="retailProductSearchable">
+                                    <input type="text" class="searchable-select-input" id="retail_product_search" placeholder="Search product..." autocomplete="off">
+                                    <div class="searchable-select-dropdown" id="retail_product_dropdown">
+                                        <?php
+                                        mysqli_data_seek($retail_products, 0);
+                                        while ($row = mysqli_fetch_assoc($retail_products)):
+                                        ?>
                                             <div class="searchable-select-option"
-                                                data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                                data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                                <?php echo htmlspecialchars($c['client']); ?>
-                                                <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                                <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                                <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
+                                                 data-value="<?php echo $row['product_id']; ?>"
+                                                 data-price="<?php echo $row['retail_price']; ?>"
+                                                 data-stock="<?php echo $row['pieces_quantity']; ?>"
+                                                 data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
+                                                 data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
+                                                <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
                                             </div>
-                                        <?php endforeach; ?>
+                                        <?php endwhile; ?>
                                     </div>
                                 </div>
-                                <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
                             </div>
-                            <?php endif; ?>
-                            <div class="form-group">
-                                <label>Client Phone*</label>
-                                <input type="text" id="retail_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcRetailSplit()">
+                            <div id="retail_product_details" class="price-history" style="display:none;">
+                                <strong>Product Info:</strong> <span id="retail_product_info"></span>
+                            </div>
+                            <div id="retail_level_selector" style="display:none;margin-bottom:16px;">
+                                <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
+                                <div id="retail_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
                             </div>
                         </div>
+
+                        <!-- Col 2: Quantity -->
+                        <div class="form-group">
+                            <label id="retail_qty_label">Number of Pieces*</label>
+                            <input type="text" id="pieces_sold" name="pieces_sold" required min="1" value="1" oninput="calculateRetailTotal()">
+                            <small id="retail_stock_info" class="field-hint"></small>
+                            <small id="retail_qty_error" class="field-error"></small>
+                        </div>
+
+                        <!-- Col 3: Price -->
+                        <div class="form-group">
+                            <label>Selling Price (per piece)*</label>
+                            <div class="price-input-group">
+                                <input type="text" id="retail_selling_price" name="selling_price" required min="1" oninput="calculateRetailTotal()">
+                                <span class="default-price-badge" onclick="setRetailDefaultPrice()">Use Default</span>
+                            </div>
+                            <div id="retail_price_warning" class="price-warning"></div>
+                        </div>
+
                     </div>
 
-                    <div class="sale-summary" id="retail_summary" style="display:none;">
-                        <div class="summary-row"><span>Product</span><strong id="retail_sum_product"></strong></div>
-                        <div class="summary-row"><span>Pieces</span><strong id="retail_sum_qty"></strong></div>
-                        <div class="summary-row"><span>Price/Piece</span><strong id="retail_sum_price"></strong></div>
-                        <div class="summary-row summary-total"><span>Total Amount</span><strong id="retail_sum_total"></strong></div>
+                    <!-- Step 1 nav -->
+                    <div class="step-nav" style="justify-content:flex-end;">
+                        <button type="button" id="retail_next_btn" class="btn btn-primary" disabled onclick="goToStep2()" style="padding:10px 28px;">
+                            Next &rarr;
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ═══════════ STEP 2 ═══════════ -->
+                <div id="step_panel_2" style="display:none;">
+
+                    <!-- Three-column layout -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 24px;align-items:start;">
+
+                        <!-- Column 1: Sale summary -->
+                        <div>
+                            <div class="sale-summary" id="retail_summary">
+                                <div class="summary-row"><span>Product</span><strong id="retail_sum_product"></strong></div>
+                                <div class="summary-row"><span>Pieces</span><strong id="retail_sum_qty"></strong></div>
+                                <div class="summary-row"><span>Price/Piece</span><strong id="retail_sum_price"></strong></div>
+                                <div class="summary-row summary-total"><span>Total Amount</span><strong id="retail_sum_total"></strong></div>
+                            </div>
+                        </div>
+
+                        <!-- Left: Customer + shortcuts + loan fields -->
+                        <div>
+                            <!-- Customer -->
+                            <div class="form-group">
+                                <label>Customer Name</label>
+                                <input type="text" id="retail_customer" name="customer_name" value="client" placeholder="Enter customer name">
+                            </div>
+
+                            <!-- Payment shortcuts -->
+                            <div class="form-group" style="margin:0 0 16px;display:flex;flex-direction:column;gap:8px;">
+                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                                    <input type="checkbox" id="retail_is_loan" onchange="toggleRetailShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
+                                    <span style="font-weight:700;font-size:14px;">Is Loan?</span>
+                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
+                                </label>
+                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                                    <input type="checkbox" id="retail_is_cash" onchange="toggleRetailShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
+                                    <span style="font-weight:700;font-size:14px;">Is Cash?</span>
+                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
+                                </label>
+                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
+                                    <input type="checkbox" id="retail_is_momo" onchange="toggleRetailShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
+                                    <span style="font-weight:700;font-size:14px;">Is Momo?</span>
+                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
+                                </label>
+                            </div>
+
+                            <!-- Loan fields -->
+                            <div id="retail_loan_fields" style="display:none;">
+                                <?php if ($loan_clients_arr): ?>
+                                <div class="form-group">
+                                    <label>Existing Client</label>
+                                    <div class="searchable-select" id="retailClientPickerWrap">
+                                        <input type="text" class="searchable-select-input" id="retail_client_picker_search"
+                                            placeholder="Search registered client..." autocomplete="off">
+                                        <div class="searchable-select-dropdown" id="retail_client_picker_dropdown">
+                                            <?php foreach ($loan_clients_arr as $c): ?>
+                                                <div class="searchable-select-option"
+                                                    data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
+                                                    data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
+                                                    <?php echo htmlspecialchars($c['client']); ?>
+                                                    <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
+                                                    <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
+                                                    <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                                </div>
+                                <?php endif; ?>
+                                <div class="form-group">
+                                    <label>Client Phone*</label>
+                                    <input type="text" id="retail_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcRetailSplit()">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Payment breakdown -->
+                        <div id="retail_payment_section">
+                            <div class="form-group">
+                                <label>Payment Breakdown</label>
+                                <div class="split-payment-box">
+                                    <div class="split-row">
+                                        <span class="split-label">Cash</span>
+                                        <input type="text" id="retail_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcRetailSplit('cash')">
+                                    </div>
+                                    <div class="split-row">
+                                        <span class="split-label">Momo</span>
+                                        <input type="text" id="retail_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcRetailSplit('momo')">
+                                    </div>
+                                    <div class="split-row">
+                                        <span class="split-label">Loan</span>
+                                        <input type="text" id="retail_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcRetailSplit('loan')">
+                                    </div>
+                                    <div class="split-row split-remaining-row" id="retail_remaining_row">
+                                        <span class="split-label">Remaining</span>
+                                        <span id="retail_remaining">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="button" id="retail_submit_btn" class="btn btn-success" disabled onclick="handleRetailSubmit()" style="width:100%;padding:12px;">
+                                Save Retail Sale
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <!-- Step 2 nav -->
+                    <div class="step-nav">
+                        <button type="button" class="btn-step-back" onclick="goToStep1()">&#8592; Back</button>
                     </div>
                 </div>
 
                 <input type="hidden" id="retail_level_multiplier" name="level_multiplier" value="1">
-                <button type="button" id="retail_submit_btn" class="btn btn-success" disabled onclick="handleRetailSubmit()" style="width:100%;padding:12px;">
-                    Save Retail Sale
-                </button>
             </form>
         </div>
     </div>
@@ -382,6 +494,27 @@ initLoanClientPicker('retailClientPickerWrap', 'retail_client_picker_search', 'r
 
 var retailCoreValid = false;
 
+/* ── Step navigation ── */
+function goToStep2() {
+    if (!retailCoreValid) return;
+    document.getElementById('step_panel_1').style.display = 'none';
+    document.getElementById('step_panel_2').style.display = 'block';
+    document.getElementById('step_dot_1').classList.remove('active');
+    document.getElementById('step_dot_1').classList.add('done');
+    document.getElementById('step_dot_2').classList.add('active');
+    document.getElementById('step_connector').classList.add('done');
+    calcRetailSplit();
+}
+
+function goToStep1() {
+    document.getElementById('step_panel_2').style.display = 'none';
+    document.getElementById('step_panel_1').style.display = 'block';
+    document.getElementById('step_dot_2').classList.remove('active');
+    document.getElementById('step_dot_1').classList.remove('done');
+    document.getElementById('step_dot_1').classList.add('active');
+    document.getElementById('step_connector').classList.remove('done');
+}
+
 function updateRetailProductDetails() {
     var select = document.getElementById('retail_product_id');
     var opt    = select.options[select.selectedIndex];
@@ -391,13 +524,12 @@ function updateRetailProductDetails() {
         document.getElementById('retail_selling_price').value = '';
         document.getElementById('pieces_sold').value = '';
         document.getElementById('pieces_sold').max = '';
-        document.getElementById('retail_summary').style.display = 'none';
-        document.getElementById('retail_payment_section').style.display = 'none';
         document.getElementById('retail_level_selector').style.display = 'none';
         document.getElementById('retail_level_buttons').innerHTML = '';
         document.getElementById('retail_qty_label').textContent = 'Number of Pieces*';
         document.getElementById('retail_level_multiplier').value = 1;
-        document.getElementById('retail_submit_btn').disabled = true;
+        document.getElementById('retail_next_btn').disabled = true;
+        retailCoreValid = false;
         return;
     }
     var price = opt.dataset.price;
@@ -413,7 +545,6 @@ function updateRetailProductDetails() {
     document.getElementById('retail_cash').value = 0;
     document.getElementById('retail_momo').value = 0;
     document.getElementById('retail_loan_split').value = 0;
-    document.getElementById('retail_payment_section').style.display = 'none';
     calculateRetailTotal();
 
     var retail_pieces = parseInt(opt.dataset.stock) || 0;
@@ -488,7 +619,6 @@ function calculateRetailTotal() {
     var total = qty * price;
     var qtyError     = document.getElementById('retail_qty_error');
     var priceWarning = document.getElementById('retail_price_warning');
-    var summary      = document.getElementById('retail_summary');
     var valid = true;
 
     if (qty > stock) {
@@ -508,13 +638,14 @@ function calculateRetailTotal() {
 
     if (qty < 1 || price < 1) valid = false;
     retailCoreValid = valid;
+    document.getElementById('retail_next_btn').disabled = !valid;
 
     if (valid) {
         document.getElementById('retail_sum_product').textContent = opt.dataset.productName;
         document.getElementById('retail_sum_qty').textContent = qty;
         document.getElementById('retail_sum_price').textContent = 'RWF ' + price.toLocaleString();
         document.getElementById('retail_sum_total').textContent = 'RWF ' + total.toLocaleString();
-        summary.style.display = 'block';
+
         var isLoan = document.getElementById('retail_is_loan').checked;
         var isCash = document.getElementById('retail_is_cash').checked;
         var isMomo = document.getElementById('retail_is_momo').checked;
@@ -536,12 +667,7 @@ function calculateRetailTotal() {
         } else if (cash===0 && momo===0 && loan===0) {
             document.getElementById('retail_momo').value = total;
         }
-        document.getElementById('retail_payment_section').style.display = 'block';
         calcRetailSplit();
-    } else {
-        summary.style.display = 'none';
-        document.getElementById('retail_payment_section').style.display = 'none';
-        document.getElementById('retail_submit_btn').disabled = true;
     }
 }
 
@@ -574,7 +700,6 @@ function calcRetailSplit(changed) {
 }
 
 function toggleRetailShortcut(type) {
-    // Mutual exclusion
     if (type !== 'loan') document.getElementById('retail_is_loan').checked = false;
     if (type !== 'cash') document.getElementById('retail_is_cash').checked = false;
     if (type !== 'momo') document.getElementById('retail_is_momo').checked = false;
@@ -641,11 +766,10 @@ function handleRetailSubmit() {
                 document.getElementById('retail_is_loan').checked = false;
                 document.getElementById('retail_is_cash').checked = false;
                 document.getElementById('retail_is_momo').checked = false;
-                document.getElementById('retail_summary').style.display = 'none';
-                document.getElementById('retail_payment_section').style.display = 'none';
                 document.getElementById('retail_loan_fields').style.display = 'none';
                 document.getElementById('retail_level_multiplier').value = 1;
                 retailCoreValid = false;
+                location.reload();
             }
             btn.textContent = 'Save Retail Sale';
             btn.disabled = true;
