@@ -669,7 +669,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <span class="close" onclick="closeModal('globalLoanPayModal')">&times;</span>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <h2 style="margin:0;">Global Loan Payment</h2>
-            <button id="gloanExportBtn" onclick="exportGlobalLoanPreview()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">&#8681; Export &amp; Share</button>
+            <button id="gloanExportBtn" onclick="exportGlobalLoanPreview()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">&#8681; Export</button>
         </div>
         <div class="form-group" style="margin-bottom:16px;">
             <label>Prioritize loans by</label>
@@ -733,7 +733,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <h2 id="clientLoansTitle" style="margin:0;">Loans</h2>
             <button id="clLoansExportBtn" onclick="exportClientLoans()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;gap:6px;align-items:center;">
-                &#8681; Export &amp; Share
+                &#8681; Export
             </button>
         </div>
         <div id="clientLoansFilter" style="display:none;margin:12px 0 8px;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -753,7 +753,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <h2 id="clientPaymentsTitle" style="margin:0;">Payments</h2>
             <button id="cpayExportBtn" onclick="exportClientPayments()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">
-                &#8681; Export &amp; Share
+                &#8681; Export
             </button>
         </div>
         <div style="display:flex;gap:10px;margin:12px 0 8px;align-items:flex-end;flex-wrap:wrap;">
