@@ -147,7 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
 
 // ── AJAX: Preview Global Loan Payment ─────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['preview_global_loan_payment'])) {
-    $total         = (float)$_POST['total_amount'];
+   
+$total         = (float)$_POST['total_amount'];
     $client_id = (int)($_POST['client_id'] ?? 0);
     $gloan_sort    = $_POST['gloan_sort'] ?? 'date_asc';
 
@@ -214,23 +215,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
 
     $client_where = $client_id > 0 ? "AND l.client_id = $client_id" : "";
 
-    $order_by = match($gloan_sort) {
-        'date_desc'    => 'l.loan_date DESC, l.id DESC',
-        'balance_desc' => 'balance DESC, l.id ASC',
-        'balance_asc'  => 'balance ASC, l.id ASC',
-        default        => 'l.loan_date ASC, l.id ASC',
-    };
+    $manual_ids = [];
+    if (isset($_POST['manual_loan_ids']) && is_array($_POST['manual_loan_ids'])) {
+        $manual_ids = array_values(array_filter(array_map('intval', $_POST['manual_loan_ids'])));
+    }
 
-    $unpaid = mysqli_query($conn, "
-        SELECT l.id, l.amount, l.client_id,
-               l.bulk_id, l.retail_id, l.external_id,
-               COALESCE(lp_sum.paid, 0) AS total_paid,
-               (l.amount - COALESCE(lp_sum.paid, 0)) AS balance
-        FROM loans l
-        LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_sum ON lp_sum.loan_id = l.id
-        WHERE l.amount > COALESCE(lp_sum.paid, 0) $cid_and $client_where
-        ORDER BY $order_by
-    ");
+    if (!empty($manual_ids)) {
+        $ids_str = implode(',', $manual_ids);
+        $unpaid = mysqli_query($conn, "
+            SELECT l.id, l.amount, l.client_id,
+                   l.bulk_id, l.retail_id, l.external_id,
+                   COALESCE(lp_sum.paid, 0) AS total_paid,
+                   (l.amount - COALESCE(lp_sum.paid, 0)) AS balance
+            FROM loans l
+            LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_sum ON lp_sum.loan_id = l.id
+            WHERE l.id IN ($ids_str) $cid_and
+              AND l.amount > COALESCE(lp_sum.paid, 0)
+            ORDER BY FIELD(l.id, $ids_str)
+        ");
+    } else {
+        $order_by = match($gloan_sort) {
+            'date_desc'    => 'l.loan_date DESC, l.id DESC',
+            'balance_desc' => 'balance DESC, l.id ASC',
+            'balance_asc'  => 'balance ASC, l.id ASC',
+            default        => 'l.loan_date ASC, l.id ASC',
+        };
+        $unpaid = mysqli_query($conn, "
+            SELECT l.id, l.amount, l.client_id,
+                   l.bulk_id, l.retail_id, l.external_id,
+                   COALESCE(lp_sum.paid, 0) AS total_paid,
+                   (l.amount - COALESCE(lp_sum.paid, 0)) AS balance
+            FROM loans l
+            LEFT JOIN (SELECT loan_id, SUM(amount_paid) AS paid FROM loan_payments GROUP BY loan_id) lp_sum ON lp_sum.loan_id = l.id
+            WHERE l.amount > COALESCE(lp_sum.paid, 0) $cid_and $client_where
+            ORDER BY $order_by
+        ");
+    }
 
     $remaining     = $total;
     $count         = 0;
@@ -294,7 +314,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
 
 // ── AJAX: Get Client Loans ────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_loans'])) {
-    $client_id = (int)$_POST['client_id'];
+ // Simulate delay for testing
+$client_id = (int)$_POST['client_id'];
     if ($client_id <= 0) { header('Content-Type: application/json'); echo json_encode([]); exit; }
 
     $loans_q = mysqli_query($conn, "
@@ -685,7 +706,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 <table style="width:100%;border-collapse:collapse;font-size:13px;">
                     <thead>
                         <tr style="background:var(--gray-100);">
-                            <th id="gloan_chk_th" style="display:none;padding:9px 8px;width:32px;"><input type="checkbox" id="gloan_select_all" checked title="Select / deselect all" onchange="document.querySelectorAll('.gloan-row-chk').forEach(function(c){c.checked=document.getElementById('gloan_select_all').checked;});recalcManualSummary();" style="width:15px;height:15px;cursor:pointer;"></th>
+                            <th id="gloan_chk_th" style="display:none;padding:9px 8px;width:32px;"><input type="checkbox" id="gloan_select_all" title="Select / deselect all" onchange="gloanSelectAll(this.checked)" style="width:15px;height:15px;cursor:pointer;"></th>
                             <th style="padding:9px 12px;text-align:left;font-size:11px;color:var(--secondary);text-transform:uppercase;">Date</th>
                             <th style="padding:9px 12px;text-align:left;font-size:11px;color:var(--secondary);text-transform:uppercase;">Product</th>
                             <th style="padding:9px 12px;text-align:left;font-size:11px;color:var(--secondary);text-transform:uppercase;">Client</th>
@@ -1429,6 +1450,18 @@ function openGlobalLoanPayFor(clientId, outstanding) {
 var loanPreviewTimer = null;
 function scheduleLoanPreview() {
     clearTimeout(loanPreviewTimer);
+    var amount = parseFloat(document.getElementById('gloan_amount').value) || 0;
+    if (amount > 0) {
+        var sort = document.getElementById('gloan_sort').value;
+        var isManual = sort === 'manual';
+        document.getElementById('loanPreviewBody').innerHTML =
+            '<tr><td colspan="' + (isManual ? 6 : 5) + '" style="padding:20px;text-align:center;color:var(--secondary);">' +
+            '<span style="display:inline-block;width:16px;height:16px;border:2px solid var(--gray-200);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;"></span>' +
+            'Loading preview…</td></tr>';
+        document.getElementById('loanPreviewSummary').innerHTML = '';
+        document.getElementById('globalLoanPreview').style.display = 'block';
+        document.getElementById('globalLoanPayBtn').disabled = true;
+    }
     loanPreviewTimer = setTimeout(loadLoanPreview, 400);
 }
 
@@ -1443,7 +1476,15 @@ function loadLoanPreview() {
     var sort     = document.getElementById('gloan_sort').value;
     var isManual = sort === 'manual';
     document.getElementById('gloan_chk_th').style.display = isManual ? '' : 'none';
-    if (isManual) document.getElementById('gloan_select_all').checked = true;
+    if (isManual) { _gloanCheckOrder = []; document.getElementById('gloan_select_all').checked = false; }
+
+    document.getElementById('loanPreviewBody').innerHTML =
+        '<tr><td colspan="' + (isManual ? 6 : 5) + '" style="padding:20px;text-align:center;color:var(--secondary);">' +
+        '<span style="display:inline-block;width:16px;height:16px;border:2px solid var(--gray-200);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;"></span>' +
+        'Loading preview…</td></tr>';
+    document.getElementById('loanPreviewSummary').innerHTML = '';
+    preview.style.display = 'block';
+    btn.disabled = true;
 
     var data = new FormData();
     data.append('preview_global_loan_payment', '1');
@@ -1477,12 +1518,15 @@ function loadLoanPreview() {
                 var payLabel    = willPay <= 0 ? '—' : 'RWF ' + willPay.toLocaleString();
 
                 var chkCell = isManual
-                    ? '<td style="padding:9px 8px;"><input type="checkbox" class="gloan-row-chk" checked ' +
+                    ? '<td style="padding:9px 8px;white-space:nowrap;">' +
+                      '<input type="checkbox" class="gloan-row-chk" ' +
                       'data-id="' + row.id + '" data-balance="' + row.balance + '" ' +
                       'data-label="' + String(row.label || '').replace(/"/g, '&quot;') + '" ' +
                       'data-client="' + String(row.client || '').replace(/"/g, '&quot;') + '" ' +
                       'data-date="' + row.date + '" ' +
-                      'onchange="recalcManualSummary()" style="width:15px;height:15px;cursor:pointer;"></td>'
+                      'onchange="gloanChkChange(this)" style="width:15px;height:15px;cursor:pointer;vertical-align:middle;">' +
+                      '<span class="gloan-order-badge" style="display:none;background:var(--primary);color:#fff;border-radius:99px;padding:0 6px;font-size:11px;font-weight:700;margin-left:4px;vertical-align:middle;line-height:18px;"></span>' +
+                      '</td>'
                     : '';
 
                 tr.innerHTML = chkCell +
@@ -1527,10 +1571,11 @@ function recalcManualSummary() {
         cell.style.color = '#94a3b8'; cell.textContent = '—';
     });
 
-    document.querySelectorAll('#loanPreviewBody .gloan-row-chk').forEach(function(chk) {
+    _gloanCheckOrder.forEach(function(id) {
+        var chk = document.querySelector('#loanPreviewBody .gloan-row-chk[data-id="' + id + '"]');
+        if (!chk || !chk.checked) return;
         var balance = parseFloat(chk.dataset.balance);
         var payCell = chk.closest('tr').querySelector('.gloan-pay-cell');
-        if (!chk.checked) { skipped++; return; }
         var pay  = Math.min(remaining, balance);
         var full = pay >= balance;
         payCell.style.color = pay <= 0 ? '#94a3b8' : (full ? 'var(--success)' : 'var(--warning)');
@@ -1539,6 +1584,9 @@ function recalcManualSummary() {
         if (full) covered++; else if (pay > 0) partial++; else skipped++;
         newRows.push({ id: chk.dataset.id, label: chk.dataset.label, client: chk.dataset.client,
             date: chk.dataset.date, balance: balance, will_pay: pay, full: full });
+    });
+    document.querySelectorAll('#loanPreviewBody .gloan-row-chk:not(:checked)').forEach(function(chk) {
+        skipped++;
     });
 
     _gloanPreviewRows = newRows;
@@ -1554,6 +1602,43 @@ function recalcManualSummary() {
     document.getElementById('globalLoanPreview').style.display = 'block';
     document.getElementById('globalLoanPayBtn').disabled = (applied <= 0);
     document.getElementById('gloanExportBtn').style.display = newRows.length ? 'inline-block' : 'none';
+}
+
+var _gloanCheckOrder = [];
+
+function gloanChkChange(chk) {
+    var id = chk.dataset.id;
+    if (chk.checked) {
+        if (_gloanCheckOrder.indexOf(id) === -1) _gloanCheckOrder.push(id);
+    } else {
+        _gloanCheckOrder = _gloanCheckOrder.filter(function(x) { return x !== id; });
+    }
+    updateCheckBadges();
+    recalcManualSummary();
+}
+
+function gloanSelectAll(allChecked) {
+    _gloanCheckOrder = [];
+    document.querySelectorAll('.gloan-row-chk').forEach(function(c) {
+        c.checked = allChecked;
+        if (allChecked) _gloanCheckOrder.push(c.dataset.id);
+    });
+    updateCheckBadges();
+    recalcManualSummary();
+}
+
+function updateCheckBadges() {
+    document.querySelectorAll('.gloan-row-chk').forEach(function(chk) {
+        var badge = chk.parentNode.querySelector('.gloan-order-badge');
+        if (!badge) return;
+        var idx = _gloanCheckOrder.indexOf(chk.dataset.id);
+        if (idx === -1) {
+            badge.style.display = 'none';
+        } else {
+            badge.textContent = idx + 1;
+            badge.style.display = 'inline-block';
+        }
+    });
 }
 
 function execGlobalLoanPay() {
@@ -1572,7 +1657,14 @@ function execGlobalLoanPay() {
     data.append('exec_global_loan_payment', '1');
     data.append('total_amount', amount);
     data.append('client_id', client);
-    data.append('gloan_sort', sort);
+
+    if (sort === 'manual') {
+        _gloanCheckOrder.forEach(function(id) {
+            data.append('manual_loan_ids[]', id);
+        });
+    } else {
+        data.append('gloan_sort', sort);
+    }
 
     fetch('loans.php', { method: 'POST', body: data })
         .then(function(r) { return r.json(); })

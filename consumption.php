@@ -822,6 +822,16 @@ function openGlobalPay() {
 var previewTimer = null;
 function schedulePreview() {
     clearTimeout(previewTimer);
+    var amount = parseFloat(document.getElementById('global_amount').value) || 0;
+    if (amount > 0) {
+        document.getElementById('previewBody').innerHTML =
+            '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--secondary);">' +
+            '<span style="display:inline-block;width:16px;height:16px;border:2px solid var(--gray-200);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;"></span>' +
+            'Loading preview…</td></tr>';
+        document.getElementById('previewSummary').innerHTML = '';
+        document.getElementById('globalPreview').style.display = 'block';
+        document.getElementById('globalPayBtn').disabled = true;
+    }
     previewTimer = setTimeout(loadPreview, 400);
 }
 
@@ -836,6 +846,14 @@ function loadPreview() {
         btn.disabled = true;
         return;
     }
+
+    document.getElementById('previewBody').innerHTML =
+        '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--secondary);">' +
+        '<span style="display:inline-block;width:16px;height:16px;border:2px solid var(--gray-200);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;"></span>' +
+        'Loading preview…</td></tr>';
+    document.getElementById('previewSummary').innerHTML = '';
+    preview.style.display = 'block';
+    btn.disabled = true;
 
     var data = new FormData();
     data.append('preview_global_payment', '1');

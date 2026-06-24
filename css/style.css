@@ -790,6 +790,10 @@ canvas {
     to { transform: rotate(360deg); }
 }
 
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 /* Utility Classes */
 .text-center { text-align: center; }
 .mt-4 { margin-top: 16px; }
