@@ -42,12 +42,16 @@ function toggleActMenu(btn) {
         menu.style.top  = (rect.bottom + 4) + 'px';
         menu.style.left = rect.left + 'px';
         menu.style.right = 'auto';
-        // flip left if it would overflow viewport
         if (rect.left + 160 > window.innerWidth) {
             menu.style.left = 'auto';
             menu.style.right = (window.innerWidth - rect.right) + 'px';
         }
         menu.classList.add('open');
+        // flip up if dropdown overflows viewport bottom
+        var menuH = menu.offsetHeight;
+        if (rect.bottom + 4 + menuH > window.innerHeight) {
+            menu.style.top = Math.max(4, rect.top - menuH - 4) + 'px';
+        }
     }
 }
 function closeActMenus() {

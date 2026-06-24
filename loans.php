@@ -514,7 +514,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     <title>Loans</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/loans.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="css/all.min.css">
 </head>
 <body>
 <div class="dashboard-container">
@@ -644,7 +644,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 
 <!-- Global Loan Payment Modal -->
 <div id="globalLoanPayModal" class="modal">
-    <div class="modal-content" style="max-width:600px;">
+    <div class="modal-content" style="max-width:600px;max-height:90vh;overflow-y:auto;">
         <span class="close" onclick="closeModal('globalLoanPayModal')">&times;</span>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <h2 style="margin:0;">Global Loan Payment</h2>
@@ -698,7 +698,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             </div>
             <div id="loanPreviewSummary" style="margin-top:10px;font-size:13px;color:var(--secondary);"></div>
         </div>
-        <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;position:sticky;bottom:0;background:var(--white);padding-bottom:4px;">
             <button id="globalLoanPayBtn" class="btn btn-primary" onclick="execGlobalLoanPay()" disabled>Apply Payment</button>
             <button class="btn btn-secondary" onclick="closeModal('globalLoanPayModal')">Cancel</button>
         </div>
