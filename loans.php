@@ -1771,8 +1771,8 @@ function _renderClientsTable(clients) {
         html += '<tr data-status="' + status.toLowerCase() + '">' +
             '<td><div class="act-menu-wrap"><button class="act-btn" title="Actions" onclick="toggleActMenu(this)">&#8942;</button>' +
             '<div class="act-menu">' + payBtn +
-            '<button class="act-item" onclick="viewClientLoans(' + JSON.stringify(c.name) + ',' + parseInt(c.client_id) + ');closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>' +
-            '<button class="act-item" onclick="viewClientPayments(' + parseInt(c.client_id) + ',' + JSON.stringify(c.name) + ');closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>' +
+            '<button class="act-item" onclick="viewClientLoans(' + _escHtml(JSON.stringify(c.name)) + ',' + parseInt(c.client_id) + ');closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>' +
+            '<button class="act-item" onclick="viewClientPayments(' + parseInt(c.client_id) + ',' + _escHtml(JSON.stringify(c.name)) + ');closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>' +
             '<div class="act-menu-sep"></div>' +
             '<button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(' + parseInt(c.client_id) + ',this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>' +
             '</div></div></td>' +

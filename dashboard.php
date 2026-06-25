@@ -34,6 +34,19 @@ $user_id    = (int)$_SESSION['user_id'];
         }
         .skel-num { min-width: 80px; min-height: 22px; }
         .skel-sm  { min-width: 40px; min-height: 12px; }
+
+        /* Tabs */
+        .dash-tabs { display:flex; gap:4px; border-bottom:2px solid var(--gray-200); margin-bottom:24px; }
+        .dash-tab {
+            padding:10px 20px; font-size:13px; font-weight:600; cursor:pointer;
+            border:none; background:none; color:var(--secondary);
+            border-bottom:2px solid transparent; margin-bottom:-2px;
+            border-radius:6px 6px 0 0; transition:color .15s, background .15s;
+        }
+        .dash-tab:hover { color:var(--primary); background:var(--gray-100); }
+        .dash-tab.active { color:var(--primary); border-bottom-color:var(--primary); background:#fff; }
+        .dash-panel { display:none; }
+        .dash-panel.active { display:block; }
     </style>
 </head>
 <body>
@@ -119,6 +132,16 @@ $user_id    = (int)$_SESSION['user_id'];
             </div>
 
         </div>
+
+        <!-- Tab Navigation -->
+        <div class="dash-tabs">
+            <button class="dash-tab active" onclick="switchTab('collections',this)">Collections</button>
+            <button class="dash-tab" onclick="switchTab('analytics',this)">Analytics</button>
+            <button class="dash-tab" onclick="switchTab('stock',this)">Stock Health</button>
+        </div>
+
+        <!-- TAB: Collections -->
+        <div id="tab-collections" class="dash-panel active">
 
         <!-- Collection Breakdown -->
         <div style="margin-bottom:24px;">
@@ -214,43 +237,16 @@ $user_id    = (int)$_SESSION['user_id'];
         <!-- Alerts -->
         <div id="d-alerts"></div>
 
-        <!-- Dashboard Row: Chart + Stock Health -->
-        <div class="dashboard-row">
-            <div class="chart-container">
-                <h3>Daily Revenue (Sunday - Saturday)</h3>
-                <div class="chart-wrapper" style="height:300px;">
-                    <canvas id="salesChart"></canvas>
-                </div>
-            </div>
-            <div>
-                <div class="chart-container" style="margin-bottom:20px;">
-                    <h3>Quick Actions</h3>
-                    <div class="quick-actions">
-                        <a href="sales.php"     class="quick-action-btn"><span>💰</span>New Sale</a>
-                        <a href="purchases.php" class="quick-action-btn"><span>📦</span>Purchase</a>
-                        <a href="stock.php"     class="quick-action-btn"><span>🔄</span>Move Stock</a>
-                        <a href="products.php"  class="quick-action-btn"><span>🏷️</span>Add Product</a>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <h3>Stock Health</h3>
-                    <div id="d-low-stock">
-                        <div style="text-align:center;padding:24px 0;">
-                            <span class="skel" style="width:80%;display:block;margin:8px auto;height:16px;"></span>
-                            <span class="skel" style="width:60%;display:block;margin:8px auto;height:16px;"></span>
-                        </div>
-                    </div>
-                    <div class="mini-stats">
-                        <div class="mini-stat">
-                            <div class="mini-stat-value" id="d-mov-count"><span class="skel skel-sm">&nbsp;</span></div>
-                            <div class="mini-stat-label">Movements this week</div>
-                        </div>
-                        <div class="mini-stat">
-                            <div class="mini-stat-value" style="color:var(--success);" id="d-suppliers"><span class="skel skel-sm">&nbsp;</span></div>
-                            <div class="mini-stat-label">Active Suppliers</div>
-                        </div>
-                    </div>
-                </div>
+        </div><!-- /tab-collections -->
+
+        <!-- TAB: Analytics -->
+        <div id="tab-analytics" class="dash-panel">
+
+        <!-- Revenue Chart -->
+        <div class="chart-container" style="margin-bottom:24px;">
+            <h3>Daily Revenue (Sunday - Saturday)</h3>
+            <div class="chart-wrapper" style="height:300px;">
+                <canvas id="salesChart"></canvas>
             </div>
         </div>
 
@@ -278,6 +274,43 @@ $user_id    = (int)$_SESSION['user_id'];
             </div>
         </div>
 
+        </div><!-- /tab-analytics -->
+
+        <!-- TAB: Stock Health -->
+        <div id="tab-stock" class="dash-panel">
+
+        <div class="dashboard-row">
+            <div class="chart-container">
+                <h3>Stock Health</h3>
+                <div id="d-low-stock">
+                    <div style="text-align:center;padding:24px 0;">
+                        <span class="skel" style="width:80%;display:block;margin:8px auto;height:16px;"></span>
+                        <span class="skel" style="width:60%;display:block;margin:8px auto;height:16px;"></span>
+                    </div>
+                </div>
+                <div class="mini-stats">
+                    <div class="mini-stat">
+                        <div class="mini-stat-value" id="d-mov-count"><span class="skel skel-sm">&nbsp;</span></div>
+                        <div class="mini-stat-label">Movements this week</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="mini-stat-value" style="color:var(--success);" id="d-suppliers"><span class="skel skel-sm">&nbsp;</span></div>
+                        <div class="mini-stat-label">Active Suppliers</div>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <h3>Quick Actions</h3>
+                <div class="quick-actions">
+                    <a href="sales.php"     class="quick-action-btn"><span>💰</span>New Sale</a>
+                    <a href="purchases.php" class="quick-action-btn"><span>📦</span>Purchase</a>
+                    <a href="stock.php"     class="quick-action-btn"><span>🔄</span>Move Stock</a>
+                    <a href="products.php"  class="quick-action-btn"><span>🏷️</span>Add Product</a>
+                </div>
+            </div>
+        </div>
+
+        </div><!-- /tab-stock -->
 
     </div><!-- /main-content -->
 </div><!-- /dashboard-container -->
@@ -615,8 +648,23 @@ window.recalcStockValues = function(e) {
         .catch(function() { if (link) link.textContent = 'Recalculate'; });
 };
 
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+window.switchTab = function(name, btn) {
+    document.querySelectorAll('.dash-panel').forEach(function(p){ p.classList.remove('active'); });
+    document.querySelectorAll('.dash-tab').forEach(function(b){ b.classList.remove('active'); });
+    var panel = document.getElementById('tab-'+name);
+    if (panel) panel.classList.add('active');
+    if (btn) btn.classList.add('active');
+    localStorage.setItem('dashTab', name);
+};
+
 // ── Boot: fetch all data ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
+    var saved = localStorage.getItem('dashTab');
+    if (saved) {
+        var btn = document.querySelector('.dash-tab[onclick*="\''+saved+'\'"]');
+        if (btn) switchTab(saved, btn);
+    }
     fetch('ajax_dashboard.php')
         .then(function(r) { return r.json(); })
         .then(populate)

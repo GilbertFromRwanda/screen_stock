@@ -118,6 +118,7 @@ $all_dates = [];
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Revenue Summary</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/revenue.css">
     <style>
         .summary-cards {
             display: grid;
@@ -174,127 +175,193 @@ $all_dates = [];
             <strong><?php echo date('M d, Y', strtotime($to)); ?></strong>
         </p>
 
-        <!-- Summary cards -->
-        <div class="summary-cards">
-            <div class="summary-card">
-                <label>Bulk Sales</label>
-                <div class="val">RWF <?php echo number_format($bulk['revenue'], 0); ?></div>
+        <!-- Tabbed content -->
+        <div class="rev-tabs-wrap">
+            <div class="rev-tabs-bar">
+                <button class="rev-tab active" onclick="switchRevTab('overview', this)">Overview</button>
+                <button class="rev-tab" onclick="switchRevTab('daily', this)">Daily Breakdown</button>
             </div>
-            <div class="summary-card">
-                <label>Retail Sales</label>
-                <div class="val">RWF <?php echo number_format($retail['revenue'], 0); ?></div>
-            </div>
-            <div class="summary-card green">
-                <label>Total Revenue</label>
-                <div class="val">RWF <?php echo number_format($total_revenue, 0); ?></div>
-            </div>
-            <div class="summary-card red">
-                <label>Total Cost</label>
-                <div class="val">RWF <?php echo number_format($total_cost, 0); ?></div>
-            </div>
-            <div class="summary-card green">
-                <label>Gross Profit</label>
-                <div class="val <?php echo $gross_profit < 0 ? 'neg' : ''; ?>">
-                    RWF <?php echo number_format($gross_profit, 0); ?>
-                </div>
-                <div class="sub">Margin <?php echo $profit_margin; ?>%</div>
-            </div>
-            <div class="summary-card orange">
-                <label>Expenses</label>
-                <div class="val">RWF <?php echo number_format($total_expenses, 0); ?></div>
-            </div>
-            <div class="summary-card orange">
-                <label>Consumption</label>
-                <div class="val">RWF <?php echo number_format($total_consumption, 0); ?></div>
-                <div class="sub" style="color:var(--danger);font-weight:600;">
-                    Unpaid: RWF <?php echo number_format($total_consumption_unpaid, 0); ?>
-                </div>
-                <div class="sub">Paid: RWF <?php echo number_format($total_consumption - $total_consumption_unpaid, 0); ?></div>
-            </div>
-            <div class="summary-card purple">
-                <label>Net Profit</label>
-                <div class="val <?php echo $net_profit < 0 ? 'neg' : ''; ?>">
-                    RWF <?php echo number_format($net_profit, 0); ?>
-                </div>
-                <div class="sub">Margin <?php echo $net_margin; ?>%</div>
-            </div>
-        </div>
 
-        <!-- Daily breakdown — populated via AJAX -->
-        <div class="table-responsive">
-            <table class="table tbl-day">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Bulk Sales</th>
-                        <th>Retail Sales</th>
-                        <th>Total Revenue</th>
-                        <th>Expenses</th>
-                        <th>Consumption</th>
-                        <th>Con. Unpaid</th>
-                        <th>Net</th>
-                    </tr>
-                </thead>
-                <tbody id="daily-tbody">
-                    <tr><td colspan="8" style="padding:24px;text-align:center;">
-                        <div style="display:inline-block;width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;"></div>
-                    </td></tr>
-                </tbody>
-                <tfoot id="daily-tfoot"></tfoot>
-            </table>
-        </div>
+            <!-- Tab 1: Overview -->
+            <div class="rev-tab-panel active" id="revTab-overview">
+                <p class="rev-tab-title">Summary</p>
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <label>Bulk Sales</label>
+                        <div class="val">RWF <?php echo number_format($bulk['revenue'], 0); ?></div>
+                    </div>
+                    <div class="summary-card">
+                        <label>Retail Sales</label>
+                        <div class="val">RWF <?php echo number_format($retail['revenue'], 0); ?></div>
+                    </div>
+                    <div class="summary-card green">
+                        <label>Total Revenue</label>
+                        <div class="val">RWF <?php echo number_format($total_revenue, 0); ?></div>
+                    </div>
+                    <div class="summary-card red">
+                        <label>Total Cost</label>
+                        <div class="val">RWF <?php echo number_format($total_cost, 0); ?></div>
+                    </div>
+                    <div class="summary-card green">
+                        <label>Gross Profit</label>
+                        <div class="val <?php echo $gross_profit < 0 ? 'neg' : ''; ?>">
+                            RWF <?php echo number_format($gross_profit, 0); ?>
+                        </div>
+                        <div class="sub">Margin <?php echo $profit_margin; ?>%</div>
+                    </div>
+                    <div class="summary-card orange">
+                        <label>Expenses</label>
+                        <div class="val">RWF <?php echo number_format($total_expenses, 0); ?></div>
+                    </div>
+                    <div class="summary-card orange">
+                        <label>Consumption</label>
+                        <div class="val">RWF <?php echo number_format($total_consumption, 0); ?></div>
+                        <div class="sub" style="color:var(--danger);font-weight:600;">
+                            Unpaid: RWF <?php echo number_format($total_consumption_unpaid, 0); ?>
+                        </div>
+                        <div class="sub">Paid: RWF <?php echo number_format($total_consumption - $total_consumption_unpaid, 0); ?></div>
+                    </div>
+                    <div class="summary-card purple">
+                        <label>Net Profit</label>
+                        <div class="val <?php echo $net_profit < 0 ? 'neg' : ''; ?>">
+                            RWF <?php echo number_format($net_profit, 0); ?>
+                        </div>
+                        <div class="sub">Margin <?php echo $net_margin; ?>%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Daily Breakdown -->
+            <div class="rev-tab-panel" id="revTab-daily">
+                <p class="rev-tab-title">Daily Breakdown</p>
+                <div class="table-responsive">
+                    <table class="table tbl-day">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Bulk Sales</th>
+                                <th>Retail Sales</th>
+                                <th>Total Revenue</th>
+                                <th>Expenses</th>
+                                <th>Consumption</th>
+                                <th>Con. Unpaid</th>
+                                <th>Net</th>
+                            </tr>
+                        </thead>
+                        <tbody id="daily-tbody">
+                            <tr><td colspan="8" style="padding:24px;text-align:center;">
+                                <div style="display:inline-block;width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;"></div>
+                            </td></tr>
+                        </tbody>
+                        <tfoot id="daily-tfoot"></tfoot>
+                    </table>
+                </div>
+                <div id="dailyPagBar" class="rev-pag-bar" style="display:none;">
+                    <button id="dailyPrevBtn" class="rev-pag-btn" onclick="changeDailyPage(-1)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                        Prev
+                    </button>
+                    <span id="dailyPageInfo" class="rev-pag-info"></span>
+                    <button id="dailyNextBtn" class="rev-pag-btn" onclick="changeDailyPage(1)">
+                        Next
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                    <div class="rev-pag-size-wrap">
+                        <span class="rev-pag-size-label">Per page:</span>
+                        <select id="dailyPageSizeSel" class="rev-pag-size-sel" onchange="changeDailyPageSize()">
+                            <option value="15">15</option>
+                            <option value="31">31</option>
+                            <option value="9999">All</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /.rev-tabs-wrap -->
     </div>
 </div>
-<style>@keyframes spin{to{transform:rotate(360deg);}}</style>
 <script src="script.js"></script>
 <script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchRevTab(name, btn) {
+    document.querySelectorAll('.rev-tab').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.rev-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    btn.classList.add('active');
+    document.getElementById('revTab-' + name).classList.add('active');
+}
+
+// ── Daily breakdown — AJAX + pagination ───────────────────────────────────────
+var _dailyRows = [], _dailyPage = 1, _dailyPageSize = 15;
+
+function _fmt(n) { return n > 0 ? 'RWF ' + Math.round(n).toLocaleString() : '-'; }
+
+function renderDailyPage() {
+    var total      = _dailyRows.length;
+    var totalPages = Math.max(1, Math.ceil(total / _dailyPageSize));
+    if (_dailyPage > totalPages) _dailyPage = totalPages;
+
+    var start = (_dailyPage - 1) * _dailyPageSize;
+    var end   = Math.min(start + _dailyPageSize, total);
+
+    var html = '';
+    for (var i = start; i < end; i++) {
+        var r   = _dailyRows[i];
+        var rev = r.bulk + r.retail;
+        var net = rev - r.expense;
+        var d   = new Date(r.date + 'T12:00:00');
+        var lbl = d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+        html += '<tr>' +
+            '<td>' + lbl + '</td>' +
+            '<td>' + _fmt(r.bulk) + '</td>' +
+            '<td>' + _fmt(r.retail) + '</td>' +
+            '<td><strong>' + (rev > 0 ? 'RWF ' + Math.round(rev).toLocaleString() : '-') + '</strong></td>' +
+            '<td>' + _fmt(r.expense) + '</td>' +
+            '<td>-</td><td>-</td>' +
+            '<td style="color:' + (net >= 0 ? 'var(--success)' : 'var(--danger)') + ';font-weight:600;">RWF ' + Math.round(net).toLocaleString() + '</td>' +
+            '</tr>';
+    }
+    document.getElementById('daily-tbody').innerHTML = html || '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--secondary);">No data for this period.</td></tr>';
+
+    var bar = document.getElementById('dailyPagBar');
+    bar.style.display = total === 0 ? 'none' : 'flex';
+    document.getElementById('dailyPrevBtn').disabled = _dailyPage <= 1;
+    document.getElementById('dailyNextBtn').disabled = _dailyPage >= totalPages;
+    document.getElementById('dailyPageInfo').innerHTML =
+        'Page <strong>' + _dailyPage + '</strong> of <strong>' + totalPages +
+        '</strong> &nbsp;&middot;&nbsp; ' + total + ' day' + (total !== 1 ? 's' : '');
+}
+
+function changeDailyPage(dir) { _dailyPage += dir; renderDailyPage(); }
+function changeDailyPageSize() {
+    _dailyPageSize = parseInt(document.getElementById('dailyPageSizeSel').value);
+    _dailyPage = 1;
+    renderDailyPage();
+}
+
 (function() {
     var params = new URLSearchParams(window.location.search);
     var from = params.get('from') || '<?= date('Y-m-01'); ?>';
     var to   = params.get('to')   || '<?= date('Y-m-d'); ?>';
 
-    fetch('summary-revenue.php?action=daily&from='+from+'&to='+to)
-        .then(function(r){ return r.json(); })
+    fetch('summary-revenue.php?action=daily&from=' + from + '&to=' + to)
+        .then(function(r) { return r.json(); })
         .then(function(rows) {
-            var fmt = function(n) { return n > 0 ? 'RWF '+Math.round(n).toLocaleString() : '-'; };
-            var gtBulk=0, gtRet=0, gtExp=0;
+            _dailyRows = rows.slice().reverse();
 
-            if (rows.length === 0) {
-                document.getElementById('daily-tbody').innerHTML =
-                    '<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--secondary);">No data for this period.</td></tr>';
-                return;
-            }
-
-            var html = '';
-            rows.slice().reverse().forEach(function(r) {
-                var rev = r.bulk + r.retail;
-                var net = rev - r.expense;
-                gtBulk += r.bulk; gtRet += r.retail; gtExp += r.expense;
-                var d = new Date(r.date+'T12:00:00');
-                var label = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-                html += '<tr>'+
-                    '<td>'+label+'</td>'+
-                    '<td>'+fmt(r.bulk)+'</td>'+
-                    '<td>'+fmt(r.retail)+'</td>'+
-                    '<td><strong>'+(rev>0?'RWF '+Math.round(rev).toLocaleString():'-')+'</strong></td>'+
-                    '<td>'+fmt(r.expense)+'</td>'+
-                    '<td>-</td>'+ // consumption not in simplified AJAX
-                    '<td>-</td>'+
-                    '<td style="color:'+(net>=0?'var(--success)':'var(--danger)')+';font-weight:600;">RWF '+Math.round(net).toLocaleString()+'</td>'+
-                    '</tr>';
-            });
-            document.getElementById('daily-tbody').innerHTML = html;
-
+            var gtBulk = 0, gtRet = 0, gtExp = 0;
+            _dailyRows.forEach(function(r) { gtBulk += r.bulk; gtRet += r.retail; gtExp += r.expense; });
             var gtRev = gtBulk + gtRet;
             document.getElementById('daily-tfoot').innerHTML =
-                '<tr><td><strong>Total</strong></td>'+
-                '<td>RWF '+Math.round(gtBulk).toLocaleString()+'</td>'+
-                '<td>RWF '+Math.round(gtRet).toLocaleString()+'</td>'+
-                '<td><strong>RWF '+Math.round(gtRev).toLocaleString()+'</strong></td>'+
-                '<td>RWF '+Math.round(gtExp).toLocaleString()+'</td>'+
-                '<td>-</td><td>-</td>'+
-                '<td style="color:var(--success);font-weight:700;">RWF '+Math.round(gtRev-gtExp).toLocaleString()+'</td>'+
+                '<tr><td><strong>Total</strong></td>' +
+                '<td>RWF ' + Math.round(gtBulk).toLocaleString() + '</td>' +
+                '<td>RWF ' + Math.round(gtRet).toLocaleString() + '</td>' +
+                '<td><strong>RWF ' + Math.round(gtRev).toLocaleString() + '</strong></td>' +
+                '<td>RWF ' + Math.round(gtExp).toLocaleString() + '</td>' +
+                '<td>-</td><td>-</td>' +
+                '<td style="color:var(--success);font-weight:700;">RWF ' + Math.round(gtRev - gtExp).toLocaleString() + '</td>' +
                 '</tr>';
+
+            renderDailyPage();
         })
         .catch(function() {
             document.getElementById('daily-tbody').innerHTML =

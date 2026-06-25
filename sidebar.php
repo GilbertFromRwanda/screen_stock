@@ -56,9 +56,17 @@ try {
                     
                     <a href="loans.php"    class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>">Loans by Client</a>
                     <a href="all_loans.php"class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
+                    <!-- <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a> -->
                 </div>
             </div>
-           
+            <?php $oa = in_array($current_page,['orders.php','order_new.php']); ?>
+            <div class="tn-dropdown<?= $oa?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">Orders <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="orders.php"    class="tn-drop-item<?= $current_page==='orders.php'   ?' active':'' ?>">View Orders</a>
+                    <a href="order_new.php" class="tn-drop-item<?= $current_page==='order_new.php'?' active':'' ?>">New Order</a>
+                </div>
+            </div>
 
             <a href="wishlist.php" class="tn-item<?= $current_page==='wishlist.php'?' active':'' ?>">&#9733; Wishlist</a>
             <a href="notes.php"    class="tn-item<?= $current_page==='notes.php'   ?' active':'' ?>">&#10000; Notes</a>
@@ -77,7 +85,7 @@ try {
             <?php endif; ?>
 
             <?php if (in_array($role,['admin','manager','superadmin'])): ?>
-            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php','qr_call.php']); ?>
+            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php','qr_call.php','stock_adjust.php']); ?>
             <div class="tn-dropdown<?= $aa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#9881; Admin <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
@@ -85,6 +93,7 @@ try {
                     <a href="companies.php"  class="tn-drop-item<?= $current_page==='companies.php' ?' active':'' ?>">Companies</a>
                     <?php endif; ?>
                     <a href="users.php"      class="tn-drop-item<?= $current_page==='users.php'     ?' active':'' ?>">Users</a>
+                    <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
                     <a href="audit_log.php"  class="tn-drop-item<?= $current_page==='audit_log.php' ?' active':'' ?>">Audit Log</a>
                     <a href="qr_call.php"    class="tn-drop-item<?= $current_page==='qr_call.php'   ?' active':'' ?>">&#128222; QR Code</a>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
@@ -120,10 +129,12 @@ try {
     <a href="new-purchase.php"  class="qb-btn qb-buy">+ Purchase</a>
     <a href="expenses.php"      class="qb-btn qb-exp">+ Expense</a>
     <a href="loans.php"         class="qb-btn qb-loan">+ Loan by Client</a>
+    
     <span class="qb-ip">
         &#128187; <span id="qb-ip-text"><?= htmlspecialchars($_nav_server_ip) ?></span>
         <button class="qb-ip-copy" onclick="qbCopyIP()" title="Copy IP">&#128203;</button>
     </span>
+    
 </div>
 
 <style>

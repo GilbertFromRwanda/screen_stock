@@ -258,51 +258,7 @@ if ($current_week_sales && mysqli_num_rows($current_week_sales) > 0) {
 $total_all_time = ['total_revenue' => 0, 'total_cost' => 0, 'total_profit' => 0];
 $total_all_time['total_profit'] = ($total_all_time['total_revenue'] ?? 0) - $total_all_time['total_cost'];
 
-// Daily revenue for current week (Sunday to Saturday)
-$week_sun = date('Y-m-d', strtotime('sunday last week'));
-$week_sat = date('Y-m-d', strtotime('saturday this week'));
-// If today is Sunday, adjust
-if (date('w') == 0) {
-    $week_sun = date('Y-m-d');
-    $week_sat = date('Y-m-d', strtotime('saturday next week'));
-}
 
-$daily_revenue_query = mysqli_query($conn, "
-    SELECT
-        dates.date,
-        DAYNAME(dates.date) as day_name,
-        COALESCE(bulk.revenue, 0) as bulk_revenue,
-        COALESCE(retail.revenue, 0) as retail_revenue,
-        COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0) as total_revenue,
-        COALESCE(bulk.cost, 0) + COALESCE(retail.cost, 0) as total_cost,
-        (COALESCE(bulk.revenue, 0) + COALESCE(retail.revenue, 0)) - (COALESCE(bulk.cost, 0) + COALESCE(retail.cost, 0)) as profit
-    FROM (
-        SELECT DATE('$week_sun') + INTERVAL seq DAY as date
-        FROM (SELECT 0 as seq UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6) as s
-    ) as dates
-    LEFT JOIN (
-        SELECT sale_date,
-            SUM(total_amount) as revenue,
-            SUM(COALESCE((SELECT cost_price FROM purchases pu2 WHERE pu2.product_id = sb.product_id AND pu2.purchase_date <= sb.sale_date " . cidAndFor('pu2') . " ORDER BY purchase_date DESC LIMIT 1), 0) * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)) as cost
-        FROM sales_bulk sb WHERE sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
-        GROUP BY sale_date
-    ) as bulk ON bulk.sale_date = dates.date
-    LEFT JOIN (
-        SELECT sale_date,
-            SUM(total_amount) as revenue,
-            SUM(COALESCE(
-                (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0) FROM purchases pu JOIN stock s ON s.product_id = pu.product_id AND s.company_id = pu.company_id WHERE pu.product_id = sr.product_id " . cidAndFor('pu') . " ORDER BY pu.purchase_date DESC LIMIT 1), 0
-            ) * sr.pieces_sold) as cost
-        FROM sales_retail sr WHERE sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
-        GROUP BY sale_date
-    ) as retail ON retail.sale_date = dates.date
-    ORDER BY dates.date ASC
-");
-
-$daily_data = [];
-while ($row = mysqli_fetch_assoc($daily_revenue_query)) {
-    $daily_data[] = $row;
-}
 
 // Today's profit — company-filtered, COALESCE(0) for missing purchases, correct divisor
 $today = date('Y-m-d');
@@ -434,14 +390,6 @@ $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
                     </div>
                 </div>
             </div>
-             <!-- Daily Revenue Chart (Sun - Sat) -->
-            <div class="chart-container">
-                <h2>Daily Revenue (Sunday - Saturday)</h2>
-                <div class="chart-wrapper">
-                    <canvas id="dailyRevenueChart"></canvas>
-                </div>
-            </div>
-            
             <!-- Revenue vs Cost Chart -->
             <div class="chart-container">
                 <h2>Revenue vs Cost Analysis</h2>
@@ -452,195 +400,232 @@ $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
             
            
 
-            <!-- Sales Profit Analysis with Date Filter -->
-            <div class="revenue-table">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">
-                    <h2 style="margin: 0;">Sales - Profit Analysis</h2>
-                    <form method="GET" action="revenue.php" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                        <label style="font-size: 14px; color: #6c757d;">From:</label>
-                        <input type="date" name="from" value="<?php echo htmlspecialchars($filter_from); ?>"
-                            style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
-                        <label style="font-size: 14px; color: #6c757d;">To:</label>
-                        <input type="date" name="to" value="<?php echo htmlspecialchars($filter_to); ?>"
-                            style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
-                        <button type="submit" style="padding: 8px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;">
-                            Filter
+            <!-- ── Tabbed tables ──────────────────────────────────────────────────── -->
+            <div class="rev-tabs-wrap">
+
+                <div class="rev-tabs-bar">
+                    <button class="rev-tab active" onclick="switchRevTab('sales', this)">Sales Analysis</button>
+                    <button class="rev-tab" onclick="switchRevTab('products', this)">Product Profitability</button>
+                    <button class="rev-tab" onclick="switchRevTab('weekly', this)">Weekly Summary</button>
+                </div>
+
+                <!-- Tab 1: Sales Profit Analysis -->
+                <div class="rev-tab-panel active" id="revTab-sales">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+                        <p class="rev-tab-title">Sales — Profit Analysis</p>
+                        <form method="GET" action="revenue.php" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                            <label style="font-size:13px;color:#6c757d;">From:</label>
+                            <input type="date" name="from" value="<?php echo htmlspecialchars($filter_from); ?>"
+                                style="padding:7px 11px;border:1px solid var(--profit-border);border-radius:8px;font-size:13px;">
+                            <label style="font-size:13px;color:#6c757d;">To:</label>
+                            <input type="date" name="to" value="<?php echo htmlspecialchars($filter_to); ?>"
+                                style="padding:7px 11px;border:1px solid var(--profit-border);border-radius:8px;font-size:13px;">
+                            <button type="submit" style="padding:7px 18px;background:var(--profit-primary);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
+                                Filter
+                            </button>
+                            <a href="revenue.php" style="padding:7px 14px;background:#f8f9fa;color:#6c757d;border:1px solid var(--profit-border);border-radius:8px;text-decoration:none;font-size:13px;">
+                                Reset
+                            </a>
+                        </form>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table comparison-table" id="tblProfit">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Product</th>
+                                    <th>Quantity</th>
+                                    <th>Selling Price</th>
+                                    <th>Purchase Cost</th>
+                                    <th>Total Revenue</th>
+                                    <th>Total Cost</th>
+                                    <th>Profit</th>
+                                    <th>Margin</th>
+                                    <th>Customer</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (!empty($filtered_sales_data)):
+                                    foreach($filtered_sales_data as $sale):
+                                        $profit_class = ($sale['profit'] ?? 0) >= 0 ? 'profit-positive' : 'profit-negative';
+                                ?>
+                                <tr class="data-row <?php echo ($sale['profit'] ?? 0) >= 0 ? 'highlight-profit' : 'highlight-loss'; ?>">
+                                    <td><?php echo date('M d', strtotime($sale['sale_date'])); ?></td>
+                                    <td>
+                                        <span class="badge badge-<?php echo $sale['sale_type'] == 'Bulk' ? 'primary' : 'info'; ?>">
+                                            <?php echo $sale['sale_type']; ?>
+                                        </span>
+                                    </td>
+                                    <td><strong><?php echo htmlspecialchars($sale['product_name'] ?? ''); ?></strong></td>
+                                    <td><?php echo $sale['quantity'] ?? 0; ?> <?php echo ($sale['sale_type'] ?? '') == 'Bulk' ? 'pkg' : 'pcs'; ?></td>
+                                    <td>RWF <?php echo number_format($sale['selling_price'] ?? 0, 0); ?></td>
+                                    <td class="cost-value">RWF <?php echo number_format($sale['purchase_price'] ?? 0, 0); ?></td>
+                                    <td class="revenue-value">RWF <?php echo number_format($sale['total_amount'] ?? 0, 0); ?></td>
+                                    <td class="cost-value">RWF <?php echo number_format($sale['total_cost'] ?? 0, 0); ?></td>
+                                    <td class="<?php echo $profit_class; ?>">
+                                        RWF <?php echo number_format($sale['profit'] ?? 0, 0); ?>
+                                    </td>
+                                    <td>
+                                        <span class="margin-badge <?php
+                                            $margin_value = $sale['margin'] ?? 0;
+                                            if($margin_value >= 30) echo 'margin-high';
+                                            elseif($margin_value >= 15) echo 'margin-medium';
+                                            else echo 'margin-low';
+                                        ?>">
+                                            <?php echo number_format($margin_value, 1); ?>%
+                                        </span>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($sale['customer_name'] ?? 'N/A'); ?></td>
+                                </tr>
+                                <?php
+                                    endforeach;
+                                else:
+                                ?>
+                                <tr>
+                                    <td colspan="11" style="text-align:center;padding:30px;color:#64748b;">
+                                        No sales found for the selected period
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr style="background:#f8fafc;font-weight:700;">
+                                    <td colspan="6"></td>
+                                    <td class="revenue-value">Total Revenue</td>
+                                    <td class="cost-value">Total Cost</td>
+                                    <td class="<?php echo $filtered_profit >= 0 ? 'profit-positive' : 'profit-negative'; ?>">Total Profit</td>
+                                    <td colspan="2"></td>
+                                </tr>
+                                <tr style="background:#f8fafc;font-weight:700;">
+                                    <td colspan="6"></td>
+                                    <td>RWF <?php echo number_format($filtered_revenue, 0); ?></td>
+                                    <td>RWF <?php echo number_format($filtered_cost, 0); ?></td>
+                                    <td class="<?php echo $filtered_profit >= 0 ? 'profit-positive' : 'profit-negative'; ?>">
+                                        RWF <?php echo number_format($filtered_profit, 0); ?>
+                                    </td>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div id="profitPagBar" class="rev-pag-bar">
+                        <button id="profitPrevBtn" class="rev-pag-btn" onclick="changeProfitPage(-1)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                            Prev
                         </button>
-                        <a href="revenue.php" style="padding: 8px 16px; background: #f8f9fa; color: #6c757d; border: 1px solid #ddd; border-radius: 8px; text-decoration: none; font-size: 14px;">
-                            Reset
-                        </a>
-                    </form>
+                        <span id="profitPageInfo" class="rev-pag-info"></span>
+                        <button id="profitNextBtn" class="rev-pag-btn" onclick="changeProfitPage(1)">
+                            Next
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                        <div class="rev-pag-size-wrap">
+                            <span class="rev-pag-size-label">Per page:</span>
+                            <select id="profitPageSizeSel" class="rev-pag-size-sel" onchange="changeProfitPageSize()">
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="9999">All</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
-                <div class="table-responsive">
-                    <table class="table comparison-table" id="tblProfit">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Product</th>
-                                <th>Quantity</th>
-                                <th>Selling Price</th>
-                                <th>Purchase Cost</th>
-                                <th>Total Revenue</th>
-                                <th>Total Cost</th>
-                                <th>Profit</th>
-                                <th>Margin</th>
-                                <th>Customer</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (!empty($filtered_sales_data)):
-                                foreach($filtered_sales_data as $sale):
-                                    $profit_class = ($sale['profit'] ?? 0) >= 0 ? 'profit-positive' : 'profit-negative';
-                            ?>
-                            <tr class="<?php echo ($sale['profit'] ?? 0) >= 0 ? 'highlight-profit' : 'highlight-loss'; ?>">
-                                <td><?php echo date('M d', strtotime($sale['sale_date'])); ?></td>
-                                <td>
-                                    <span class="badge badge-<?php echo $sale['sale_type'] == 'Bulk' ? 'primary' : 'info'; ?>">
-                                        <?php echo $sale['sale_type']; ?>
-                                    </span>
-                                </td>
-                                <td><strong><?php echo htmlspecialchars($sale['product_name'] ?? ''); ?></strong></td>
-                                <td><?php echo $sale['quantity'] ?? 0; ?> <?php echo ($sale['sale_type'] ?? '') == 'Bulk' ? 'pkg' : 'pcs'; ?></td>
-                                <td>RWF <?php echo number_format($sale['selling_price'] ?? 0, 0); ?></td>
-                                <td class="cost-value">RWF <?php echo number_format($sale['purchase_price'] ?? 0, 0); ?></td>
-                                <td class="revenue-value">RWF <?php echo number_format($sale['total_amount'] ?? 0, 0); ?></td>
-                                <td class="cost-value">RWF <?php echo number_format($sale['total_cost'] ?? 0, 0); ?></td>
-                                <td class="<?php echo $profit_class; ?>">
-                                    RWF <?php echo number_format($sale['profit'] ?? 0, 0); ?>
-                                </td>
-                                <td>
-                                    <span class="margin-badge <?php
-                                        $margin_value = $sale['margin'] ?? 0;
-                                        if($margin_value >= 30) echo 'margin-high';
-                                        elseif($margin_value >= 15) echo 'margin-medium';
-                                        else echo 'margin-low';
-                                    ?>">
-                                        <?php echo number_format($margin_value, 1); ?>%
-                                    </span>
-                                </td>
-                                <td><?php echo htmlspecialchars($sale['customer_name'] ?? 'N/A'); ?></td>
-                            </tr>
-                            <?php
-                                endforeach;
-                            else:
-                            ?>
-                            <tr>
-                                <td colspan="11" style="text-align: center; padding: 30px;">
-                                    No sales found for the selected period
-                                </td>
-                            </tr>
-                            <?php endif; ?>
-                        </tbody>
-                        <tfoot>
-                            <tr style="background: #f8f9fa; font-weight: bold;">
-                                <td colspan="6"></td>
-                                <td class="revenue-value">Total Revenue</td>
-                                <td class="cost-value">Total Cost</td>
-                                <td class="<?php echo $filtered_profit >= 0 ? 'profit-positive' : 'profit-negative'; ?>">
-                                    Total Profit
-                                </td>
-                                <td colspan="2"></td>
-                            </tr>
-                            <tr style="background: #f8f9fa; font-weight: bold;">
-                                <td colspan="6"></td>
-                                <td>RWF <?php echo number_format($filtered_revenue, 0); ?></td>
-                                <td>RWF <?php echo number_format($filtered_cost, 0); ?></td>
-                                <td class="<?php echo $filtered_profit >= 0 ? 'profit-positive' : 'profit-negative'; ?>">
-                                    RWF <?php echo number_format($filtered_profit, 0); ?>
-                                </td>
-                                <td colspan="2"></td>
-                            </tr>
-                        </tfoot>
-                    </table>
+
+                <!-- Tab 2: Product Profitability (AJAX) -->
+                <div class="rev-tab-panel" id="revTab-products">
+                    <p class="rev-tab-title">Product Profitability</p>
+                    <div id="profitability-body" style="padding:20px 0;text-align:center;color:var(--secondary);">
+                        <div style="display:inline-block;width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:var(--profit-primary);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:8px;"></div>
+                        <div>Loading profitability data…</div>
+                    </div>
+                    <div id="prodPagBar" class="rev-pag-bar" style="display:none;">
+                        <button id="prodPrevBtn" class="rev-pag-btn" onclick="changeProdPage(-1)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                            Prev
+                        </button>
+                        <span id="prodPageInfo" class="rev-pag-info"></span>
+                        <button id="prodNextBtn" class="rev-pag-btn" onclick="changeProdPage(1)">
+                            Next
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                        <div class="rev-pag-size-wrap">
+                            <span class="rev-pag-size-label">Per page:</span>
+                            <select id="prodPageSizeSel" class="rev-pag-size-sel" onchange="changeProdPageSize()">
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="9999">All</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Product Profitability Analysis — loaded via AJAX -->
-            <div class="revenue-table" style="margin-top:30px;" id="profitability-section">
-                <h2>Product Profitability Analysis</h2>
-                <div id="profitability-body" style="padding:20px 0;text-align:center;color:var(--secondary);">
-                    <div style="display:inline-block;width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:8px;"></div>
-                    <div>Loading profitability data…</div>
+
+                <!-- Tab 3: Weekly Performance Summary -->
+                <div class="rev-tab-panel" id="revTab-weekly">
+                    <p class="rev-tab-title">Weekly Performance Summary</p>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Week</th>
+                                    <th>Period</th>
+                                    <th>Bulk Sales</th>
+                                    <th>Retail Sales</th>
+                                    <th>Total Revenue</th>
+                                    <th>Total Cost</th>
+                                    <th>Profit</th>
+                                    <th>Margin</th>
+                                    <th>Trend</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $previous_profit = 0;
+                                if ($weekly_data && mysqli_num_rows($weekly_data) > 0):
+                                    while($week = mysqli_fetch_assoc($weekly_data)):
+                                        $week_profit = $week['total_profit'] ?? ($week['total_revenue'] * 0.2);
+                                        $trend = $week_profit - $previous_profit;
+                                        $trend_class = $trend > 0 ? 'profit-positive' : ($trend < 0 ? 'profit-negative' : 'profit-neutral');
+                                        $previous_profit = $week_profit;
+                                ?>
+                                <tr>
+                                    <td><strong>Week <?php echo date('W', strtotime($week['week_start_date'])); ?></strong></td>
+                                    <td><?php echo date('M d', strtotime($week['week_start_date'])); ?> – <?php echo date('M d', strtotime($week['week_end_date'])); ?></td>
+                                    <td>RWF <?php echo number_format($week['bulk_sales_total'], 0); ?></td>
+                                    <td>RWF <?php echo number_format($week['retail_sales_total'], 0); ?></td>
+                                    <td class="revenue-value">RWF <?php echo number_format($week['total_revenue'], 0); ?></td>
+                                    <td class="cost-value">RWF <?php echo number_format($week['total_cost'] ?? 0, 0); ?></td>
+                                    <td class="<?php echo $week_profit >= 0 ? 'profit-positive' : 'profit-negative'; ?>">
+                                        RWF <?php echo number_format($week_profit, 0); ?>
+                                    </td>
+                                    <td>
+                                        <span class="margin-badge <?php
+                                            $margin = $week['profit_margin'] ?? ($week['total_revenue'] > 0 ? ($week_profit / $week['total_revenue'] * 100) : 0);
+                                            if($margin >= 30) echo 'margin-high';
+                                            elseif($margin >= 15) echo 'margin-medium';
+                                            else echo 'margin-low';
+                                        ?>"><?php echo number_format($margin, 1); ?>%</span>
+                                    </td>
+                                    <td class="<?php echo $trend_class; ?>">
+                                        <?php if($trend > 0): ?>↑ +RWF <?php echo number_format($trend, 0);
+                                        elseif($trend < 0): ?>↓ RWF <?php echo number_format(abs($trend), 0);
+                                        else: ?>→<?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php
+                                    endwhile;
+                                else:
+                                ?>
+                                <tr>
+                                    <td colspan="9" style="text-align:center;padding:30px;color:#64748b;">No weekly data available</td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
-            <style>@keyframes spin{to{transform:rotate(360deg);}}</style>
-            
-            <!-- Weekly Performance Summary -->
-            <div class="revenue-table" style="margin-top: 30px;">
-                <h2>Weekly Performance Summary</h2>
-                <div class="table-responsive">
-                    <table class="table" >
-                        <thead>
-                            <tr>
-                                <th>Week</th>
-                                <th>Period</th>
-                                <th>Bulk Sales</th>
-                                <th>Retail Sales</th>
-                                <th>Total Revenue</th>
-                                <th>Total Cost</th>
-                                <th>Profit</th>
-                                <th>Margin</th>
-                                <th>Trend</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php 
-                            $previous_profit = 0;
-                            if ($weekly_data && mysqli_num_rows($weekly_data) > 0):
-                                while($week = mysqli_fetch_assoc($weekly_data)): 
-                                    $week_profit = $week['total_profit'] ?? ($week['total_revenue'] * 0.2);
-                                    $trend = $week_profit - $previous_profit;
-                                    $trend_class = $trend > 0 ? 'profit-positive' : ($trend < 0 ? 'profit-negative' : 'profit-neutral');
-                                    $previous_profit = $week_profit;
-                            ?>
-                            <tr>
-                                <td><strong>Week <?php echo date('W', strtotime($week['week_start_date'])); ?></strong></td>
-                                <td>
-                                    <?php echo date('M d', strtotime($week['week_start_date'])); ?> - 
-                                    <?php echo date('M d', strtotime($week['week_end_date'])); ?>
-                                </td>
-                                <td>RWF <?php echo number_format($week['bulk_sales_total'], 0); ?></td>
-                                <td>RWF <?php echo number_format($week['retail_sales_total'], 0); ?></td>
-                                <td class="revenue-value">RWF <?php echo number_format($week['total_revenue'], 0); ?></td>
-                                <td class="cost-value">RWF <?php echo number_format($week['total_cost'] ?? 0, 0); ?></td>
-                                <td class="<?php echo $week_profit >= 0 ? 'profit-positive' : 'profit-negative'; ?>">
-                                    RWF <?php echo number_format($week_profit, 0); ?>
-                                </td>
-                                <td>
-                                    <span class="margin-badge <?php 
-                                        $margin = $week['profit_margin'] ?? (($week['total_revenue'] > 0 ? ($week_profit / $week['total_revenue'] * 100) : 0));
-                                        if($margin >= 30) echo 'margin-high';
-                                        elseif($margin >= 15) echo 'margin-medium';
-                                        else echo 'margin-low';
-                                    ?>">
-                                        <?php echo number_format($margin, 1); ?>%
-                                    </span>
-                                </td>
-                                <td class="<?php echo $trend_class; ?>">
-                                    <?php if($trend > 0): ?>
-                                        ↑ +RWF <?php echo number_format($trend, 0); ?>
-                                    <?php elseif($trend < 0): ?>
-                                        ↓ RWF <?php echo number_format(abs($trend), 0); ?>
-                                    <?php else: ?>
-                                        →
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                            <?php 
-                                endwhile; 
-                            else:
-                            ?>
-                            <tr>
-                                <td colspan="9" style="text-align: center; padding: 30px;">
-                                    No weekly data available
-                                </td>
-                            </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+
+            </div><!-- /.rev-tabs-wrap -->
         </div>
     </div>
     
@@ -784,122 +769,110 @@ $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
         
     })();
 
-    // Daily Revenue Chart (Sun - Sat)
-    (function() {
-        'use strict';
-
-        let dailyChart = null;
-
-        function initDailyRevenueChart() {
-            const canvas = document.getElementById('dailyRevenueChart');
-            if (!canvas) return;
-
-            if (dailyChart) {
-                dailyChart.destroy();
-                dailyChart = null;
-            }
-
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            const dayLabels = [];
-            const revenueData = [];
-            const costData = [];
-            const profitData = [];
-
-            <?php foreach ($daily_data as $day): ?>
-                dayLabels.push('<?php echo $day['day_name']; ?>');
-                revenueData.push(<?php echo $day['total_revenue']; ?>);
-                costData.push(<?php echo $day['total_cost']; ?>);
-                profitData.push(<?php echo $day['profit']; ?>);
-            <?php endforeach; ?>
-
-            try {
-                dailyChart = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: dayLabels,
-                        datasets: [
-                            {
-                                label: 'Revenue',
-                                data: revenueData,
-                                backgroundColor: 'rgba(40, 167, 69, 0.7)',
-                                borderColor: 'rgba(40, 167, 69, 1)',
-                                borderWidth: 1
-                            },
-                            {
-                                label: 'Cost',
-                                data: costData,
-                                backgroundColor: 'rgba(220, 53, 69, 0.7)',
-                                borderColor: 'rgba(220, 53, 69, 1)',
-                                borderWidth: 1
-                            },
-                            {
-                                label: 'Profit',
-                                data: profitData,
-                                type: 'line',
-                                borderColor: 'rgba(102, 126, 234, 1)',
-                                backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                                borderWidth: 3,
-                                pointRadius: 5,
-                                pointBackgroundColor: 'rgba(102, 126, 234, 1)',
-                                tension: 0.3,
-                                fill: true
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        animation: { duration: 0 },
-                        interaction: {
-                            mode: 'index',
-                            intersect: false,
-                        },
-                        plugins: {
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return context.dataset.label + ': RWF ' + context.parsed.y.toLocaleString();
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                title: {
-                                    display: true,
-                                    text: 'Amount (RWF)'
-                                },
-                                ticks: {
-                                    callback: function(value) {
-                                        return 'RWF ' + value.toLocaleString();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            } catch (e) {
-                console.error('Daily revenue chart error:', e);
-            }
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initDailyRevenueChart);
-        } else {
-            initDailyRevenueChart();
-        }
-    })();
 </script>
     <script src="script.js"></script>
-         <script>
-createAdvancedTableSearch('txtSearchProfit', 'tblProfit', []);
-    </script>
+<script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchRevTab(name, btn) {
+    document.querySelectorAll('.rev-tab').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.rev-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    btn.classList.add('active');
+    document.getElementById('revTab-' + name).classList.add('active');
+}
+
+// ── Sales Profit table pagination ─────────────────────────────────────────────
+var _profitPage = 1, _profitPageSize = 25;
+
+function renderProfitPage() {
+    var tbody   = document.querySelector('#tblProfit tbody');
+    if (!tbody) return;
+    var allRows = Array.from(tbody.querySelectorAll('tr.data-row'));
+    var total   = allRows.length;
+
+    if (total === 0) {
+        document.getElementById('profitPagBar').style.display = 'none';
+        return;
+    }
+    document.getElementById('profitPagBar').style.display = 'flex';
+
+    var totalPages = Math.max(1, Math.ceil(total / _profitPageSize));
+    if (_profitPage > totalPages) _profitPage = totalPages;
+
+    var start = (_profitPage - 1) * _profitPageSize;
+    var end   = Math.min(start + _profitPageSize, total);
+
+    allRows.forEach(function(row, i) {
+        row.style.display = (i >= start && i < end) ? '' : 'none';
+    });
+
+    document.getElementById('profitPrevBtn').disabled = _profitPage <= 1;
+    document.getElementById('profitNextBtn').disabled = _profitPage >= totalPages;
+    document.getElementById('profitPageInfo').innerHTML =
+        'Page <strong>' + _profitPage + '</strong> of <strong>' + totalPages +
+        '</strong> &nbsp;&middot;&nbsp; ' + total + ' sale' + (total !== 1 ? 's' : '');
+}
+
+function changeProfitPage(dir) { _profitPage += dir; renderProfitPage(); }
+function changeProfitPageSize() {
+    _profitPageSize = parseInt(document.getElementById('profitPageSizeSel').value);
+    _profitPage = 1;
+    renderProfitPage();
+}
+
+renderProfitPage();
+</script>
 
 <script>
-// Load product profitability via AJAX so it doesn't block initial page render
+// ── Product Profitability — AJAX + pagination ─────────────────────────────────
+var _prodData = [], _prodTotalRev = 0, _prodPage = 1, _prodPageSize = 25;
+
+function _prodFmt(n) { return Math.round(n).toLocaleString(); }
+function _prodEsc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderProdPage() {
+    var total      = _prodData.length;
+    var totalPages = Math.max(1, Math.ceil(total / _prodPageSize));
+    if (_prodPage > totalPages) _prodPage = totalPages;
+
+    var start = (_prodPage - 1) * _prodPageSize;
+    var end   = Math.min(start + _prodPageSize, total);
+
+    var rows = '';
+    if (total === 0) {
+        rows = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--secondary);">No product sales data available.</td></tr>';
+    } else {
+        for (var i = start; i < end; i++) {
+            var p   = _prodData[i];
+            var rev = parseFloat(p.total_rev) || 0;
+            rows += '<tr>'+
+                '<td><strong>'+_prodEsc(p.name)+'</strong></td>'+
+                '<td>'+_prodEsc(p.category||'N/A')+'</td>'+
+                '<td>'+p.bulk_qty+' pkg<br><small>RWF '+_prodFmt(p.bulk_rev)+'</small></td>'+
+                '<td>'+p.retail_qty+' pcs<br><small>RWF '+_prodFmt(p.retail_rev)+'</small></td>'+
+                '<td class="revenue-value">RWF '+_prodFmt(rev)+'</td>'+
+                '<td>'+p.bulk_cnt+' bulk / '+p.retail_cnt+' retail</td>'+
+                '</tr>';
+        }
+    }
+
+    document.querySelector('#tblProductRevenue tbody').innerHTML = rows;
+
+    var bar = document.getElementById('prodPagBar');
+    bar.style.display = total === 0 ? 'none' : 'flex';
+    document.getElementById('prodPrevBtn').disabled = _prodPage <= 1;
+    document.getElementById('prodNextBtn').disabled = _prodPage >= totalPages;
+    document.getElementById('prodPageInfo').innerHTML =
+        'Page <strong>' + _prodPage + '</strong> of <strong>' + totalPages +
+        '</strong> &nbsp;&middot;&nbsp; ' + total + ' product' + (total !== 1 ? 's' : '');
+}
+
+function changeProdPage(dir) { _prodPage += dir; renderProdPage(); }
+function changeProdPageSize() {
+    _prodPageSize = parseInt(document.getElementById('prodPageSizeSel').value);
+    _prodPage = 1;
+    renderProdPage();
+}
+
 (function() {
     var params = new URLSearchParams(window.location.search);
     var from = params.get('from') || '';
@@ -908,43 +881,21 @@ createAdvancedTableSearch('txtSearchProfit', 'tblProfit', []);
     fetch('revenue.php?action=profitability' + (from ? '&from='+from : '') + (to ? '&to='+to : ''))
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            var fmt = function(n) { return Math.round(n).toLocaleString(); };
-            var cls = function(n) { return n >= 0 ? 'profit-positive' : 'profit-negative'; };
-            var marginCls = function(m) { return m>=30?'margin-high':m>=15?'margin-medium':'margin-low'; };
-            var esc = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
-
-            var rows = '';
-            if (d.products.length === 0) {
-                rows = '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--secondary);">No product sales data available.</td></tr>';
-            } else {
-                d.products.forEach(function(p) {
-                    var rev = parseFloat(p.total_rev) || 0;
-                    var margin = rev > 0 ? 0 : 0; // simplified — no cost in this simplified response
-                    rows += '<tr>'+
-                        '<td><strong>'+esc(p.name)+'</strong></td>'+
-                        '<td>'+esc(p.category||'N/A')+'</td>'+
-                        '<td>'+p.bulk_qty+' pkg<br><small>RWF '+fmt(p.bulk_rev)+'</small></td>'+
-                        '<td>'+p.retail_qty+' pcs<br><small>RWF '+fmt(p.retail_rev)+'</small></td>'+
-                        '<td class="revenue-value">RWF '+fmt(rev)+'</td>'+
-                        '<td>'+p.bulk_cnt+' bulk / '+p.retail_cnt+' retail</td>'+
-                        '</tr>';
-                });
-            }
+            _prodData     = d.products || [];
+            _prodTotalRev = d.total_rev || 0;
 
             var html = '<div class="table-responsive">'+
                 '<table class="table" id="tblProductRevenue">'+
                 '<thead><tr>'+
                 '<th>Product</th><th>Category</th><th>Bulk Sales</th>'+
                 '<th>Retail Sales</th><th>Revenue</th><th>Transactions</th>'+
-                '</tr></thead><tbody>'+rows+'</tbody>'+
+                '</tr></thead><tbody></tbody>'+
                 '<tfoot><tr><td colspan="4" style="font-weight:700;text-align:right;">All-time Total</td>'+
-                '<td class="revenue-value">RWF '+fmt(d.total_rev)+'</td>'+
+                '<td class="revenue-value">RWF '+_prodFmt(_prodTotalRev)+'</td>'+
                 '<td></td></tr></tfoot>'+
                 '</table></div>';
             document.getElementById('profitability-body').innerHTML = html;
-            if (typeof createAdvancedTableSearch === 'function') {
-                createAdvancedTableSearch('', 'tblProductRevenue', []);
-            }
+            renderProdPage();
         })
         .catch(function() {
             document.getElementById('profitability-body').innerHTML =

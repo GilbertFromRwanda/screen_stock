@@ -382,6 +382,121 @@
         }
     }
     
+    /* ── Tabs ───────────────────────────────────────────────────────────────────── */
+    .rev-tabs-wrap {
+        background: #fff;
+        border: 1px solid var(--profit-border);
+        border-radius: var(--profit-radius);
+        margin-top: 32px;
+        overflow: hidden;
+    }
+    .rev-tabs-bar {
+        display: flex;
+        border-bottom: 2px solid var(--profit-border);
+        background: #f8fafc;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .rev-tabs-bar::-webkit-scrollbar { display: none; }
+    .rev-tab {
+        flex-shrink: 0;
+        padding: 14px 26px;
+        border: none;
+        background: transparent;
+        font-size: 13px;
+        font-weight: 500;
+        color: #64748b;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition: color .15s, border-color .15s, background .15s;
+        white-space: nowrap;
+    }
+    .rev-tab:hover:not(.active) { color: #0f172a; background: #f1f5f9; }
+    .rev-tab.active {
+        color: var(--profit-primary);
+        border-bottom-color: var(--profit-primary);
+        background: #fff;
+        font-weight: 600;
+    }
+    .rev-tab-panel { display: none; padding: 24px; }
+    .rev-tab-panel.active { display: block; }
+    .rev-tab-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0 0 18px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Pagination bar ─────────────────────────────────────────────────────────── */
+    .rev-pag-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        padding: 10px 16px;
+        background: #fff;
+        border: 1px solid var(--profit-border);
+        border-radius: var(--profit-radius);
+        flex-wrap: wrap;
+    }
+    .rev-pag-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 14px;
+        border: 1px solid var(--profit-border);
+        border-radius: 8px;
+        background: #fff;
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background .15s, border-color .15s;
+        line-height: 1;
+    }
+    .rev-pag-btn:hover:not(:disabled) {
+        background: #f8fafc;
+        border-color: #94a3b8;
+    }
+    .rev-pag-btn:disabled {
+        opacity: .38;
+        cursor: default;
+    }
+    .rev-pag-info {
+        font-size: 13px;
+        color: #64748b;
+        padding: 0 4px;
+    }
+    .rev-pag-info strong {
+        color: #0f172a;
+        font-weight: 600;
+    }
+    .rev-pag-size-wrap {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .rev-pag-size-label {
+        font-size: 12px;
+        color: #64748b;
+        white-space: nowrap;
+    }
+    .rev-pag-size-sel {
+        padding: 5px 10px;
+        border: 1px solid var(--profit-border);
+        border-radius: 8px;
+        font-size: 13px;
+        background: #fff;
+        color: #0f172a;
+        cursor: pointer;
+        transition: border-color .15s;
+    }
+    .rev-pag-size-sel:focus { outline: none; border-color: var(--profit-primary); }
+
     /* Dark mode support */
     .dark .profit-card,
     .dark .cost-breakdown,
