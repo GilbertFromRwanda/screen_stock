@@ -9,19 +9,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust'])) {
     $pid        = (int)$_POST['product_id'];
     $wh_qty     = max(0, (int)$_POST['wh_qty']);
     $rt_qty     = max(0, (int)$_POST['rt_qty']);
+    $rt_price   = max(0, (float)$_POST['rt_price']);
+    $pkg_price  = max(0, (float)$_POST['pkg_price']);
     $reason_raw = trim($_POST['reason'] ?? '');
     $reason     = mysqli_real_escape_string($conn, $reason_raw);
 
-    $old_wh_res = mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id=$pid");
-    $old_wh_row = $old_wh_res ? mysqli_fetch_assoc($old_wh_res) : false;
-    $old_wh     = $old_wh_row ? (int)$old_wh_row['quantity'] : 0;
+    $old_wh_row  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity, package_price FROM stock WHERE product_id=$pid"));
+    $old_wh      = $old_wh_row ? (int)$old_wh_row['quantity'] : 0;
+    $old_pkg_price = $old_wh_row ? (float)$old_wh_row['package_price'] : 0;
 
-    $old_rt_res = mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id=$pid");
-    $old_rt_row = $old_rt_res ? mysqli_fetch_assoc($old_rt_res) : false;
-    $old_rt     = $old_rt_row ? (int)$old_rt_row['pieces_quantity'] : 0;
+    $old_rt_row  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity, retail_price FROM retail_stock WHERE product_id=$pid"));
+    $old_rt      = $old_rt_row ? (int)$old_rt_row['pieces_quantity'] : 0;
+    $old_rt_price = $old_rt_row ? (float)$old_rt_row['retail_price'] : 0;
 
-    mysqli_query($conn, "UPDATE stock SET quantity=$wh_qty WHERE product_id=$pid");
-    mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity=$rt_qty WHERE product_id=$pid");
+    mysqli_query($conn, "UPDATE stock SET quantity=$wh_qty, package_price=$pkg_price, retail_price=$rt_price WHERE product_id=$pid");
+    mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity=$rt_qty, retail_price=$rt_price WHERE product_id=$pid");
+
+    // Update purchase_levels for the most recent purchase of this product
+    $lp = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM purchases WHERE product_id=$pid ORDER BY id DESC LIMIT 1"));
+    if ($lp) {
+        $lp_id  = (int)$lp['id'];
+        $lr = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MIN(level_order) AS min_ord, MAX(level_order) AS max_ord FROM purchase_levels WHERE purchase_id=$lp_id"));
+        if ($lr && $lr['min_ord'] !== null) {
+            $min_ord = (int)$lr['min_ord'];
+            $max_ord = (int)$lr['max_ord'];
+            mysqli_query($conn, "UPDATE purchase_levels SET selling_price=$pkg_price WHERE purchase_id=$lp_id AND level_order=$min_ord");
+            if ($max_ord !== $min_ord) {
+                mysqli_query($conn, "UPDATE purchase_levels SET selling_price=$rt_price WHERE purchase_id=$lp_id AND level_order=$max_ord");
+            }
+        }
+    }
+
     recalcStockValue($conn, $pid);
 
     $today = date('Y-m-d');
@@ -29,9 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust'])) {
         mysqli_query($conn, "INSERT INTO stock_movements (product_id, pieces_moved, moved_date, notes)
             VALUES ($pid, 0, '$today', 'Manual adjust — $reason')");
     }
-    logActivity($conn,$_SESSION['user_id'],  'STOCK_ADJUST','"Manual stock adjust product_id=$pid reason=$reason_raw"', 'stock', $pid,
-        ['wh_qty' => $old_wh, 'rt_qty' => $old_rt],
-        ['wh_qty' => $wh_qty, 'rt_qty' => $rt_qty]);
+    logActivity($conn, $_SESSION['user_id'], 'STOCK_ADJUST', "Manual stock adjust product_id=$pid reason=$reason_raw", 'stock', $pid,
+        ['wh_qty' => $old_wh, 'rt_qty' => $old_rt, 'rt_price' => $old_rt_price, 'pkg_price' => $old_pkg_price],
+        ['wh_qty' => $wh_qty, 'rt_qty' => $rt_qty, 'rt_price' => $rt_price,     'pkg_price' => $pkg_price]);
 
     header('Content-Type: application/json');
     echo json_encode(['ok' => true]);
@@ -93,7 +111,7 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
         .modal-overlay.open { display:flex; }
         .modal-box {
             background:#fff; border-radius:16px; padding:28px 32px;
-            width:100%; max-width:420px; box-shadow:0 20px 60px rgba(0,0,0,.2);
+            width:100%; max-width:520px; box-shadow:0 20px 60px rgba(0,0,0,.2);
         }
         .modal-box h3 { margin:0 0 18px; font-size:16px; }
         .modal-field { margin-bottom:14px; }
@@ -261,7 +279,7 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
                     </td>
                     <td>
                         <button class="btn btn-secondary btn-sm"
-                                onclick="openModal(<?php echo $r['id']; ?>, <?php echo htmlspecialchars(json_encode($r['name'])); ?>, <?php echo $r['wh_qty']; ?>, <?php echo $r['rt_qty']; ?>)">
+                                onclick="openModal(<?php echo $r['id']; ?>, <?php echo htmlspecialchars(json_encode($r['name'])); ?>, <?php echo $r['wh_qty']; ?>, <?php echo $r['rt_qty']; ?>, <?php echo $r['rt_price']; ?>, <?php echo $r['pkg_price']; ?>)">
                             ✏ Adjust
                         </button>
                     </td>
@@ -302,15 +320,25 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
         <form id="adjForm">
             <input type="hidden" name="adjust" value="1">
             <input type="hidden" name="product_id" id="fPid">
-            <div class="modal-field">
-                <label>Warehouse qty (packages)</label>
-                <input type="number" name="wh_qty" id="fWh" min="0" required>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="modal-field" style="margin:0;">
+                    <label>Warehouse qty (pkgs)</label>
+                    <input type="number" name="wh_qty" id="fWh" min="0" required>
+                </div>
+                <div class="modal-field" style="margin:0;">
+                    <label>Bulk price / pkg (RWF)</label>
+                    <input type="number" name="pkg_price" id="fPkgPrice" min="0" step="1" required>
+                </div>
+                <div class="modal-field" style="margin:0;">
+                    <label>Retail qty (pcs)</label>
+                    <input type="number" name="rt_qty" id="fRt" min="0" required>
+                </div>
+                <div class="modal-field" style="margin:0;">
+                    <label>Retail price / pc (RWF)</label>
+                    <input type="number" name="rt_price" id="fRtPrice" min="0" step="1" required>
+                </div>
             </div>
-            <div class="modal-field">
-                <label>Retail qty (pieces)</label>
-                <input type="number" name="rt_qty" id="fRt" min="0" required>
-            </div>
-            <div class="modal-field">
+            <div class="modal-field" style="margin-top:14px;">
                 <label>Reason (optional — saved to movement log)</label>
                 <textarea name="reason" id="fReason" placeholder="e.g. Physical count correction"></textarea>
             </div>
@@ -324,12 +352,14 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
 
 <script src="script.js"></script>
 <script>
-function openModal(pid, name, whQty, rtQty) {
+function openModal(pid, name, whQty, rtQty, rtPrice, pkgPrice) {
     document.getElementById('modalTitle').textContent = 'Adjust — ' + name;
-    document.getElementById('fPid').value = pid;
-    document.getElementById('fWh').value  = whQty;
-    document.getElementById('fRt').value  = rtQty;
-    document.getElementById('fReason').value = '';
+    document.getElementById('fPid').value      = pid;
+    document.getElementById('fWh').value       = whQty;
+    document.getElementById('fRt').value       = rtQty;
+    document.getElementById('fRtPrice').value  = rtPrice;
+    document.getElementById('fPkgPrice').value = pkgPrice;
+    document.getElementById('fReason').value   = '';
     document.getElementById('modal').classList.add('open');
     document.getElementById('fWh').focus();
 }
