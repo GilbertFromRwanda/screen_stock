@@ -155,6 +155,9 @@ try {
                     <?php endif; ?>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
                     <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>">Run Updates</a>
+                    <a href="backup.php" class="tn-drop-item">&#11015; Backup</a>
+                    <?php endif; ?>
+                    <?php if ($role === 'superadmin'): ?>
                     <a href="database.php"   class="tn-drop-item<?= $current_page==='database.php'  ?' active':'' ?>">Database</a>
                     <?php endif; ?>
                 </div>

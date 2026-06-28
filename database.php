@@ -2,7 +2,7 @@
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
-if (($_SESSION['role'] ?? '') !== 'superadmin' && $_SESSION['role']!== 'admin') {
+if (($_SESSION['role'] ?? '') !== 'superadmin') {
     $_SESSION['flash_error'] = "Super admin access only.";
     redirect('dashboard.php');
 }
@@ -130,52 +130,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'explain') {
     exit;
 }
 
-// ── Database Backup (download as .sql) ───────────────────────────────────────
-if (isset($_GET['action']) && $_GET['action'] === 'backup') {
-    $db_name  = DB_NAME;
-    $filename = 'backup_' . $db_name . '_' . date('Y-m-d_H-i-s') . '.sql';
-
-    header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Pragma: no-cache');
-    header('Expires: 0');
-
-    echo "-- Database Backup: $db_name\n";
-    echo "-- Generated: " . date('Y-m-d H:i:s') . "\n\n";
-    echo "SET FOREIGN_KEY_CHECKS = 0;\n\n";
-
-    $tables_q = mysqli_query($conn, "SHOW TABLES");
-    while ($tbl_row = mysqli_fetch_array($tables_q)) {
-        $table = $tbl_row[0];
-
-        $create_q   = mysqli_query($conn, "SHOW CREATE TABLE `$table`");
-        $create_row = mysqli_fetch_assoc($create_q);
-        echo "DROP TABLE IF EXISTS `$table`;\n";
-        echo $create_row['Create Table'] . ";\n\n";
-
-        $rows_q = mysqli_query($conn, "SELECT * FROM `$table`");
-        if (mysqli_num_rows($rows_q) > 0) {
-            $fields = mysqli_fetch_fields($rows_q);
-            $cols   = array_map(fn($f) => "`{$f->name}`", $fields);
-            $prefix = "INSERT INTO `$table` (" . implode(', ', $cols) . ") VALUES\n";
-            $batch  = [];
-
-            while ($row = mysqli_fetch_row($rows_q)) {
-                $vals = array_map(fn($v) => $v === null ? 'NULL' : "'" . mysqli_real_escape_string($conn, $v) . "'", $row);
-                $batch[] = '(' . implode(', ', $vals) . ')';
-                if (count($batch) >= 500) {
-                    echo $prefix . implode(",\n", $batch) . ";\n";
-                    $batch = [];
-                }
-            }
-            if ($batch) echo $prefix . implode(",\n", $batch) . ";\n";
-            echo "\n";
-        }
-    }
-
-    echo "SET FOREIGN_KEY_CHECKS = 1;\n";
-    exit;
-}
 
 // ── Allowed tables whitelist (prevents SQL injection via tab= param) ──────────
 $allowed_tables_q = mysqli_query($conn, "SHOW TABLES");
@@ -250,24 +204,49 @@ $is_superadmin = ($_SESSION['role'] ?? '') === 'superadmin';
 // Groups: transactional (always offered), products, users
 $CLEAR_GROUPS = [
     'transactions' => [
-        'label'  => 'All Sales & Finance',
-        'desc'   => 'sales_bulk, sales_retail, sales_external, loans, loan_payments, loan_clients, expenses, consumption, weekly_revenue, boaster',
-        'tables' => ['sales_bulk','sales_retail','sales_external','loans','loan_payments','loan_clients','expenses','consumption','weekly_revenue','boaster'],
+        'label'  => 'Sales & Finance',
+        'desc'   => 'sales_bulk, sales_retail, sales_external, refunds, loans, loan_payments, loan_clients, client_payments, product_owners, expenses, consumption, weekly_revenue, boaster',
+        'tables' => ['sales_bulk','sales_retail','sales_external','refunds','loans','loan_payments','loan_clients','client_payments','product_owners','expenses','consumption','weekly_revenue','boaster'],
+    ],
+    'orders' => [
+        'label'  => 'Orders',
+        'desc'   => 'orders, order_items, order_owners',
+        'tables' => ['order_items','orders','order_owners'],
     ],
     'stock_data' => [
         'label'  => 'Stock & Purchases',
-        'desc'   => 'stock, retail_stock, stock_movements, purchases, purchase_levels',
-        'tables' => ['purchase_levels','purchases','stock_movements','retail_stock','stock'],
+        'desc'   => 'stock, retail_stock, stock_movements, purchases, purchase_levels, suppliers, stock_value_cache',
+        'tables' => ['purchase_levels','purchases','stock_movements','retail_stock','stock','suppliers','stock_value_cache'],
+    ],
+    'wishlist' => [
+        'label'  => 'Wishlist',
+        'desc'   => 'wishlist — product requests from clients',
+        'tables' => ['wishlist'],
+    ],
+    'notes' => [
+        'label'  => 'Notes',
+        'desc'   => 'notes — all user notes',
+        'tables' => ['notes'],
+    ],
+    'audit_log' => [
+        'label'  => 'Audit Log',
+        'desc'   => 'audit_log — clears all activity history',
+        'tables' => ['audit_log'],
     ],
     'products' => [
         'label'  => 'Products',
-        'desc'   => 'products table (all product definitions)',
+        'desc'   => 'products table — all product definitions',
         'tables' => ['products'],
     ],
     'users' => [
-        'label'  => 'Users',
-        'desc'   => 'users table — you will be logged out',
-        'tables' => ['users'],
+        'label'  => 'Users & Permissions',
+        'desc'   => 'users, user_permissions — you will be logged out',
+        'tables' => ['user_permissions','users'],
+    ],
+    'settings' => [
+        'label'  => 'Settings',
+        'desc'   => 'currency_rates, companies — resets all company & currency config',
+        'tables' => ['currency_rates','companies'],
     ],
 ];
 
@@ -452,32 +431,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
             background: #fff; border: 2px solid #fca5a5;
             border-radius: 12px; padding: 20px 22px; margin-bottom: 20px;
         }
-        .clear-panel-head {
-            display: flex; align-items: center; gap: 10px; cursor: pointer;
-            user-select: none;
-        }
-        .clear-panel-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: #991b1b; }
-        .clear-panel-body { margin-top: 16px; }
+        .clear-panel h3 { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: #991b1b; }
+        .clear-panel > p { font-size: 12.5px; color: #7f1d1d; margin: 0 0 16px; }
         .clear-groups {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-            gap: 10px; margin-bottom: 16px;
+            gap: 12px;
         }
         .clear-group-card {
-            border: 2px solid var(--gray-200); border-radius: 10px; padding: 12px 14px;
-            cursor: pointer; transition: border-color .15s, background .15s;
+            border: 2px solid var(--gray-200); border-radius: 10px; padding: 14px 16px;
         }
-        .clear-group-card:has(input:checked) {
-            border-color: #f87171; background: #fff1f2;
+        .cg-title { font-size: 13.5px; font-weight: 700; color: var(--dark); margin-bottom: 3px; }
+        .cg-desc  { font-size: 11.5px; color: var(--secondary); line-height: 1.4; margin-bottom: 12px; }
+        .clear-group-card.danger-group { border-color: #fca5a5; background: #fff1f2; }
+        .btn-clear {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: var(--radius); font-size: 12.5px;
+            font-weight: 600; cursor: pointer; border: 1px solid #dc2626;
+            background: #dc2626; color: #fff; transition: background .15s;
         }
-        .clear-group-card label {
-            display: flex; align-items: flex-start; gap: 10px; cursor: pointer;
-        }
-        .clear-group-card input[type=checkbox] { margin-top: 2px; flex-shrink: 0; accent-color: #dc2626; }
-        .cg-title { font-size: 13.5px; font-weight: 700; color: var(--dark); }
-        .cg-desc  { font-size: 11.5px; color: var(--secondary); margin-top: 3px; line-height: 1.4; }
-        .clear-group-card.danger-group:has(input:checked) {
-            border-color: #dc2626; background: #fee2e2;
-        }
+        .btn-clear:hover { background: #b91c1c; }
+        .btn-clear.danger { background: #7f1d1d; border-color: #7f1d1d; }
+        .btn-clear.danger:hover { background: #450a0a; }
     </style>
 </head>
 <body>
@@ -488,10 +462,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
 
         <div class="db-header">
             <h1>Database Management</h1>
-            <a href="database.php?action=backup" class="btn btn-primary"
-               style="font-size:13.5px;padding:8px 18px;text-decoration:none;">
-                ⬇ Backup Database
-            </a>
         </div>
 
         <?php if ($flash_ok):  ?><div class="flash-ok"><?= htmlspecialchars($flash_ok) ?></div><?php endif; ?>
@@ -514,49 +484,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
         <!-- ── Clear Database (superadmin only) ──────────────────────────────── -->
         <?php if ($is_superadmin): ?>
         <div class="clear-panel">
-            <div class="clear-panel-head" onclick="toggleClearPanel()">
-                <span style="font-size:18px;">🗑️</span>
-                <h3>Clear Database Data</h3>
-                <span id="clearChevron" style="margin-left:auto;font-size:12px;color:#991b1b;transition:transform .2s;">&#9654;</span>
-            </div>
-
-            <div class="clear-panel-body" id="clearPanelBody" style="display:none;">
-                <p style="font-size:13px;color:#7f1d1d;margin:0 0 14px;">
-                    Select which groups to wipe. <strong>Products and Users are opt-in</strong> — unchecked by default.
-                    This action is <strong>irreversible</strong>.
-                </p>
-
-                <form method="POST" id="clearForm" onsubmit="return confirmClear()">
-                    <div class="clear-groups">
-                        <?php foreach ($CLEAR_GROUPS as $key => $grp):
-                            $is_danger = in_array($key, ['products','users']);
-                        ?>
-                        <div class="clear-group-card<?= $is_danger ? ' danger-group' : '' ?>">
-                            <label>
-                                <input type="checkbox" name="clear_groups[]" value="<?= $key ?>"
-                                    <?= $is_danger ? '' : 'checked' ?>>
-                                <div>
-                                    <div class="cg-title">
-                                        <?= $is_danger ? '⚠️ ' : '' ?>
-                                        <?= htmlspecialchars($grp['label']) ?>
-                                    </div>
-                                    <div class="cg-desc"><?= htmlspecialchars($grp['desc']) ?></div>
-                                </div>
-                            </label>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
-
-                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                        <button type="submit" name="clear_db" class="btn btn-danger"
-                                style="background:#dc2626;border-color:#dc2626;">
-                            🗑 Clear Selected Groups
+            <h3>🗑️ Clear Database Data</h3>
+            <p>Each button permanently deletes all rows in that group. You will be asked to confirm.</p>
+            <div class="clear-groups">
+                <?php foreach ($CLEAR_GROUPS as $key => $grp):
+                    $is_danger = in_array($key, ['products','users','settings']);
+                ?>
+                <div class="clear-group-card<?= $is_danger ? ' danger-group' : '' ?>">
+                    <div class="cg-title"><?= $is_danger ? '⚠️ ' : '' ?><?= htmlspecialchars($grp['label']) ?></div>
+                    <div class="cg-desc"><?= htmlspecialchars($grp['desc']) ?></div>
+                    <form method="POST"
+                          onsubmit="return confirmClearGroup(<?= htmlspecialchars(json_encode($grp['label'])) ?>, <?= in_array($key, ['users','settings']) ? 'true' : 'false' ?>)">
+                        <input type="hidden" name="clear_groups[]" value="<?= $key ?>">
+                        <button type="submit" name="clear_db"
+                                class="btn-clear<?= $is_danger ? ' danger' : '' ?>">
+                            🗑 Clear
                         </button>
-                        <span style="font-size:12px;color:#991b1b;">
-                            You will be asked to confirm before anything is deleted.
-                        </span>
-                    </div>
-                </form>
+                    </form>
+                </div>
+                <?php endforeach; ?>
             </div>
         </div>
         <?php endif; ?>
@@ -611,31 +557,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
 </div>
 
 <script>
-function toggleClearPanel() {
-    var body    = document.getElementById('clearPanelBody');
-    var chevron = document.getElementById('clearChevron');
-    var open    = body.style.display !== 'none';
-    body.style.display      = open ? 'none' : 'block';
-    chevron.style.transform = open ? '' : 'rotate(90deg)';
-}
-
-function confirmClear() {
-    var checked = document.querySelectorAll('#clearForm input[type=checkbox]:checked');
-    if (checked.length === 0) {
-        alert('No groups selected.');
-        return false;
-    }
-    var names = Array.from(checked).map(function(cb) {
-        return cb.closest('.clear-group-card').querySelector('.cg-title').textContent.trim();
-    });
-    var hasUsers    = Array.from(checked).some(function(cb) { return cb.value === 'users'; });
-    var hasProducts = Array.from(checked).some(function(cb) { return cb.value === 'products'; });
-
-    var msg = 'You are about to PERMANENTLY DELETE all data in:\n\n  • ' + names.join('\n  • ');
-    if (hasUsers)    msg += '\n\n⚠️ Clearing Users will log you out immediately!';
-    if (hasProducts) msg += '\n\n⚠️ Clearing Products will also remove all linked stock and sales data!';
+function confirmClearGroup(label, isUsers) {
+    var msg = 'PERMANENTLY DELETE all data in "' + label + '"?';
+    if (isUsers) msg += '\n\n⚠️ This will log you out immediately!';
     msg += '\n\nThis CANNOT be undone. Type YES to confirm:';
-
     var answer = prompt(msg);
     return answer !== null && answer.trim().toUpperCase() === 'YES';
 }
