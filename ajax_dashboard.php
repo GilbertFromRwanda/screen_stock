@@ -63,8 +63,8 @@ $month_sales = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
 "))['v'] ?? 0);
 
 $yesterday_t = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE((SELECT SUM(total_amount) FROM sales_bulk   WHERE sale_date='$yesterday' AND refunded=0 $ca),0)
-          +COALESCE((SELECT SUM(total_amount) FROM sales_retail WHERE sale_date='$yesterday' AND refunded=0 $ca),0) v
+    SELECT COALESCE((SELECT SUM(total_amount) FROM sales_bulk   WHERE sale_date='$yesterday' AND refunded=0 AND has_loan=0 $ca),0)
+          +COALESCE((SELECT SUM(total_amount) FROM sales_retail WHERE sale_date='$yesterday' AND refunded=0 AND has_loan=0 $ca),0) v
 "))['v'] ?? 0);
 
 // ── Payment breakdown ─────────────────────────────────────────────────────────
@@ -138,17 +138,6 @@ if ($today_weekday == 0) {
 // Escape values for SQL safety
 $week_sun_chart_escaped = mysqli_real_escape_string($conn, $week_sun_chart);
 $week_sat_chart_escaped = mysqli_real_escape_string($conn, $week_sat_chart);
-
-// Function to add company/tenant filtering (define if not exists)
-if (!function_exists('cidAndFor')) {
-    function cidAndFor($alias) {
-        global $company_id; // Assuming you have a company ID variable
-        if (isset($company_id) && $company_id > 0) {
-            return " AND $alias.company_id = " . intval($company_id);
-        }
-        return "";
-    }
-}
 
 // Build the query
 $chart_query = "

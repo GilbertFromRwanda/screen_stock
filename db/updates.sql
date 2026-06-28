@@ -179,3 +179,8 @@ CREATE TABLE IF NOT EXISTS `client_payments` (
     INDEX `idx_cp_company` (`company_id`),
     INDEX `idx_cp_date`    (`payment_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+ALTER TABLE stock_value_cache
+  ADD COLUMN IF NOT EXISTS company_id INT NOT NULL DEFAULT 0 AFTER product_id,
+  ADD UNIQUE KEY uq_product (product_id, company_id);
