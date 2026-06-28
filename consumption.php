@@ -16,26 +16,31 @@ $receivers_query = mysqli_query($conn, "
 $receivers_arr = [];
 while ($r = mysqli_fetch_assoc($receivers_query)) $receivers_arr[] = $r;
 
-// Get products with retail price
+// Get products with available stock (retail or warehouse)
 $products_query = mysqli_query($conn,
     "SELECT p.id, p.name, p.category,
         COALESCE(rs.retail_price, s.retail_price, 0) AS retail_price,
-        COALESCE(rs.pieces_quantity, 0) AS stock_qty
+        COALESCE(rs.pieces_quantity, 0) AS retail_qty,
+        COALESCE(s.quantity, 0) AS wh_qty
     FROM products p
     LEFT JOIN retail_stock rs ON rs.product_id = p.id " . cidAndFor('rs') . "
     LEFT JOIN stock s ON s.product_id = p.id " . cidAndFor('s') . "
-    WHERE p.deleted = 0 ORDER BY p.name"
+    WHERE p.deleted = 0
+    HAVING (retail_qty + wh_qty) > 0
+    ORDER BY p.name"
 );
 $products_arr = [];
 while ($p = mysqli_fetch_assoc($products_query)) {
     $products_arr[] = $p;
 }
 
+
 // Handle Add Consumption (normal POST or AJAX)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_consumption'])) {
     $is_ajax  = !empty($_POST['ajax']);
     $product_id       = (int)$_POST['product_id'];
     $qty              = (int)$_POST['qty'];
+    $source           = in_array($_POST['source'] ?? '', ['retail', 'warehouse']) ? $_POST['source'] : 'retail';
     $amount           = mysqli_real_escape_string($conn, $_POST['amount']);
     $paid_amount      = mysqli_real_escape_string($conn, $_POST['paid_amount']);
     $done_by          = mysqli_real_escape_string($conn, trim($_POST['done_by']));
@@ -47,14 +52,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_consumption'])) {
         $_SESSION['flash_error'] = $msg;
     } else {
         $insert = mysqli_query($conn, "
-            INSERT INTO consumption (company_id, product_id, qty, amount, paid_amount, done_by, consumption_date)
-            VALUES (" . cidSql() . ", '$product_id', '$qty', '$amount', '$paid_amount', '$done_by', '$consumption_date')
+            INSERT INTO consumption (company_id, product_id, qty, source, amount, paid_amount, done_by, consumption_date)
+            VALUES (" . cidSql() . ", '$product_id', '$qty', '$source', '$amount', '$paid_amount', '$done_by', '$consumption_date')
         ");
         if ($insert) {
-            mysqli_query($conn, "
-                UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty
-                WHERE product_id = $product_id " . cidAnd() . "
-            ");
+            if ($source === 'warehouse') {
+                mysqli_query($conn, "UPDATE stock SET quantity = quantity - $qty WHERE product_id = $product_id " . cidAnd());
+            } else {
+                mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id " . cidAnd());
+            }
             if ($is_ajax) { header('Content-Type: application/json'); echo json_encode(['success' => true, 'message' => 'Consumption recorded successfully.']); exit; }
             $_SESSION['flash_success'] = "Consumption recorded successfully.";
         } else {
@@ -190,7 +196,11 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
     // Restore stock
     $con = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM consumption WHERE id=$del_id"));
     if ($con) {
-        mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$con['qty']} WHERE product_id = {$con['product_id']}");
+        if (($con['source'] ?? 'retail') === 'warehouse') {
+            mysqli_query($conn, "UPDATE stock SET quantity = quantity + {$con['qty']} WHERE product_id = {$con['product_id']} " . cidAnd());
+        } else {
+            mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$con['qty']} WHERE product_id = {$con['product_id']} " . cidAnd());
+        }
         mysqli_query($conn, "DELETE FROM consumption WHERE id=$del_id");
         $_SESSION['flash_success'] = "Consumption record deleted.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Delete Consumption', "Deleted consumption #{$del_id}",
@@ -522,7 +532,8 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
                             <div class="searchable-select-option"
                                 data-value="<?php echo $p['id']; ?>"
                                 data-price="<?php echo $p['retail_price']; ?>"
-                                data-stock="<?php echo $p['stock_qty']; ?>">
+                                data-retail-qty="<?php echo $p['retail_qty']; ?>"
+                                data-wh-qty="<?php echo $p['wh_qty']; ?>">
                                 <?php echo htmlspecialchars($p['category'] . '-' . $p['name']); ?>
                             </div>
                         <?php endforeach; ?>
@@ -533,6 +544,13 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
             <div class="form-group">
                 <label for="qty">Quantity*</label>
                 <input type="number" id="qty" name="qty" min="1" required value="1">
+            </div>
+            <div class="form-group">
+                <label for="source">Deduct From*</label>
+                <select id="source" name="source" onchange="updateStockHint()">
+                    <option value="retail">Retail Stock</option>
+                    <option value="warehouse">Warehouse Stock</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="amount">Amount (RWF)*</label>
@@ -639,23 +657,60 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
 
 <script src="script.js"></script>
 <script>
-var unitPrice = 0; // retail price of selected product
+var unitPrice = 0;
+var currentRetailQty = 0;
+var currentWhQty = 0;
+
+function getSaveBtn() { return document.querySelector('#consumptionForm button[type="submit"]'); }
 
 function calcAmount() {
-    var qty = parseInt(document.getElementById('qty').value) || 0;
-    if (unitPrice > 0) {
-        document.getElementById('amount').value = qty * unitPrice;
+    var qty    = parseInt(document.getElementById('qty').value) || 0;
+    var pid    = document.getElementById('product_id').value;
+    var source = document.getElementById('source').value;
+    var avail  = source === 'warehouse' ? currentWhQty : currentRetailQty;
+    var alertBox = document.getElementById('modalAlert');
+
+    if (unitPrice > 0) document.getElementById('amount').value = qty * unitPrice;
+
+    if (pid && qty > 0 && qty > avail) {
+        alertBox.className = 'alert alert-danger';
+        alertBox.textContent = 'Quantity (' + qty + ') exceeds available ' + (source === 'warehouse' ? 'WH' : 'retail') + ' stock (' + avail + ' pcs).';
+        alertBox.style.display = 'block';
+        getSaveBtn().disabled = true;
+    } else {
+        alertBox.style.display = 'none';
+        updateStockHint(); // re-evaluate source availability
     }
 }
 
-function applyPrice(price, stock) {
-    unitPrice = parseFloat(price) || 0;
-    var hint = document.getElementById('priceHint');
-    if (unitPrice > 0) {
-        hint.textContent = 'Unit price: RWF ' + unitPrice.toLocaleString() + '  |  Stock: ' + stock + ' pcs';
+function updateStockHint() {
+    var source  = document.getElementById('source').value;
+    var avail   = source === 'warehouse' ? currentWhQty : currentRetailQty;
+    var hint    = document.getElementById('priceHint');
+    var pid     = document.getElementById('product_id').value;
+    var saveBtn = getSaveBtn();
+
+    if (!pid) { hint.textContent = ''; return; }
+
+    var label = source === 'warehouse' ? 'WH' : 'Retail';
+    var pricePart = unitPrice > 0 ? 'Unit price: RWF ' + unitPrice.toLocaleString() : 'No price set — enter amount manually.';
+    var stockPart = 'Retail: ' + currentRetailQty + ' pcs  |  WH: ' + currentWhQty + ' pcs';
+
+    if (avail <= 0) {
+        hint.innerHTML = pricePart + '  |  ' + stockPart +
+            '&nbsp;&nbsp;<span style="color:#dc2626;font-weight:600;">&#9888; No stock in ' + label + '</span>';
+        saveBtn.disabled = true;
     } else {
-        hint.textContent = 'No price set — enter amount manually.';
+        hint.textContent = pricePart + '  |  ' + stockPart + '  |  Available: ' + avail + ' pcs';
+        saveBtn.disabled = false;
     }
+}
+
+function applyPrice(price, retailQty, whQty) {
+    unitPrice = parseFloat(price) || 0;
+    currentRetailQty = parseInt(retailQty) || 0;
+    currentWhQty     = parseInt(whQty) || 0;
+    updateStockHint();
     calcAmount();
 }
 
@@ -706,7 +761,7 @@ function applyPrice(price, stock) {
         searchInput.value = opt.textContent.trim();
         dropdown.classList.remove('open');
         highlighted = -1;
-        applyPrice(opt.getAttribute('data-price'), opt.getAttribute('data-stock'));
+        applyPrice(opt.getAttribute('data-price'), opt.getAttribute('data-retail-qty'), opt.getAttribute('data-wh-qty'));
     }
 })();
 
@@ -771,6 +826,22 @@ document.getElementById('consumptionForm').addEventListener('submit', function(e
         return;
     }
 
+    var source = document.getElementById('source').value;
+    var avail  = source === 'warehouse' ? currentWhQty : currentRetailQty;
+    var qty    = parseInt(document.getElementById('qty').value) || 0;
+    if (avail <= 0) {
+        alertBox.className = 'alert alert-danger';
+        alertBox.textContent = 'No stock available in ' + (source === 'warehouse' ? 'Warehouse' : 'Retail') + ' for this product.';
+        alertBox.style.display = 'block';
+        return;
+    }
+    if (qty > avail) {
+        alertBox.className = 'alert alert-danger';
+        alertBox.textContent = 'Quantity (' + qty + ') exceeds available stock (' + avail + ' pcs).';
+        alertBox.style.display = 'block';
+        return;
+    }
+
     btn.disabled = true;
     btn.textContent = 'Saving...';
     alertBox.style.display = 'none';
@@ -786,10 +857,11 @@ document.getElementById('consumptionForm').addEventListener('submit', function(e
                 closeModal('addConsumptionModal');
                 // Reset form
                 form.reset();
-                unitPrice = 0;
+                unitPrice = 0; currentRetailQty = 0; currentWhQty = 0;
                 document.getElementById('priceHint').textContent = '';
                 document.getElementById('product_search').value = '';
                 document.getElementById('product_id').value = '';
+                document.getElementById('source').value = 'retail';
                 // Reload page to show new row
                 location.reload();
             } else {

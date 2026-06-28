@@ -340,10 +340,7 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
                         <!-- Col 2: Customer + shortcuts + loan fields -->
                         <div>
-                            <div class="form-group">
-                                <label>Customer Name</label>
-                                <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
-                            </div>
+                            
 
                             <div class="form-group" style="margin:0 0 16px;display:flex;flex-direction:column;gap:8px;">
                                 <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
@@ -387,6 +384,10 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                                     <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
                                 </div>
                                 <?php endif; ?>
+                                <div class="form-group">
+                                <label>Customer Name</label>
+                                <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
+                            </div>
                                 <div class="form-group">
                                     <label>Client Phone*</label>
                                     <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcBulkSplit()">

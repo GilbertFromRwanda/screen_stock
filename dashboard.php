@@ -103,7 +103,7 @@ $user_id    = (int)$_SESSION['user_id'];
 
             <div class="stat-card">
                 <div class="stat-icon">💵</div>
-                <div class="stat-label">Today's Revenue</div>
+                <div class="stat-label">Today's Profit</div>
                 <div class="stat-number" id="d-today-profit"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-footer" id="d-profit-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>

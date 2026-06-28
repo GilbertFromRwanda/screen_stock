@@ -5,6 +5,39 @@ if (!isLoggedIn()) redirect('login.php');
 
 global $conn;
 $user_id = (int)$_SESSION['user_id'];
+$role    = $_SESSION['role'] ?? 'staff';
+
+// ── AJAX: Delete ──────────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_order'])) {
+    header('Content-Type: application/json');
+    $id     = (int)$_POST['order_id'];
+    $reason = mysqli_real_escape_string($conn, trim($_POST['delete_reason'] ?? ''));
+
+    if (empty($reason)) {
+        echo json_encode(['success'=>false,'message'=>'A reason is required to delete an order.']);
+        exit;
+    }
+
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM `orders` WHERE id=$id " . cidAnd()));
+    if (!$row) {
+        echo json_encode(['success'=>false,'message'=>'Order not found.']);
+        exit;
+    }
+
+    $order_num = $row['order_number'] ?: "#$id";
+
+    logActivity($conn, $_SESSION['user_id'], 'DELETE', 'orders',
+        "Order $order_num permanently deleted. Reason: $reason", $id,
+        ['status'=>$row['status'],'total_amount'=>$row['total_amount'],'order_owner'=>$row['order_owner']],
+        []
+    );
+
+    mysqli_query($conn, "DELETE FROM order_items WHERE order_id=$id");
+    mysqli_query($conn, "DELETE FROM `orders` WHERE id=$id");
+
+    echo json_encode(['success'=>true,'message'=>"Order $order_num deleted permanently."]);
+    exit;
+}
 
 // ── AJAX: Cancel ──────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_order'])) {
@@ -606,6 +639,10 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
                 <button class="act-item" style="color:#16a34a;" onclick='openApproveModal(<?php echo $data; ?>);closeActMenus()'><i class="fas fa-check"></i> Approve</button>
                 <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
                 <?php endif; ?>
+                <?php if ($isPending && in_array($role, ['admin','manager','superadmin'])): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item danger" onclick='openDeleteOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-trash"></i> Delete</button>
+                <?php endif; ?>
             </div>
         </div>
     </td>
@@ -714,6 +751,30 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
     <div style="display:flex;gap:10px;">
         <button class="btn" style="flex:1;" onclick="closeModal('cancelModal')">Back</button>
         <button class="btn btn-danger" style="flex:1;" id="cancel_submit_btn" onclick="submitCancel()">Confirm Cancel</button>
+    </div>
+</div>
+</div>
+
+<!-- Delete modal -->
+<div id="deleteModal" class="modal">
+<div class="modal-box" style="max-width:420px;">
+    <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+    <div class="modal-title">Delete Order <span id="delete_order_num" style="color:var(--danger);"></span></div>
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:13px;color:#991b1b;">
+        &#9888; This permanently deletes the order and all its items. This cannot be undone.
+    </div>
+    <div style="padding:0 0 16px;">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">
+            Reason <span style="color:var(--danger);">*</span>
+        </label>
+        <textarea id="delete_reason_input" rows="3"
+            placeholder="e.g. duplicate entry, created by mistake…"
+            style="width:100%;padding:9px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;resize:vertical;box-sizing:border-box;"
+            oninput="document.getElementById('delete_submit_btn').disabled = this.value.trim().length < 3;"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;">
+        <button class="btn" style="flex:1;" onclick="closeModal('deleteModal')">Back</button>
+        <button class="btn btn-danger" style="flex:1;" id="delete_submit_btn" onclick="submitDelete()" disabled>Delete Permanently</button>
     </div>
 </div>
 </div>
@@ -1079,6 +1140,43 @@ function filterOrders() {
     document.querySelectorAll('#orders_tbody tr[id^="order_row_"]').forEach(function(row) {
         row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+var _deleteId = 0;
+function openDeleteOrder(id, orderNum) {
+    _deleteId = id;
+    document.getElementById('delete_order_num').textContent = orderNum || ('#' + id);
+    document.getElementById('delete_reason_input').value    = '';
+    document.getElementById('delete_submit_btn').disabled   = true;
+    document.getElementById('delete_submit_btn').textContent = 'Delete Permanently';
+    openModal('deleteModal');
+}
+function submitDelete() {
+    var btn    = document.getElementById('delete_submit_btn');
+    var reason = document.getElementById('delete_reason_input').value.trim();
+    if (reason.length < 3) return;
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    var fd = new FormData();
+    fd.append('delete_order',  '1');
+    fd.append('order_id',      _deleteId);
+    fd.append('delete_reason', reason);
+    fetch('orders.php', {method:'POST', body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) {
+                closeModal('deleteModal');
+                var row = document.getElementById('order_row_' + _deleteId);
+                if (row) row.remove();
+            } else {
+                btn.disabled = false; btn.textContent = 'Delete Permanently';
+            }
+        })
+        .catch(function(){
+            showToast('Network error.', false);
+            btn.disabled = false; btn.textContent = 'Delete Permanently';
+        });
 }
 
 // ── Thermal receipt print ─────────────────────────────────────────────────────

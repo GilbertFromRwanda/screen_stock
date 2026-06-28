@@ -26,16 +26,25 @@ try {
         <div class="topnav-menu" id="topnavMenu">
 
             <a href="dashboard.php" class="tn-item<?= $current_page==='dashboard.php' ? ' active':'' ?>">&#9635; Dashboard</a>
-            <a href="products.php"  class="tn-item<?= $current_page==='products.php'  ? ' active':'' ?>">&#9643; Products</a>
-            <a href="stock.php"     class="tn-item<?= $current_page==='stock.php'      ? ' active':'' ?>">&#8862; Stock</a>
 
-            <?php $pa = in_array($current_page,['purchases.php','new-purchase.php','purchase_advice.php']); ?>
+            <?php $ia = in_array($current_page,['products.php','stock.php','stock_adjust.php']); ?>
+            <div class="tn-dropdown<?= $ia?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">&#9643; Inventory <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="products.php" class="tn-drop-item<?= $current_page==='products.php'?' active':'' ?>">View Product List</a>
+                    <a href="stock.php"    class="tn-drop-item<?= $current_page==='stock.php'   ?' active':'' ?>">View Stock</a>
+                     <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
+                </div>
+            </div>
+
+            <?php $pa = in_array($current_page,['purchases.php','new-purchase.php','purchase_advice.php','wishlist.php']); ?>
             <div class="tn-dropdown<?= $pa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#10549; Purchases <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <a href="purchases.php"       class="tn-drop-item<?= $current_page==='purchases.php'       ?' active':'' ?>">View All</a>
                     <a href="new-purchase.php"    class="tn-drop-item<?= $current_page==='new-purchase.php'    ?' active':'' ?>">New Purchase</a>
                     <a href="purchase_advice.php" class="tn-drop-item<?= $current_page==='purchase_advice.php' ?' active':'' ?>">Purchase Advice</a>
+                    <a href="wishlist.php"         class="tn-drop-item<?= $current_page==='wishlist.php'        ?' active':'' ?>">&#9733; Wishlist</a>
                 </div>
             </div>
 
@@ -44,21 +53,21 @@ try {
                 <button class="tn-item tn-drop-btn" type="button">&#10548; Sales <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <a href="sales.php"         class="tn-drop-item<?= $current_page==='sales.php'         ?' active':'' ?>">View All</a>
-                    <a href="sale_bulk.php"     class="tn-drop-item<?= $current_page==='sale_bulk.php'     ?' active':'' ?>">New Bulk Sale</a>
-                    <a href="sale_retail.php"   class="tn-drop-item<?= $current_page==='sale_retail.php'   ?' active':'' ?>">New Retail Sale</a>
-                    <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>">New External Sale</a>
+                    <a href="sale_bulk.php"     class="tn-drop-item<?= $current_page==='sale_bulk.php'     ?' active':'' ?>">Bulk Sale</a>
+                    <a href="sale_retail.php"   class="tn-drop-item<?= $current_page==='sale_retail.php'   ?' active':'' ?>">Retail Sale</a>
+                    <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>">External Sale</a>
                 </div>
             </div>
-              <?php $fa = in_array($current_page,['loans.php','all_loans.php']); ?>
+
+            <?php $fa = in_array($current_page,['loans.php','all_loans.php']); ?>
             <div class="tn-dropdown<?= $fa?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">Loan <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button">Loans <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
-                    
-                    <a href="loans.php"    class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>">Loans by Client</a>
-                    <a href="all_loans.php"class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
-                    <!-- <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a> -->
+                    <a href="loans.php"     class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>">By Client</a>
+                    <a href="all_loans.php" class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
                 </div>
             </div>
+
             <?php $oa = in_array($current_page,['orders.php','order_new.php']); ?>
             <div class="tn-dropdown<?= $oa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">Orders <span class="tn-chev">&#9660;</span></button>
@@ -68,9 +77,17 @@ try {
                 </div>
             </div>
 
-            <a href="wishlist.php" class="tn-item<?= $current_page==='wishlist.php'?' active':'' ?>">&#9733; Wishlist</a>
-            <a href="notes.php"    class="tn-item<?= $current_page==='notes.php'   ?' active':'' ?>">&#10000; Notes</a>
-            <a href="losses.php"   class="tn-item<?= $current_page==='losses.php'   ?' active':'' ?>">&#10005; Loss</a>
+            <?php $ma = in_array($current_page,['losses.php','consumption.php','notes.php','qr_call.php']); ?>
+            <div class="tn-dropdown<?= $ma?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button">&#8942; More <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="losses.php"      class="tn-drop-item<?= $current_page==='losses.php'     ?' active':'' ?>">&#10005; Loss</a>
+                    <a href="consumption.php" class="tn-drop-item<?= $current_page==='consumption.php'?' active':'' ?>">&#9663; Consumption</a>
+                    <a href="notes.php"       class="tn-drop-item<?= $current_page==='notes.php'      ?' active':'' ?>">&#10000; Notes</a>
+                <a href="qr_call.php"    class="tn-drop-item<?= $current_page==='qr_call.php'   ?' active':'' ?>">&#128222; QR Code</a>
+                    
+                </div>
+            </div>
 
 
             <?php if (in_array($role,['admin','manager','superadmin'])): ?>
@@ -93,9 +110,7 @@ try {
                     <a href="companies.php"  class="tn-drop-item<?= $current_page==='companies.php' ?' active':'' ?>">Companies</a>
                     <?php endif; ?>
                     <a href="users.php"      class="tn-drop-item<?= $current_page==='users.php'     ?' active':'' ?>">Users</a>
-                    <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
                     <a href="audit_log.php"  class="tn-drop-item<?= $current_page==='audit_log.php' ?' active':'' ?>">Audit Log</a>
-                    <a href="qr_call.php"    class="tn-drop-item<?= $current_page==='qr_call.php'   ?' active':'' ?>">&#128222; QR Code</a>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
                     <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>">Run Updates</a>
                     <a href="database.php"   class="tn-drop-item<?= $current_page==='database.php'  ?' active':'' ?>">Database</a>

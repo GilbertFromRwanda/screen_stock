@@ -328,10 +328,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                 <label>My Commission (RWF)</label>
                                 <input type="text" id="ext_my_revenue" name="ext_my_revenue" min="0" step="1" value="0" placeholder="Your commission">
                             </div>
-                            <div class="form-group">
-                                <label>Customer Name</label>
-                                <input type="text" id="ext_customer_name" name="ext_customer_name" value="client" placeholder="Enter customer name">
-                            </div>
+                           
                         </div>
 
                     </div>
@@ -404,6 +401,10 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
                                 </div>
                                 <?php endif; ?>
+                                 <div class="form-group">
+                                <label>Customer Name</label>
+                                <input type="text" id="ext_customer_name" name="ext_customer_name" value="client" placeholder="Enter customer name">
+                            </div>
                                 <div class="form-group">
                                     <label>Client Phone*</label>
                                     <input type="text" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX" oninput="calcExtSplit()">

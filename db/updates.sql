@@ -2,6 +2,10 @@
 
 
 
+-- ── consumption.source column ─────────────────────────────────────────────────
+ALTER TABLE consumption ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'retail' AFTER qty;
+
+
 -- ── Seed: initial company ─────────────────────────────────────────────────────
 -- Safe to re-run; INSERT IGNORE skips if id=1 already exists.
 INSERT IGNORE INTO `companies` (`id`, `name`, `email`, `phone`, `address`, `status`, `created_at`)

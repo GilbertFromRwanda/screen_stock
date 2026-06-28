@@ -11,7 +11,7 @@ $cid_and  = cidAnd();
 $filter_action = trim($_GET['action'] ?? '');
 $filter_table  = trim($_GET['table']  ?? '');
 $filter_user   = (int)($_GET['user_id'] ?? 0);
-$date_from     = $_GET['date_from'] ?? date('Y-m-01');
+$date_from     = $_GET['date_from'] ?? date('Y-m-d', strtotime('monday this week'));
 $date_to       = $_GET['date_to']   ?? date('Y-m-d');
 
 $where_parts = ["al.created_at BETWEEN '$date_from 00:00:00' AND '$date_to 23:59:59'"];

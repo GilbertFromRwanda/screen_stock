@@ -253,10 +253,7 @@ if ($current_week_sales && mysqli_num_rows($current_week_sales) > 0) {
     }
 }
 
-// Product profitability + all-time totals are loaded via AJAX (?action=profitability)
-// to avoid blocking initial page render with heavy correlated subqueries.
-$total_all_time = ['total_revenue' => 0, 'total_cost' => 0, 'total_profit' => 0];
-$total_all_time['total_profit'] = ($total_all_time['total_revenue'] ?? 0) - $total_all_time['total_cost'];
+// All-time totals are loaded via AJAX (?action=profitability) and injected into the card by JS.
 
 
 
@@ -377,16 +374,10 @@ $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
                 
                 <div class="profit-card">
                     <h4>📈 All Time Performance</h4>
-                    <div class="profit-amount">RWF <?php echo number_format($total_all_time['total_revenue'] ?? 0, 0); ?></div>
+                    <div class="profit-amount" id="at-revenue">—</div>
                     <div class="profit-stats">
-                        <span>Profit: RWF <?php echo number_format($total_all_time['total_profit'] ?? 0, 0); ?></span>
-                        <span class="<?php echo ($total_all_time['total_profit'] ?? 0) >= 0 ? 'profit-positive' : 'profit-negative'; ?>">
-                            <?php 
-                                $all_time_margin = ($total_all_time['total_revenue'] ?? 0) > 0 
-                                    ? (($total_all_time['total_profit'] ?? 0) / ($total_all_time['total_revenue'] ?? 1)) * 100 
-                                    : 0;
-                                echo number_format($all_time_margin, 1); ?>%
-                        </span>
+                        <span>Profit: <span id="at-profit">—</span></span>
+                        <span id="at-margin" class="profit-positive">—%</span>
                     </div>
                 </div>
             </div>
@@ -883,6 +874,16 @@ function changeProdPageSize() {
         .then(function(d) {
             _prodData     = d.products || [];
             _prodTotalRev = d.total_rev || 0;
+
+            // Populate All Time Performance card
+            var atRev    = parseFloat(d.total_rev)    || 0;
+            var atProfit = parseFloat(d.total_profit) || 0;
+            var atMargin = atRev > 0 ? (atProfit / atRev * 100) : 0;
+            document.getElementById('at-revenue').textContent = 'RWF ' + _prodFmt(atRev);
+            document.getElementById('at-profit').textContent  = 'RWF ' + _prodFmt(atProfit);
+            var atMarginEl = document.getElementById('at-margin');
+            atMarginEl.textContent = atMargin.toFixed(1) + '%';
+            atMarginEl.className   = atProfit >= 0 ? 'profit-positive' : 'profit-negative';
 
             var html = '<div class="table-responsive">'+
                 '<table class="table" id="tblProductRevenue">'+
