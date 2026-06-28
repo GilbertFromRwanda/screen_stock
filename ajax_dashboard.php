@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 if (!isLoggedIn()) { http_response_code(403); exit; }
+$has_financials = hasPermission('financials');
 header('Content-Type: application/json');
 
 $today       = date('Y-m-d');
@@ -293,13 +294,13 @@ while ($r = mysqli_fetch_assoc($tpq)) $top_products[] = $r;
 // ── Response ──────────────────────────────────────────────────────────────────
 echo json_encode([
     'total_products'   => $total_products,
-    'sell_wh'          => $sell_wh,
-    'sell_rt'          => $sell_rt,
-    'sell_total'       => $sell_wh + $sell_rt,
-    'cost_wh'          => $cost_wh,
-    'cost_rt'          => $cost_rt,
-    'cost_total'       => $cost_wh + $cost_rt,
-    'cache_updated'    => $sv['cache_updated'] ?? null,
+    'sell_wh'          => $has_financials ? $sell_wh          : null,
+    'sell_rt'          => $has_financials ? $sell_rt          : null,
+    'sell_total'       => $has_financials ? ($sell_wh + $sell_rt) : null,
+    'cost_wh'          => $has_financials ? $cost_wh          : null,
+    'cost_rt'          => $has_financials ? $cost_rt          : null,
+    'cost_total'       => $has_financials ? ($cost_wh + $cost_rt) : null,
+    'cache_updated'    => $has_financials ? ($sv['cache_updated'] ?? null) : null,
     'rt_pcs'           => $rt_pcs,
     'today_t'          => $today_t,
     'today_bulk'       => $today_bulk,
@@ -307,10 +308,10 @@ echo json_encode([
     'today_cash'       => $today_cash,
     'today_momo'       => $today_momo,
     'today_loan'       => $today_loan,
-    'today_profit'     => $today_profit,
+    'today_profit'     => $has_financials ? $today_profit     : null,
     'yesterday_t'      => $yesterday_t,
     'week_sales'       => $week_sales,
-    'week_profit'      => $week_profit,
+    'week_profit'      => $has_financials ? $week_profit      : null,
     'month_sales'      => $month_sales,
     'outstanding'      => $outstanding_loans,
     'total_suppliers'  => $total_suppliers,
@@ -318,8 +319,8 @@ echo json_encode([
     'mov_pieces'       => (int)$mov['pcs'],
     'chart_labels'     => $chart_labels,
     'chart_revenue'    => $chart_revenue,
-    'chart_cost'       => $chart_cost,
-    'chart_profit'     => $chart_profit,
+    'chart_cost'       => $has_financials ? $chart_cost       : null,
+    'chart_profit'     => $has_financials ? $chart_profit     : null,
     'low_stock'        => $low_stock,
     'retail_empty'     => $retail_empty,
     'users'            => $users,
@@ -327,4 +328,5 @@ echo json_encode([
     'today'            => $today,
     'user_id'          => (int)$_SESSION['user_id'],
     'role'             => $_SESSION['role'],
+    'has_financials'   => $has_financials,
 ]);

@@ -1,9 +1,8 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('purchases')) { $_SESSION['flash_error'] = "You don't have permission to access Purchases."; redirect('dashboard.php'); }
 
 // Get products and suppliers for dropdown
 $products_query = mysqli_query($conn, "SELECT id, name,category FROM products ORDER BY name");

@@ -123,3 +123,59 @@ ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancel_reason` TEXT NULL AFTER `s
 -- Who cancelled the order
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancelled_by` INT NULL AFTER `approved_by`;
 
+
+-- ── audit_log table ───────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `audit_log` (
+    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+    `company_id`  INT           DEFAULT NULL,
+    `user_id`     INT           NOT NULL,
+    `action`      VARCHAR(255)  NOT NULL,
+    `description` TEXT          DEFAULT NULL,
+    `table_name`  VARCHAR(255)  DEFAULT NULL,
+    `record_id`   INT           DEFAULT NULL,
+    `old_values`  JSON          DEFAULT NULL,
+    `new_values`  JSON          DEFAULT NULL,
+    `ip_address`  VARCHAR(45)   DEFAULT NULL,
+    `created_at`  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_al_company` (`company_id`),
+    INDEX `idx_al_user`    (`user_id`),
+    INDEX `idx_al_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+
+-- ── user_permissions table ────────────────────────────────────────────────────
+-- Stores per-module access flags for manager/user roles.
+-- admin and superadmin bypass this table entirely.
+CREATE TABLE IF NOT EXISTS `user_permissions` (
+    `id`         INT          AUTO_INCREMENT PRIMARY KEY,
+    `user_id`    INT          NOT NULL,
+    `company_id` INT          DEFAULT NULL,
+    `module`     VARCHAR(50)  NOT NULL,
+    `can_view`   TINYINT(1)   NOT NULL DEFAULT 0,
+    `can_edit`   TINYINT(1)   NOT NULL DEFAULT 0,
+    `can_delete` TINYINT(1)   NOT NULL DEFAULT 0,
+    UNIQUE KEY `uq_user_module` (`user_id`, `module`),
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+    INDEX `idx_up_company` (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ── add can_create to user_permissions ───────────────────────────────────────
+ALTER TABLE `user_permissions` ADD COLUMN IF NOT EXISTS `can_create` TINYINT(1) NOT NULL DEFAULT 0 AFTER `can_view`;
+
+
+-- ── client_payments: direct cash receipts from loan clients ───────────────────
+CREATE TABLE IF NOT EXISTS `client_payments` (
+    `id`            INT           AUTO_INCREMENT PRIMARY KEY,
+    `company_id`    INT           DEFAULT NULL,
+    `client_id`     INT           NOT NULL,
+    `amount`        DECIMAL(12,2) NOT NULL,
+    `payment_date`  DATE          NOT NULL,
+    `recorded_by`   INT           NOT NULL,
+    `note`          VARCHAR(255)  DEFAULT NULL,
+    `created_at`    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (`client_id`) REFERENCES `loan_clients`(`id`) ON DELETE CASCADE,
+    INDEX `idx_cp_client`  (`client_id`),
+    INDEX `idx_cp_company` (`company_id`),
+    INDEX `idx_cp_date`    (`payment_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

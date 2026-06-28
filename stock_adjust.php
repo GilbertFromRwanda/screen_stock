@@ -2,6 +2,7 @@
 require_once 'config.php';
 require_once __DIR__ . '/stock_value.php';
 if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('stock_adjust')) { $_SESSION['flash_error'] = "You don't have permission to adjust stock."; redirect('dashboard.php'); }
 
 // ── AJAX: save adjustment ─────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust'])) {

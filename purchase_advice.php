@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('purchases')) { $_SESSION['flash_error'] = "You don't have permission to access Purchase Advice."; redirect('dashboard.php'); }
 
 $cid     = cidSql();
 $cid_and = cidAnd();

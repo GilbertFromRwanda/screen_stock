@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('purchases', 'create')) { $_SESSION['flash_error'] = "You don't have permission to create purchases."; redirect('dashboard.php'); }
 
 // ── AJAX: last purchase cost hint ────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'last_purchase') {

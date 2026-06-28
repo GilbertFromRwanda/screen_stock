@@ -2,7 +2,7 @@
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
-if (!in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'superadmin'])) redirect('dashboard.php');
+if (!hasPermission('audit_log')) { $_SESSION['flash_error'] = "You don't have permission to access the Audit Log."; redirect('dashboard.php'); }
 
 $is_super = isSuperAdmin();
 $cid_and  = cidAnd();

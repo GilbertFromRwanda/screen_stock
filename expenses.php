@@ -1,9 +1,8 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('expenses')) { $_SESSION['flash_error'] = "You don't have permission to access Expenses."; redirect('dashboard.php'); }
 
 // ── AJAX: Add ─────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_expense'])) {

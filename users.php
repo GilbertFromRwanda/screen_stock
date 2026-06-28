@@ -7,6 +7,23 @@ if (!isLoggedIn()) {
 
 $is_super = isSuperAdmin();
 
+// Module definitions used by the permissions system
+$perm_modules = [
+    'inventory'    => 'Inventory (Products & Stock)',
+    'stock_adjust' => 'Stock Adjustment',
+    'purchases'    => 'Purchases',
+    'sales'        => 'Sales',
+    'expenses'     => 'Expenses',
+    'loans'        => 'Loans',
+    'orders'       => 'Orders',
+    'reports'      => 'Reports',
+    'losses'       => 'Losses',
+    'consumption'  => 'Consumption',
+    'notes'        => 'Notes',
+    'audit_log'    => 'Audit Log',
+    'financials'   => 'Financial Data (Costs & Profits)',
+];
+
 // If filtering by company (superadmin feature)
 $filter_company_id = isset($_GET['company_id']) ? (int)$_GET['company_id'] : null;
 
@@ -27,7 +44,7 @@ if ($is_super) {
     }
 }
 
-// Handle Create/Update/Delete/Toggle/Bulk
+// Handle Create/Update/Delete/Toggle
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // Determine company_id for new/edited user
@@ -125,33 +142,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
-    // Bulk actions
-    if (isset($_POST['bulk_action'])) {
-        $action   = $_POST['bulk_action'];
-        $user_ids = $_POST['user_ids'] ?? [];
-        if (!empty($user_ids)) {
-            $ids_arr    = array_diff(array_map('intval', $user_ids), [(int)$_SESSION['user_id']]);
-            $ids_string = implode(',', $ids_arr);
-            if (empty($ids_string)) {
-                $error = "Cannot perform action on your own account!";
-            } else {
-                $q = match($action) {
-                    'delete'     => "DELETE FROM users WHERE id IN ($ids_string)",
-                    'activate'   => "UPDATE users SET status='active' WHERE id IN ($ids_string)",
-                    'deactivate' => "UPDATE users SET status='inactive' WHERE id IN ($ids_string)",
-                    default      => null
-                };
-                if ($q && mysqli_query($conn, $q)) {
-                    $success = "Bulk action completed.";
-                    logActivity($conn, $_SESSION['user_id'], 'Bulk Action', "$action on IDs: $ids_string");
-                } elseif ($q) {
-                    $error = "Error: " . mysqli_error($conn);
-                }
+    // Save permissions for a specific user
+    if (isset($_POST['modal_action']) && $_POST['modal_action'] === 'save_permissions') {
+        $target_uid  = (int)$_POST['perm_user_id'];
+        $target_user = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, role, company_id FROM users WHERE id=$target_uid"));
+        $can_set     = false;
+        if ($target_user) {
+            if ($is_super) {
+                $can_set = true;
+            } elseif ((int)($target_user['company_id'] ?? 0) === (int)($_SESSION['company_id'] ?? 0)) {
+                $can_set = true;
             }
+        }
+        if ($can_set && $target_user) {
+            $cid_val = $target_user['company_id'] !== null ? (int)$target_user['company_id'] : 'NULL';
+            foreach ($perm_modules as $module => $label) {
+                $v = isset($_POST["perm_{$module}_view"])   ? 1 : 0;
+                $c = isset($_POST["perm_{$module}_create"]) ? 1 : 0;
+                $e = isset($_POST["perm_{$module}_edit"])   ? 1 : 0;
+                $d = isset($_POST["perm_{$module}_delete"]) ? 1 : 0;
+                mysqli_query($conn, "INSERT INTO user_permissions (user_id, company_id, module, can_view, can_create, can_edit, can_delete)
+                    VALUES ($target_uid, $cid_val, '$module', $v, $c, $e, $d)
+                    ON DUPLICATE KEY UPDATE can_view=$v, can_create=$c, can_edit=$e, can_delete=$d");
+            }
+            $success = "Permissions updated successfully!";
+            logActivity($conn, (int)$_SESSION['user_id'], 'Update Permissions',
+                "Set permissions for user ID: $target_uid", 'user_permissions', $target_uid);
         } else {
-            $error = "No users selected!";
+            $error = "Unauthorized to set permissions for this user.";
         }
     }
+
 }
 
 // Fetch users — superadmin sees all (optionally filtered), others see own company only
@@ -167,6 +188,21 @@ if ($is_super) {
     $res = mysqli_query($conn, "SELECT u.*, c.name AS company_name FROM users u LEFT JOIN companies c ON c.id=u.company_id WHERE u.company_id=$my_company ORDER BY u.created_at DESC");
 }
 while ($row = mysqli_fetch_assoc($res)) $all_users[] = $row;
+
+// Pre-load permissions for all listed users (for the modal)
+$all_user_perms = [];
+if (!empty($all_users)) {
+    $uids = implode(',', array_map('intval', array_column($all_users, 'id')));
+    $pr   = mysqli_query($conn, "SELECT user_id, module, can_view, can_create, can_edit, can_delete FROM user_permissions WHERE user_id IN ($uids)");
+    while ($row = mysqli_fetch_assoc($pr)) {
+        $all_user_perms[$row['user_id']][$row['module']] = [
+            'view'   => (bool)$row['can_view'],
+            'create' => (bool)$row['can_create'],
+            'edit'   => (bool)$row['can_edit'],
+            'delete' => (bool)$row['can_delete'],
+        ];
+    }
+}
 
 $total_users    = count($all_users);
 $active_users   = count(array_filter($all_users, fn($u) => $u['status'] === 'active'));
@@ -303,12 +339,10 @@ function avatarColor($name) {
                 </div>
             </div>
 
-            <form method="POST" action="" id="bulkActionForm">
-                <div class="table-responsive">
+            <div class="table-responsive">
                     <table class="table" id="usersTable">
                         <thead>
                             <tr>
-                                <th width="40"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"></th>
                                 <th>User</th>
                                 <?php if ($is_super): ?><th>Company</th><?php endif; ?>
                                 <th>Role</th>
@@ -338,13 +372,6 @@ function avatarColor($name) {
                             <tr data-role="<?php echo $user['role']; ?>"
                                 data-status="<?php echo $user['status']; ?>"
                                 data-search="<?php echo htmlspecialchars($search_val); ?>">
-                                <td>
-                                    <?php if ($user['id'] != $_SESSION['user_id']): ?>
-                                        <input type="checkbox" name="user_ids[]" value="<?php echo $user['id']; ?>" class="user-checkbox">
-                                    <?php else: ?>
-                                        <span class="self-badge">You</span>
-                                    <?php endif; ?>
-                                </td>
                                 <td>
                                     <div class="user-cell">
                                         <div class="user-avatar" style="background:<?php echo $av_color; ?>20;color:<?php echo $av_color; ?>;">
@@ -377,6 +404,9 @@ function avatarColor($name) {
                                         <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                         <div class="act-menu">
                                             <button class="act-item" type="button" onclick="openEditModal(this);closeActMenus()" <?php echo $data_attrs; ?>><i class="fas fa-pen"></i> Edit</button>
+                                            <?php if (in_array($user['role'], ['manager', 'user'])): ?>
+                                            <button class="act-item" type="button" onclick="openPermModal(<?php echo $user['id']; ?>,'<?php echo addslashes(htmlspecialchars($user['full_name'])); ?>');closeActMenus()"><i class="fas fa-shield-alt"></i> Permissions</button>
+                                            <?php endif; ?>
                                             <?php if ($user['id'] != $_SESSION['user_id']): ?>
                                             <form method="POST">
                                                 <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
@@ -395,28 +425,11 @@ function avatarColor($name) {
                             </tr>
                         <?php endforeach; ?>
                         <?php if (empty($all_users)): ?>
-                            <tr><td colspan="<?php echo $is_super ? 8 : 7; ?>" style="text-align:center;color:var(--secondary);padding:32px;">No users found.</td></tr>
+                            <tr><td colspan="<?php echo $is_super ? 7 : 6; ?>" style="text-align:center;color:var(--secondary);padding:32px;">No users found.</td></tr>
                         <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
-
-                <!-- Bulk Actions -->
-                <div class="bulk-actions">
-                    <label class="select-all">
-                        <input type="checkbox" id="selectAllBottom" onclick="toggleSelectAll()">
-                        Select All
-                    </label>
-                    <select name="bulk_action" id="bulkAction" class="filter-dropdown">
-                        <option value="">Bulk Actions</option>
-                        <option value="activate">Activate Selected</option>
-                        <option value="deactivate">Deactivate Selected</option>
-                        <option value="delete">Delete Selected</option>
-                    </select>
-                    <button type="submit" name="bulk_action_submit" class="btn btn-primary btn-sm"
-                            onclick="return confirmBulkAction()">Apply</button>
-                </div>
-            </form>
         </div><!-- /user-table-container -->
 
     </div><!-- /main-content -->
@@ -531,6 +544,103 @@ function avatarColor($name) {
     </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════
+     Permissions Modal
+═══════════════════════════════════════════════════ -->
+<div id="permModal" class="modal">
+    <div class="modal-content" style="max-width:640px;">
+        <div class="modal-header">
+            <div class="modal-title-group">
+                <div class="modal-form-icon" style="background:#ecfdf5;color:#059669;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <h3>Permissions — <span id="permUserName"></span></h3>
+            </div>
+            <button type="button" class="modal-close" onclick="closePermModal()">&times;</button>
+        </div>
+        <form method="POST" action="" id="permForm">
+            <input type="hidden" name="modal_action" value="save_permissions">
+            <input type="hidden" name="perm_user_id" id="permUserId">
+            <div class="modal-body" style="padding:0;">
+                <table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+                    <thead>
+                        <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+                            <th style="padding:10px 16px;text-align:left;font-weight:600;color:#374151;">Module</th>
+                            <th style="padding:10px 12px;text-align:center;font-weight:600;color:#374151;width:70px;">View</th>
+                            <th style="padding:10px 12px;text-align:center;font-weight:600;color:#059669;width:70px;">Create</th>
+                            <th style="padding:10px 12px;text-align:center;font-weight:600;color:#374151;width:70px;">Edit</th>
+                            <th style="padding:10px 12px;text-align:center;font-weight:600;color:#374151;width:70px;">Delete</th>
+                        </tr>
+                    </thead>
+                    <tbody id="permTableBody">
+                        <?php foreach ($perm_modules as $module => $label): ?>
+                        <?php
+                            $no_create = in_array($module, ['audit_log', 'reports', 'financials']);
+                            $no_edit   = in_array($module, ['audit_log', 'reports', 'financials']);
+                            $no_delete = in_array($module, ['audit_log', 'reports', 'notes', 'financials']);
+                        ?>
+                        <tr class="perm-row" style="border-bottom:1px solid #f1f5f9;" data-module="<?php echo $module; ?>">
+                            <td style="padding:9px 16px;color:#1e293b;font-weight:500;"><?php echo $label; ?></td>
+                            <td style="text-align:center;padding:9px 12px;">
+                                <input type="checkbox" name="perm_<?php echo $module; ?>_view"
+                                    class="perm-cb perm-view" data-module="<?php echo $module; ?>">
+                            </td>
+                            <td style="text-align:center;padding:9px 12px;">
+                                <?php if (!$no_create): ?>
+                                <input type="checkbox" name="perm_<?php echo $module; ?>_create"
+                                    class="perm-cb perm-create" data-module="<?php echo $module; ?>">
+                                <?php else: ?>
+                                <span style="color:#cbd5e1;">—</span>
+                                <?php endif; ?>
+                            </td>
+                            <td style="text-align:center;padding:9px 12px;">
+                                <?php if (!$no_edit): ?>
+                                <input type="checkbox" name="perm_<?php echo $module; ?>_edit"
+                                    class="perm-cb perm-edit" data-module="<?php echo $module; ?>">
+                                <?php else: ?>
+                                <span style="color:#cbd5e1;">—</span>
+                                <?php endif; ?>
+                            </td>
+                            <td style="text-align:center;padding:9px 12px;">
+                                <?php if (!$no_delete): ?>
+                                <input type="checkbox" name="perm_<?php echo $module; ?>_delete"
+                                    class="perm-cb perm-delete" data-module="<?php echo $module; ?>">
+                                <?php else: ?>
+                                <span style="color:#cbd5e1;">—</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <div style="padding:10px 16px;background:#f8fafc;border-top:1px solid #e2e8f0;display:flex;gap:12px;align-items:center;">
+                    <label style="font-size:12.5px;font-weight:600;color:#475569;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="selectAllView" onchange="toggleAllPerms('view',this.checked)"> All View
+                    </label>
+                    <label style="font-size:12.5px;font-weight:600;color:#059669;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="selectAllCreate" onchange="toggleAllPerms('create',this.checked)"> All Create
+                    </label>
+                    <label style="font-size:12.5px;font-weight:600;color:#475569;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="selectAllEdit" onchange="toggleAllPerms('edit',this.checked)"> All Edit
+                    </label>
+                    <label style="font-size:12.5px;font-weight:600;color:#475569;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="selectAllDelete" onchange="toggleAllPerms('delete',this.checked)"> All Delete
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePermModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Permissions</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// permissions data pre-loaded from PHP
+const allUserPerms = <?php echo json_encode($all_user_perms); ?>;
+</script>
+
 <script src="script.js"></script>
 <script>
 // ── User Modal ──────────────────────────────────────
@@ -641,24 +751,6 @@ function filterByCompany(company_id) {
 document.getElementById('txtSearchusersTable')
     .addEventListener('input', applyListFilter);
 
-// ── Select all ──────────────────────────────────────
-function toggleSelectAll() {
-    const top     = document.getElementById('selectAll');
-    const bottom  = document.getElementById('selectAllBottom');
-    const checked = top.checked || bottom.checked;
-    document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = checked);
-    top.checked = bottom.checked = checked;
-}
-// keep header checkbox in sync when individual boxes change
-document.addEventListener('change', function(e) {
-    if (!e.target.classList.contains('user-checkbox')) return;
-    const all  = document.querySelectorAll('.user-checkbox');
-    const chkd = document.querySelectorAll('.user-checkbox:checked');
-    const allChecked = all.length === chkd.length;
-    document.getElementById('selectAll').checked        = allChecked;
-    document.getElementById('selectAllBottom').checked  = allChecked;
-});
-
 // ── Delete modal ────────────────────────────────────
 let pendingDeleteForm = null;
 function confirmDelete(userName) {
@@ -678,18 +770,6 @@ document.getElementById('deleteModal').addEventListener('click', function(e) {
     if (e.target === this) closeDeleteModal();
 });
 
-// ── Bulk actions ────────────────────────────────────
-function confirmBulkAction() {
-    const action    = document.getElementById('bulkAction').value;
-    const checkboxes = document.querySelectorAll('.user-checkbox:checked');
-    if (checkboxes.length === 0) { showToast('Please select at least one user', 'warning'); return false; }
-    if (!action)                 { showToast('Please select an action', 'warning');          return false; }
-    const msg = action === 'delete'
-        ? `Delete ${checkboxes.length} user(s)? This cannot be undone!`
-        : `${action === 'activate' ? 'Activate' : 'Deactivate'} ${checkboxes.length} user(s)?`;
-    return confirm(msg);
-}
-
 // ── Toast ───────────────────────────────────────────
 function showToast(message, type = 'success') {
     const t = document.createElement('div');
@@ -705,9 +785,47 @@ document.addEventListener('DOMContentLoaded', function () {
         setTimeout(() => { a.style.opacity='0'; setTimeout(() => a.style.display='none', 300); }, 5000);
     });
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { closeUserModal(); closeDeleteModal(); }
+        if (e.key === 'Escape') { closeUserModal(); closeDeleteModal(); closePermModal(); }
     });
 });
+
+// ── Permissions Modal ───────────────────────────────
+function openPermModal(userId, userName) {
+    document.getElementById('permUserId').value   = userId;
+    document.getElementById('permUserName').textContent = userName;
+
+    // Reset all checkboxes
+    document.querySelectorAll('.perm-cb').forEach(cb => cb.checked = false);
+    document.getElementById('selectAllView').checked   = false;
+    document.getElementById('selectAllCreate').checked = false;
+    document.getElementById('selectAllEdit').checked   = false;
+    document.getElementById('selectAllDelete').checked = false;
+
+    // Populate from pre-loaded data
+    const perms = allUserPerms[userId] || {};
+    Object.entries(perms).forEach(([module, flags]) => {
+        const row = document.querySelector(`.perm-row[data-module="${module}"]`);
+        if (!row) return;
+        if (flags.view)   { const cb = row.querySelector('.perm-view');   if (cb) cb.checked = true; }
+        if (flags.create) { const cb = row.querySelector('.perm-create'); if (cb) cb.checked = true; }
+        if (flags.edit)   { const cb = row.querySelector('.perm-edit');   if (cb) cb.checked = true; }
+        if (flags.delete) { const cb = row.querySelector('.perm-delete'); if (cb) cb.checked = true; }
+    });
+
+    document.getElementById('permModal').classList.add('is-open');
+}
+
+function closePermModal() {
+    document.getElementById('permModal').classList.remove('is-open');
+}
+
+document.getElementById('permModal').addEventListener('click', function(e) {
+    if (e.target === this) closePermModal();
+});
+
+function toggleAllPerms(type, checked) {
+    document.querySelectorAll('.perm-' + type).forEach(cb => { cb.checked = checked; });
+}
 </script>
 </body>
 </html>

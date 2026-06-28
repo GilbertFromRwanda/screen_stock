@@ -27,39 +27,58 @@ try {
 
             <a href="dashboard.php" class="tn-item<?= $current_page==='dashboard.php' ? ' active':'' ?>">&#9635; Dashboard</a>
 
-            <?php $ia = in_array($current_page,['products.php','stock.php','stock_adjust.php']); ?>
+            <?php $ia = in_array($current_page,['products.php','stock.php','stock_adjust.php']);
+                  $has_inv = hasPermission('inventory'); $has_sa = hasPermission('stock_adjust'); ?>
+            <?php if ($has_inv || $has_sa): ?>
             <div class="tn-dropdown<?= $ia?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#9643; Inventory <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
+                    <?php if ($has_inv): ?>
                     <a href="products.php" class="tn-drop-item<?= $current_page==='products.php'?' active':'' ?>">View Product List</a>
                     <a href="stock.php"    class="tn-drop-item<?= $current_page==='stock.php'   ?' active':'' ?>">View Stock</a>
-                     <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
+                    <?php endif; ?>
+                    <?php if ($has_sa): ?>
+                    <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
+                    <?php endif; ?>
                 </div>
             </div>
+            <?php endif; ?>
 
-            <?php $pa = in_array($current_page,['purchases.php','new-purchase.php','purchase_advice.php','wishlist.php']); ?>
+            <?php $pa = in_array($current_page,['purchases.php','new-purchase.php','purchase_advice.php','wishlist.php']);
+                  $has_pur = hasPermission('purchases'); ?>
+            <?php if ($has_pur): ?>
             <div class="tn-dropdown<?= $pa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#10549; Purchases <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <a href="purchases.php"       class="tn-drop-item<?= $current_page==='purchases.php'       ?' active':'' ?>">View All</a>
+                    <?php if (hasPermission('purchases','create')): ?>
                     <a href="new-purchase.php"    class="tn-drop-item<?= $current_page==='new-purchase.php'    ?' active':'' ?>">New Purchase</a>
+                    <?php endif; ?>
                     <a href="purchase_advice.php" class="tn-drop-item<?= $current_page==='purchase_advice.php' ?' active':'' ?>">Purchase Advice</a>
                     <a href="wishlist.php"         class="tn-drop-item<?= $current_page==='wishlist.php'        ?' active':'' ?>">&#9733; Wishlist</a>
                 </div>
             </div>
+            <?php endif; ?>
 
-            <?php $sa = in_array($current_page,['sales.php','sale_bulk.php','sale_retail.php','sale_external.php']); ?>
+            <?php $sa = in_array($current_page,['sales.php','sale_bulk.php','sale_retail.php','sale_external.php']);
+                  $has_sal = hasPermission('sales'); ?>
+            <?php if ($has_sal): ?>
             <div class="tn-dropdown<?= $sa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#10548; Sales <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <a href="sales.php"         class="tn-drop-item<?= $current_page==='sales.php'         ?' active':'' ?>">View All</a>
+                    <?php if (hasPermission('sales','create')): ?>
                     <a href="sale_bulk.php"     class="tn-drop-item<?= $current_page==='sale_bulk.php'     ?' active':'' ?>">Bulk Sale</a>
                     <a href="sale_retail.php"   class="tn-drop-item<?= $current_page==='sale_retail.php'   ?' active':'' ?>">Retail Sale</a>
                     <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>">External Sale</a>
+                    <?php endif; ?>
                 </div>
             </div>
+            <?php endif; ?>
 
-            <?php $fa = in_array($current_page,['loans.php','all_loans.php']); ?>
+            <?php $fa = in_array($current_page,['loans.php','all_loans.php']);
+                  $has_loans = hasPermission('loans'); ?>
+            <?php if ($has_loans): ?>
             <div class="tn-dropdown<?= $fa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">Loans <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
@@ -67,36 +86,55 @@ try {
                     <a href="all_loans.php" class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
                 </div>
             </div>
+            <?php endif; ?>
 
-            <?php $oa = in_array($current_page,['orders.php','order_new.php']); ?>
+            <?php $oa = in_array($current_page,['orders.php','order_new.php']);
+                  $has_ord = hasPermission('orders'); ?>
+            <?php if ($has_ord): ?>
             <div class="tn-dropdown<?= $oa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">Orders <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <a href="orders.php"    class="tn-drop-item<?= $current_page==='orders.php'   ?' active':'' ?>">View Orders</a>
+                    <?php if (hasPermission('orders','create')): ?>
                     <a href="order_new.php" class="tn-drop-item<?= $current_page==='order_new.php'?' active':'' ?>">New Order</a>
+                    <?php endif; ?>
                 </div>
             </div>
+            <?php endif; ?>
 
-            <?php $ma = in_array($current_page,['losses.php','consumption.php','notes.php','qr_call.php']); ?>
+            <?php $ma = in_array($current_page,['losses.php','consumption.php','notes.php','qr_call.php']);
+                  $has_los = hasPermission('losses'); $has_con = hasPermission('consumption'); $has_not = hasPermission('notes'); ?>
+            <?php if ($has_los || $has_con || $has_not || in_array($role,['admin','superadmin'])): ?>
             <div class="tn-dropdown<?= $ma?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#8942; More <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
+                    <?php if ($has_los): ?>
                     <a href="losses.php"      class="tn-drop-item<?= $current_page==='losses.php'     ?' active':'' ?>">&#10005; Loss</a>
+                    <?php endif; ?>
+                    <?php if ($has_con): ?>
                     <a href="consumption.php" class="tn-drop-item<?= $current_page==='consumption.php'?' active':'' ?>">&#9663; Consumption</a>
+                    <?php endif; ?>
+                    <?php if ($has_not): ?>
                     <a href="notes.php"       class="tn-drop-item<?= $current_page==='notes.php'      ?' active':'' ?>">&#10000; Notes</a>
-                <a href="qr_call.php"    class="tn-drop-item<?= $current_page==='qr_call.php'   ?' active':'' ?>">&#128222; QR Code</a>
-                    
+                    <?php endif; ?>
+                    <a href="qr_call.php"    class="tn-drop-item<?= $current_page==='qr_call.php'   ?' active':'' ?>">&#128222; QR Code</a>
                 </div>
             </div>
+            <?php endif; ?>
 
 
-            <?php if (in_array($role,['admin','manager','superadmin'])): ?>
+            <?php $has_rep = hasPermission('reports'); $has_fin = hasPermission('financials'); ?>
+            <?php if ($has_rep || $has_fin): ?>
             <?php $ra = in_array($current_page,['summary-revenue.php','revenue.php']); ?>
             <div class="tn-dropdown<?= $ra?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">Reports <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
+                    <?php if ($has_rep): ?>
                     <a href="summary-revenue.php" class="tn-drop-item<?= $current_page==='summary-revenue.php'?' active':'' ?>">Revenue Summary</a>
-                    <a href="revenue.php"         class="tn-drop-item<?= $current_page==='revenue.php'        ?' active':'' ?>">Profit Analysis</a>
+                    <?php endif; ?>
+                    <?php if ($has_fin): ?>
+                    <a href="revenue.php" class="tn-drop-item<?= $current_page==='revenue.php'?' active':'' ?>">Profit Analysis</a>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endif; ?>
@@ -109,8 +147,12 @@ try {
                     <?php if ($role==='superadmin'): ?>
                     <a href="companies.php"  class="tn-drop-item<?= $current_page==='companies.php' ?' active':'' ?>">Companies</a>
                     <?php endif; ?>
+                    <?php if (in_array($role,['admin','superadmin'])): ?>
                     <a href="users.php"      class="tn-drop-item<?= $current_page==='users.php'     ?' active':'' ?>">Users</a>
+                    <?php endif; ?>
+                    <?php if (hasPermission('audit_log')): ?>
                     <a href="audit_log.php"  class="tn-drop-item<?= $current_page==='audit_log.php' ?' active':'' ?>">Audit Log</a>
+                    <?php endif; ?>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
                     <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>">Run Updates</a>
                     <a href="database.php"   class="tn-drop-item<?= $current_page==='database.php'  ?' active':'' ?>">Database</a>

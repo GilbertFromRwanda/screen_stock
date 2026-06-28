@@ -2,9 +2,8 @@
 ob_start();
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('sales')) { $_SESSION['flash_error'] = "You don't have permission to access Sales."; redirect('dashboard.php'); }
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 

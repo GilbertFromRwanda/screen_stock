@@ -1,9 +1,8 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('inventory')) { $_SESSION['flash_error'] = "You don't have permission to access Stock."; redirect('dashboard.php'); }
 
 // ── Edit warehouse stock ──────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_stock'])) {

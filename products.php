@@ -1,9 +1,8 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('inventory')) { $_SESSION['flash_error'] = "You don't have permission to access Inventory."; redirect('dashboard.php'); }
 
 // ── XLSX parser using built-in ZipArchive + SimpleXML ─────────────────────────
 function xlsx_col_index($ref) {

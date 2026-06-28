@@ -5,8 +5,9 @@ $today = date('Y-m-d');
 $hour  = (int)date('H');
 $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good Evening');
 $first_name = htmlspecialchars(explode(' ', $_SESSION['full_name'] ?? $_SESSION['username'])[0]);
-$user_role  = $_SESSION['role'] ?? 'user';
-$user_id    = (int)$_SESSION['user_id'];
+$user_role      = $_SESSION['role'] ?? 'user';
+$user_id        = (int)$_SESSION['user_id'];
+$can_financials = hasPermission('financials');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -55,6 +56,13 @@ $user_id    = (int)$_SESSION['user_id'];
 
     <div class="main-content">
 
+        <?php if (!empty($_SESSION['flash_error'])): ?>
+            <div class="alert alert-danger" style="margin-bottom:16px;"><?php echo htmlspecialchars($_SESSION['flash_error']); unset($_SESSION['flash_error']); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($_SESSION['flash_success'])): ?>
+            <div class="alert alert-success" style="margin-bottom:16px;"><?php echo htmlspecialchars($_SESSION['flash_success']); unset($_SESSION['flash_success']); ?></div>
+        <?php endif; ?>
+
         <!-- Stats Grid -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
             <h1 style="margin:0;">Dashboard</h1>
@@ -73,6 +81,7 @@ $user_id    = (int)$_SESSION['user_id'];
                 <div class="stat-footer"><a href="products.php" style="color:#667eea;text-decoration:none;">View all products →</a></div>
             </div>
 
+            <?php if ($can_financials): ?>
             <div class="stat-card">
                 <div class="stat-icon">💰</div>
                 <div class="stat-label">Stock Value (Selling)</div>
@@ -85,13 +94,16 @@ $user_id    = (int)$_SESSION['user_id'];
                 </div>
                 <div class="stat-footer" id="d-sell-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
+            <?php endif; ?>
 
+            <?php if ($can_financials): ?>
             <div class="stat-card">
                 <div class="stat-icon">🏷️</div>
                 <div class="stat-label">Stock Value (Purchase)</div>
                 <div class="stat-number" id="d-cost-total"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-footer" id="d-cost-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
+            <?php endif; ?>
 
             <div class="stat-card">
                 <div class="stat-icon">🛒</div>
@@ -101,12 +113,14 @@ $user_id    = (int)$_SESSION['user_id'];
                 <div class="stat-footer" id="d-today-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
 
+            <?php if ($can_financials): ?>
             <div class="stat-card">
                 <div class="stat-icon">💵</div>
                 <div class="stat-label">Today's Profit</div>
                 <div class="stat-number" id="d-today-profit"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-footer" id="d-profit-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
+            <?php endif; ?>
 
             <div class="stat-card">
                 <div class="stat-icon">📊</div>
@@ -324,6 +338,7 @@ $user_id    = (int)$_SESSION['user_id'];
 var collToday = '<?= $today; ?>';
 var moneyFull = localStorage.getItem('moneyFull') === '1';
 var chartInstance = null;
+var canSeeFinancials = <?= $can_financials ? 'true' : 'false'; ?>;
 
 // ── Money formatting ─────────────────────────────────────────────────────────
 function numAbbr(n) {
@@ -361,20 +376,24 @@ function populate(d) {
     // Stat cards
     set('d-products', d.total_products.toLocaleString());
 
-    var sellTotal = d.sell_wh + d.sell_rt;
-    set('d-sell-total', 'RWF ' + moneySpan(sellTotal));
-    var dot = document.getElementById('d-sell-dot');
-    if (dot) dot.className = 'stock-dot ' + (sellTotal > 1e6 ? 'green' : sellTotal > 5e5 ? 'yellow' : 'red');
-    set('d-sell-footer', 'Warehouse: RWF ' + moneySpan(d.sell_wh) + ' | Retail: RWF ' + moneySpan(d.sell_rt));
+    if (canSeeFinancials && d.sell_wh !== null) {
+        var sellTotal = d.sell_wh + d.sell_rt;
+        set('d-sell-total', 'RWF ' + moneySpan(sellTotal));
+        var dot = document.getElementById('d-sell-dot');
+        if (dot) dot.className = 'stock-dot ' + (sellTotal > 1e6 ? 'green' : sellTotal > 5e5 ? 'yellow' : 'red');
+        set('d-sell-footer', 'Warehouse: RWF ' + moneySpan(d.sell_wh) + ' | Retail: RWF ' + moneySpan(d.sell_rt));
+    }
 
-    set('d-cost-total', 'RWF ' + moneySpan(d.cost_total));
-    var updatedLabel = d.cache_updated ? 'Updated ' + new Date(d.cache_updated).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
-    set('d-cost-footer',
-        'Warehouse: RWF ' + moneySpan(d.cost_wh) + ' | Retail: RWF ' + moneySpan(d.cost_rt) +
-        '<div style="margin-top:4px;display:flex;align-items:center;gap:8px;">' +
-        '<span style="font-size:10px;color:#9ca3af;">' + updatedLabel + '</span>' +
-        '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">Recalculate</a>' +
-        '</div>');
+    if (canSeeFinancials && d.cost_total !== null) {
+        set('d-cost-total', 'RWF ' + moneySpan(d.cost_total));
+        var updatedLabel = d.cache_updated ? 'Updated ' + new Date(d.cache_updated).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+        set('d-cost-footer',
+            'Warehouse: RWF ' + moneySpan(d.cost_wh) + ' | Retail: RWF ' + moneySpan(d.cost_rt) +
+            '<div style="margin-top:4px;display:flex;align-items:center;gap:8px;">' +
+            '<span style="font-size:10px;color:#9ca3af;">' + updatedLabel + '</span>' +
+            '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">Recalculate</a>' +
+            '</div>');
+    }
 
     set('d-today-total', 'RWF ' + moneySpan(d.today_t));
     var trend = d.today_t - d.yesterday_t;
@@ -393,11 +412,13 @@ function populate(d) {
         '<span style="color:#d97706;">🔖 '+moneySpan(d.today_loan)+'</span>'+
         '</div>');
 
-    set('d-today-profit', 'RWF ' + moneySpan(d.today_profit));
-    set('d-profit-footer', 'Sales: RWF '+moneySpan(d.today_t)+' | Cost: RWF '+moneySpan(d.today_t - d.today_profit));
+    if (canSeeFinancials && d.today_profit !== null) {
+        set('d-today-profit', 'RWF ' + moneySpan(d.today_profit));
+        set('d-profit-footer', 'Sales: RWF '+moneySpan(d.today_t)+' | Cost: RWF '+moneySpan(d.today_t - d.today_profit));
+    }
 
     set('d-week-sales', 'RWF ' + moneySpan(d.week_sales));
-    set('d-week-footer', 'Profit: RWF ' + moneySpan(d.week_profit));
+    set('d-week-footer', canSeeFinancials && d.week_profit !== null ? 'Profit: RWF ' + moneySpan(d.week_profit) : '');
 
     set('d-month-sales', 'RWF ' + moneySpan(d.month_sales));
     set('d-month-trend', '<span>Monthly target: RWF ' + moneySpan(d.month_sales * 1.2) + '</span>');
@@ -405,7 +426,9 @@ function populate(d) {
     set('d-month-footer', 'Month progress: ' + dayProgress + '%');
 
     set('d-retail-pcs', d.rt_pcs.toLocaleString() + ' pcs');
-    set('d-retail-footer', 'Value: RWF ' + moneySpan(d.sell_rt));
+    if (canSeeFinancials && d.sell_rt !== null) {
+        set('d-retail-footer', 'Value: RWF ' + moneySpan(d.sell_rt));
+    }
 
     // Mini stats
     set('d-mov-count', d.mov_count.toLocaleString());
@@ -508,38 +531,39 @@ function buildChart(labels, revenue, cost, profit) {
     if (!canvas) return;
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     try {
+        var datasets = [{
+            label: 'Revenue',
+            data: revenue,
+            backgroundColor: 'rgba(40,167,69,0.7)',
+            borderColor: 'rgba(40,167,69,1)',
+            borderWidth: 1
+        }];
+        if (canSeeFinancials && cost !== null) {
+            datasets.push({
+                label: 'Cost',
+                data: cost,
+                backgroundColor: 'rgba(220,53,69,0.7)',
+                borderColor: 'rgba(220,53,69,1)',
+                borderWidth: 1
+            });
+            datasets.push({
+                label: 'Profit',
+                data: profit,
+                type: 'line',
+                borderColor: 'rgba(102,126,234,1)',
+                backgroundColor: 'rgba(102,126,234,0.1)',
+                borderWidth: 3,
+                pointRadius: 5,
+                pointBackgroundColor: 'rgba(102,126,234,1)',
+                tension: 0.3,
+                fill: true
+            });
+        }
         chartInstance = new Chart(canvas.getContext('2d'), {
             type: 'bar',
             data: {
                 labels: labels,
-                datasets: [
-                    {
-                        label: 'Revenue',
-                        data: revenue,
-                        backgroundColor: 'rgba(40,167,69,0.7)',
-                        borderColor: 'rgba(40,167,69,1)',
-                        borderWidth: 1
-                    },
-                    {
-                        label: 'Cost',
-                        data: cost,
-                        backgroundColor: 'rgba(220,53,69,0.7)',
-                        borderColor: 'rgba(220,53,69,1)',
-                        borderWidth: 1
-                    },
-                    {
-                        label: 'Profit',
-                        data: profit,
-                        type: 'line',
-                        borderColor: 'rgba(102,126,234,1)',
-                        backgroundColor: 'rgba(102,126,234,0.1)',
-                        borderWidth: 3,
-                        pointRadius: 5,
-                        pointBackgroundColor: 'rgba(102,126,234,1)',
-                        tension: 0.3,
-                        fill: true
-                    }
-                ]
+                datasets: datasets
             },
             options: {
                 responsive: true,

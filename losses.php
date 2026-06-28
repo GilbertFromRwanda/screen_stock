@@ -1,9 +1,8 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('losses')) { $_SESSION['flash_error'] = "You don't have permission to access Losses."; redirect('dashboard.php'); }
 
 // Date filter
 $date_from = $_GET['date_from'] ?? '';

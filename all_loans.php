@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('loans')) { $_SESSION['flash_error'] = "You don't have permission to access Loans."; redirect('dashboard.php'); }
 
 $month_start = date('Y-m-01');
 $month_end   = date('Y-m-t');

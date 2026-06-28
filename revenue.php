@@ -2,6 +2,7 @@
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('financials')) { $_SESSION['flash_error'] = "You don't have permission to access Profit Analysis."; redirect('dashboard.php'); }
 
 // ── AJAX: product profitability + all-time totals ────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'profitability') {

@@ -1,9 +1,8 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('consumption')) { $_SESSION['flash_error'] = "You don't have permission to access Consumption."; redirect('dashboard.php'); }
 
 // Registered "Received By" names
 $receivers_query = mysqli_query($conn, "

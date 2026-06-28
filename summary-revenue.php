@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('reports')) { $_SESSION['flash_error'] = "You don't have permission to access Reports."; redirect('dashboard.php'); }
 
 // ── AJAX: daily breakdown rows ────────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'daily') {
@@ -108,6 +109,8 @@ $net_profit         = $gross_profit     - $total_expenses - $total_consumption_u
 $profit_margin      = $total_revenue > 0 ? round(($gross_profit / $total_revenue) * 100, 1) : 0;
 $net_margin         = $total_revenue > 0 ? round(($net_profit   / $total_revenue) * 100, 1) : 0;
 
+$can_financials = hasPermission('financials');
+
 // Daily breakdown is loaded via AJAX (?action=daily) to avoid blocking render
 $all_dates = [];
 ?>
@@ -198,6 +201,7 @@ $all_dates = [];
                         <label>Total Revenue</label>
                         <div class="val">RWF <?php echo number_format($total_revenue, 0); ?></div>
                     </div>
+                    <?php if ($can_financials): ?>
                     <div class="summary-card red">
                         <label>Total Cost</label>
                         <div class="val">RWF <?php echo number_format($total_cost, 0); ?></div>
@@ -209,6 +213,7 @@ $all_dates = [];
                         </div>
                         <div class="sub">Margin <?php echo $profit_margin; ?>%</div>
                     </div>
+                    <?php endif; ?>
                     <div class="summary-card orange">
                         <label>Expenses</label>
                         <div class="val">RWF <?php echo number_format($total_expenses, 0); ?></div>
@@ -221,6 +226,7 @@ $all_dates = [];
                         </div>
                         <div class="sub">Paid: RWF <?php echo number_format($total_consumption - $total_consumption_unpaid, 0); ?></div>
                     </div>
+                    <?php if ($can_financials): ?>
                     <div class="summary-card purple">
                         <label>Net Profit</label>
                         <div class="val <?php echo $net_profit < 0 ? 'neg' : ''; ?>">
@@ -228,6 +234,7 @@ $all_dates = [];
                         </div>
                         <div class="sub">Margin <?php echo $net_margin; ?>%</div>
                     </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -245,11 +252,11 @@ $all_dates = [];
                                 <th>Expenses</th>
                                 <th>Consumption</th>
                                 <th>Con. Unpaid</th>
-                                <th>Net</th>
+                                <?php if ($can_financials): ?><th>Net</th><?php endif; ?>
                             </tr>
                         </thead>
                         <tbody id="daily-tbody">
-                            <tr><td colspan="8" style="padding:24px;text-align:center;">
+                            <tr><td colspan="<?php echo $can_financials ? 8 : 7; ?>" style="padding:24px;text-align:center;">
                                 <div style="display:inline-block;width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;"></div>
                             </td></tr>
                         </tbody>
@@ -280,6 +287,9 @@ $all_dates = [];
         </div><!-- /.rev-tabs-wrap -->
     </div>
 </div>
+<script>
+var canSeeFinancials = <?= $can_financials ? 'true' : 'false'; ?>;
+</script>
 <script src="script.js"></script>
 <script>
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -317,7 +327,7 @@ function renderDailyPage() {
             '<td><strong>' + (rev > 0 ? 'RWF ' + Math.round(rev).toLocaleString() : '-') + '</strong></td>' +
             '<td>' + _fmt(r.expense) + '</td>' +
             '<td>-</td><td>-</td>' +
-            '<td style="color:' + (net >= 0 ? 'var(--success)' : 'var(--danger)') + ';font-weight:600;">RWF ' + Math.round(net).toLocaleString() + '</td>' +
+            (canSeeFinancials ? '<td style="color:' + (net >= 0 ? 'var(--success)' : 'var(--danger)') + ';font-weight:600;">RWF ' + Math.round(net).toLocaleString() + '</td>' : '') +
             '</tr>';
     }
     document.getElementById('daily-tbody').innerHTML = html || '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--secondary);">No data for this period.</td></tr>';
@@ -358,7 +368,7 @@ function changeDailyPageSize() {
                 '<td><strong>RWF ' + Math.round(gtRev).toLocaleString() + '</strong></td>' +
                 '<td>RWF ' + Math.round(gtExp).toLocaleString() + '</td>' +
                 '<td>-</td><td>-</td>' +
-                '<td style="color:var(--success);font-weight:700;">RWF ' + Math.round(gtRev - gtExp).toLocaleString() + '</td>' +
+                (canSeeFinancials ? '<td style="color:var(--success);font-weight:700;">RWF ' + Math.round(gtRev - gtExp).toLocaleString() + '</td>' : '') +
                 '</tr>';
 
             renderDailyPage();

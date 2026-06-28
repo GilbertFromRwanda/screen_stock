@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('notes')) { $_SESSION['flash_error'] = "You don't have permission to access Notes."; redirect('dashboard.php'); }
 
 $user_id = (int)$_SESSION['user_id'];
 $cid_and = cidAnd();

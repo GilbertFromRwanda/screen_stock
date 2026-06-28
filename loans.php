@@ -1,9 +1,8 @@
 <?php
 require_once 'config.php';
 
-if (!isLoggedIn()) {
-    redirect('login.php');
-}
+if (!isLoggedIn()) redirect('login.php');
+if (!hasPermission('loans')) { $_SESSION['flash_error'] = "You don't have permission to access Loans."; redirect('dashboard.php'); }
 
 // ── AJAX: Add Loan ─────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
@@ -104,6 +103,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
     $ok = true;
 
     $ok = (bool)mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ('$loan_id','$amount_paid','$payment_date',$received_by)");
+
+    if ($ok && $lc_id > 0) {
+        $cid_sql = cidSql();
+        mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by) VALUES ($cid_sql, $lc_id, $amount_paid, '$payment_date', $received_by)");
+    }
 
     if ($ok && $lc_id > 0) {
         $ok = (bool)mysqli_query($conn, "
@@ -271,6 +275,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
 
         $ok = (bool)mysqli_query($conn, "INSERT INTO loan_payments (loan_id, amount_paid, payment_date, received_by) VALUES ({$row['id']}, $pay, '$payment_date', $received_by)");
 
+        if ($ok && (int)$row['client_id'] > 0) {
+            $cid_sql = cidSql();
+            mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by) VALUES ($cid_sql, {$row['client_id']}, $pay, '$payment_date', $received_by)");
+        }
+
         if ($ok && $row['bulk_id']) {
             $q = $fully_paid
                 ? "UPDATE sales_bulk SET loan_amount = 0, has_loan = 0 WHERE id = {$row['bulk_id']}"
@@ -360,6 +369,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_payments'])
         WHERE l.client_id = $client_id
           AND lp.payment_date BETWEEN '$date_from' AND '$date_to'
         ORDER BY lp.payment_date DESC, lp.id DESC
+    ");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
+    header('Content-Type: application/json');
+    echo json_encode($rows);
+    exit;
+}
+
+// ── AJAX: Get Direct Client Payments ──────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_payments_direct'])) {
+    $client_id = (int)$_POST['client_id'];
+    $date_from = mysqli_real_escape_string($conn, $_POST['date_from'] ?? date('Y-m-d', strtotime('-1 month')));
+    $date_to   = mysqli_real_escape_string($conn, $_POST['date_to']   ?? date('Y-m-d'));
+    if ($client_id <= 0) { header('Content-Type: application/json'); echo json_encode([]); exit; }
+
+    $q = mysqli_query($conn, "
+        SELECT cp.id, cp.amount, cp.payment_date, cp.note, cp.created_at,
+               u.full_name AS recorded_by_name
+        FROM client_payments cp
+        LEFT JOIN users u ON u.id = cp.recorded_by
+        WHERE cp.client_id = $client_id
+          AND cp.payment_date BETWEEN '$date_from' AND '$date_to'
+        ORDER BY cp.payment_date DESC, cp.id DESC
     ");
     $rows = [];
     while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
@@ -637,6 +669,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                             <?php endif; ?>
                             <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
+
                             <div class="act-menu-sep"></div>
                             <button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
                           
@@ -756,7 +789,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 &#8681; Export
             </button>
         </div>
-        <div style="display:flex;gap:10px;margin:12px 0 8px;align-items:flex-end;flex-wrap:wrap;">
+        <div style="display:flex;gap:10px;margin:12px 0 10px;align-items:flex-end;flex-wrap:wrap;">
             <div class="form-group" style="margin:0;min-width:140px;">
                 <label style="font-size:12px;">From</label>
                 <input type="date" id="cpay_from">
@@ -768,7 +801,19 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
             <button class="btn btn-primary" style="padding:7px 18px;" onclick="loadClientPayments()">Find</button>
             <span id="clientPaymentsCount" style="font-size:13px;color:var(--secondary);padding-bottom:6px;"></span>
         </div>
-        <div id="clientPaymentsBody" style="overflow-x:auto;max-height:420px;overflow-y:auto;"></div>
+        <!-- Tabs -->
+        <div style="display:flex;border-bottom:2px solid var(--gray-200);margin-bottom:12px;">
+            <button id="cpay-tab-loan" onclick="switchCpayTab('loan')"
+                style="padding:8px 18px;border:none;border-bottom:3px solid var(--primary);background:none;font-size:13px;font-weight:700;color:var(--primary);cursor:pointer;margin-bottom:-2px;">
+                Loan Payments <span id="cpay-badge-loan" style="font-size:11px;font-weight:400;"></span>
+            </button>
+            <button id="cpay-tab-direct" onclick="switchCpayTab('direct')"
+                style="padding:8px 18px;border:none;border-bottom:3px solid transparent;background:none;font-size:13px;font-weight:400;color:var(--secondary);cursor:pointer;margin-bottom:-2px;">
+                Direct Payments <span id="cpay-badge-direct" style="font-size:11px;font-weight:400;"></span>
+            </button>
+        </div>
+        <div id="cpay-panel-loan" style="overflow-x:auto;max-height:380px;overflow-y:auto;"></div>
+        <div id="cpay-panel-direct" style="display:none;overflow-x:auto;max-height:380px;overflow-y:auto;"></div>
     </div>
 </div>
 
@@ -1689,6 +1734,7 @@ function viewClientPayments(clientId, clientName) {
     _cpayClientName = clientName;
     document.getElementById('clientPaymentsTitle').textContent = clientName + ' — Payments';
     document.getElementById('clientPaymentsCount').textContent = '';
+    switchCpayTab('loan');
 
     var today = new Date();
     var from  = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -1791,39 +1837,68 @@ function _renderClientsTable(clients) {
     wrap.innerHTML = html;
 }
 
+var _cpayActiveTab = 'loan';
+
+function switchCpayTab(tab) {
+    _cpayActiveTab = tab;
+    ['loan', 'direct'].forEach(function(t) {
+        var btn   = document.getElementById('cpay-tab-' + t);
+        var panel = document.getElementById('cpay-panel-' + t);
+        var active = t === tab;
+        btn.style.fontWeight   = active ? '700' : '400';
+        btn.style.color        = active ? 'var(--primary)' : 'var(--secondary)';
+        btn.style.borderBottom = active ? '3px solid var(--primary)' : '3px solid transparent';
+        panel.style.display    = active ? '' : 'none';
+    });
+    document.getElementById('cpayExportBtn').style.display =
+        (tab === 'loan' && _cpayRows.length) ? 'inline-block' : 'none';
+}
+
 function loadClientPayments() {
-    document.getElementById('cpayExportBtn').style.display = 'none';
     _cpayRows = [];
-    var body = document.getElementById('clientPaymentsBody');
-    body.innerHTML = '<p style="text-align:center;padding:20px;color:var(--secondary);">Loading...</p>';
+    document.getElementById('cpayExportBtn').style.display = 'none';
+    var loading = '<p style="text-align:center;padding:20px;color:var(--secondary);">Loading...</p>';
+    document.getElementById('cpay-panel-loan').innerHTML   = loading;
+    document.getElementById('cpay-panel-direct').innerHTML = loading;
 
-    var data = new FormData();
-    data.append('get_client_payments', '1');
-    data.append('client_id',  _cpayClientId);
-    data.append('date_from',  document.getElementById('cpay_from').value);
-    data.append('date_to',    document.getElementById('cpay_to').value);
+    var from = document.getElementById('cpay_from').value;
+    var to   = document.getElementById('cpay_to').value;
 
-    fetch('loans.php', { method: 'POST', body: data })
-        .then(function(r) { return r.json(); })
-        .then(function(rows) {
-            _cpayRows = rows;
-            document.getElementById('clientPaymentsCount').textContent =
-                rows.length + ' payment' + (rows.length !== 1 ? 's' : '');
-            document.getElementById('cpayExportBtn').style.display = rows.length ? 'inline-block' : 'none';
+    var fd1 = new FormData();
+    fd1.append('get_client_payments', '1');
+    fd1.append('client_id', _cpayClientId);
+    fd1.append('date_from', from);
+    fd1.append('date_to', to);
 
-            if (!rows.length) {
-                body.innerHTML = '<p style="text-align:center;padding:24px;color:var(--secondary);">No payments in this period.</p>';
-                return;
-            }
+    var fd2 = new FormData();
+    fd2.append('get_client_payments_direct', '1');
+    fd2.append('client_id', _cpayClientId);
+    fd2.append('date_from', from);
+    fd2.append('date_to', to);
 
-            var total = 0;
-            var html = '<table class="table" style="font-size:13px;min-width:620px;">' +
+    Promise.all([
+        fetch('loans.php', { method: 'POST', body: fd1 }).then(function(r) { return r.json(); }),
+        fetch('loans.php', { method: 'POST', body: fd2 }).then(function(r) { return r.json(); })
+    ]).then(function(results) {
+        var loanRows   = results[0] || [];
+        var directRows = results[1] || [];
+        _cpayRows = loanRows;
+
+        document.getElementById('cpay-badge-loan').textContent   = '(' + loanRows.length + ')';
+        document.getElementById('cpay-badge-direct').textContent = '(' + directRows.length + ')';
+        document.getElementById('clientPaymentsCount').textContent =
+            (loanRows.length + directRows.length) + ' payment' + ((loanRows.length + directRows.length) !== 1 ? 's' : '');
+
+        // Loan payments panel
+        var lPanel = document.getElementById('cpay-panel-loan');
+        if (loanRows.length) {
+            var lTotal = 0;
+            var lHtml = '<table class="table" style="font-size:13px;min-width:620px;">' +
                 '<thead><tr><th>#</th><th>Date</th><th>Product</th><th>Amount Paid</th><th>Received By</th><th>Created At</th></tr></thead><tbody>';
-
-            rows.forEach(function(p, i) {
-                total += parseFloat(p.amount_paid);
+            loanRows.forEach(function(p, i) {
+                lTotal += parseFloat(p.amount_paid);
                 var createdAt = p.created_at ? p.created_at.replace('T',' ').substring(0,16) : '—';
-                html += '<tr>' +
+                lHtml += '<tr>' +
                     '<td style="color:var(--secondary);">' + (i + 1) + '</td>' +
                     '<td style="white-space:nowrap;">' + p.payment_date + '</td>' +
                     '<td>' + (p.product_category || '') + '-' + (p.product_name || '—') + '</td>' +
@@ -1832,16 +1907,49 @@ function loadClientPayments() {
                     '<td style="color:var(--secondary);font-size:12px;white-space:nowrap;">' + createdAt + '</td>' +
                     '</tr>';
             });
-
-            html += '</tbody><tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
-                '<td colspan="3" style="padding:10px 12px;">Total</td>' +
-                '<td style="color:var(--success);">RWF ' + total.toLocaleString() + '</td>' +
+            lHtml += '</tbody><tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
+                '<td colspan="3" style="padding:10px 12px;">Total (' + loanRows.length + ')</td>' +
+                '<td style="color:var(--success);">RWF ' + lTotal.toLocaleString() + '</td>' +
                 '<td colspan="2"></td></tr></tfoot></table>';
-            body.innerHTML = html;
-        })
-        .catch(function() {
-            body.innerHTML = '<p style="color:var(--danger);padding:20px;">Failed to load payments.</p>';
-        });
+            lPanel.innerHTML = lHtml;
+        } else {
+            lPanel.innerHTML = '<p style="text-align:center;padding:24px;color:var(--secondary);">No loan payments in this period.</p>';
+        }
+
+        // Direct payments panel
+        var dPanel = document.getElementById('cpay-panel-direct');
+        if (directRows.length) {
+            var dTotal = 0;
+            var dHtml = '<table class="table" style="font-size:13px;min-width:520px;">' +
+                '<thead><tr><th>#</th><th>Date</th><th>Amount</th><th>Note</th><th>Recorded By</th><th>Created At</th></tr></thead><tbody>';
+            directRows.forEach(function(p, i) {
+                dTotal += parseFloat(p.amount);
+                var createdAt = p.created_at ? p.created_at.replace('T',' ').substring(0,16) : '—';
+                dHtml += '<tr>' +
+                    '<td style="color:var(--secondary);">' + (i + 1) + '</td>' +
+                    '<td style="white-space:nowrap;">' + p.payment_date + '</td>' +
+                    '<td style="font-weight:600;color:var(--success);">RWF ' + parseFloat(p.amount).toLocaleString() + '</td>' +
+                    '<td style="color:var(--secondary);">' + (p.note || '—') + '</td>' +
+                    '<td style="color:var(--secondary);">' + (p.recorded_by_name || '—') + '</td>' +
+                    '<td style="color:var(--secondary);font-size:12px;white-space:nowrap;">' + createdAt + '</td>' +
+                    '</tr>';
+            });
+            dHtml += '</tbody><tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
+                '<td colspan="2" style="padding:10px 12px;">Total (' + directRows.length + ')</td>' +
+                '<td style="color:var(--success);">RWF ' + dTotal.toLocaleString() + '</td>' +
+                '<td colspan="3"></td></tr></tfoot></table>';
+            dPanel.innerHTML = dHtml;
+        } else {
+            dPanel.innerHTML = '<p style="text-align:center;padding:24px;color:var(--secondary);">No direct payments in this period.</p>';
+        }
+
+        if (_cpayActiveTab === 'loan' && loanRows.length) {
+            document.getElementById('cpayExportBtn').style.display = 'inline-block';
+        }
+    }).catch(function() {
+        document.getElementById('cpay-panel-loan').innerHTML   = '<p style="color:var(--danger);padding:20px;">Failed to load payments.</p>';
+        document.getElementById('cpay-panel-direct').innerHTML = '';
+    });
 }
 </script>
 </body>
