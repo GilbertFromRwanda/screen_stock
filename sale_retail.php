@@ -501,8 +501,12 @@ var retailAllCategories   = [];
         catSearch.value = label;
         catSearch.setAttribute('readonly', '');
         catDropdown.classList.remove('open');
-        document.getElementById('retail_product_search').dispatchEvent(new Event('input'));
-        document.getElementById('retail_product_search').focus();
+        retailSelectedProduct = null;
+        document.getElementById('retail_product_id').value = '';
+        var ps = document.getElementById('retail_product_search');
+        ps.value = '';
+        ps.dispatchEvent(new Event('input'));
+        ps.focus();
     }
 
     catSearch.addEventListener('focus', function() { renderCatOpts(''); catDropdown.classList.add('open'); });

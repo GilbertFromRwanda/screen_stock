@@ -1059,8 +1059,11 @@ var allCategories = [];
         catSearch.value = label;
         catSearch.setAttribute('readonly', '');
         catDropdown.classList.remove('open');
-        document.getElementById('product_search').dispatchEvent(new Event('input'));
-        document.getElementById('product_search').focus();
+        var ps = document.getElementById('product_search');
+        ps.value = '';
+        document.getElementById('product_id').value = '';
+        ps.dispatchEvent(new Event('input'));
+        ps.focus();
     }
 
     catSearch.addEventListener('focus', function() {

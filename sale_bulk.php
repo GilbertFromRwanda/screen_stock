@@ -501,8 +501,12 @@ var bulkAllCategories   = [];
         catSearch.value = label;
         catSearch.setAttribute('readonly', '');
         catDropdown.classList.remove('open');
-        document.getElementById('bulk_product_search').dispatchEvent(new Event('input'));
-        document.getElementById('bulk_product_search').focus();
+        bulkSelectedProduct = null;
+        document.getElementById('bulk_product_id').value = '';
+        var ps = document.getElementById('bulk_product_search');
+        ps.value = '';
+        ps.dispatchEvent(new Event('input'));
+        ps.focus();
     }
 
     catSearch.addEventListener('focus', function() { renderCatOpts(''); catDropdown.classList.add('open'); });

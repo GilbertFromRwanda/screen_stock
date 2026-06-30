@@ -4,6 +4,35 @@ require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('loans')) { $_SESSION['flash_error'] = "You don't have permission to access Loans."; redirect('dashboard.php'); }
 
+// ── AJAX: Add New Client ──────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_new_client'])) {
+    $name  = mysqli_real_escape_string($conn, trim($_POST['client_name']));
+    $phone = mysqli_real_escape_string($conn, trim($_POST['client_phone']));
+
+    if (empty($name)) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Client name is required.']);
+        exit;
+    }
+
+    $cid_sql = cidSql();
+    $ph = $phone !== '' ? "'$phone'" : 'NULL';
+    $ok = (bool)mysqli_query($conn, "
+        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount, paid_amount)
+        VALUES ($cid_sql, '$name', $ph, 0, 0, 0)
+    ");
+
+    header('Content-Type: application/json');
+    if ($ok) {
+        echo json_encode(['success' => true]);
+    } else {
+        $err = mysqli_error($conn);
+        $msg = strpos($err, 'Duplicate') !== false ? 'A client with this name and phone already exists.' : $err;
+        echo json_encode(['success' => false, 'message' => $msg]);
+    }
+    exit;
+}
+
 // ── AJAX: Add Loan ─────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
     $product_id = (int)$_POST['product_id'];
@@ -586,6 +615,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 </button>
                 <?php endif; ?>
                 </div>
+                <button onclick="openModal('addClientModal')" class="btn btn-secondary">+ Add New Client</button>
                 <button onclick="openModal('addLoanModal')" class="btn btn-primary">+ New Loan</button>
             </div>
         </div>
@@ -930,6 +960,26 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     </div>
 </div>
 
+<!-- Add New Client Modal -->
+<div id="addClientModal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <span class="close" onclick="closeModal('addClientModal')">&times;</span>
+        <h2>Add New Client</h2>
+        <div id="addClientAlert" class="alert" style="display:none;"></div>
+        <form id="addClientForm">
+            <div class="form-group">
+                <label>Client Name*</label>
+                <input type="text" id="new_client_name" name="client_name" required placeholder="Full name">
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="new_client_phone" name="client_phone" placeholder="e.g. 07XXXXXXXX">
+            </div>
+            <button type="submit" name="add_new_client" class="btn btn-primary">Save Client</button>
+        </form>
+    </div>
+</div>
+
 <script src="script.js"></script>
 <script>
 var loanUnitPrice = 0;
@@ -1265,6 +1315,14 @@ ajaxForm('addLoanForm', 'addLoanAlert', 'add_loan', function() {
 
 ajaxForm('paymentForm', 'paymentAlert', 'add_payment', function() {
     closeModal('paymentModal');
+    reloadClientsTable();
+});
+
+ajaxForm('addClientForm', 'addClientAlert', 'add_new_client', function() {
+    closeModal('addClientModal');
+    document.getElementById('addClientForm').reset();
+    var allBtn = document.querySelector('.filter-status-btn[data-status="all"]');
+    if (allBtn) setStatusFilter(allBtn);
     reloadClientsTable();
 });
 

@@ -520,8 +520,12 @@ var extAllCategories = [];
         catSearch.value = label;
         catSearch.setAttribute('readonly', '');
         catDropdown.classList.remove('open');
-        document.getElementById('ext_product_search').dispatchEvent(new Event('input'));
-        document.getElementById('ext_product_search').focus();
+        document.getElementById('ext_product_id').value   = '0';
+        document.getElementById('ext_product_name').value = '';
+        var ps = document.getElementById('ext_product_search');
+        ps.value = '';
+        ps.dispatchEvent(new Event('input'));
+        ps.focus();
     }
 
     catSearch.addEventListener('focus', function() { renderCatOpts(''); catDropdown.classList.add('open'); });

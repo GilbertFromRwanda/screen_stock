@@ -182,13 +182,15 @@ try {
 <!-- Quick-access bar -->
 <div class="quickbar" id="quickbar">
     <span class="qb-label">Quick:</span>
+    
     <a href="sales.php"         class="qb-btn qb-sale">Sales</a>
     <a href="sale_bulk.php"     class="qb-btn qb-sale">+ Bulk Sale</a>
     <a href="sale_retail.php"   class="qb-btn qb-sale">+ Retail Sale</a>
     <a href="sale_external.php" class="qb-btn qb-sale">+ Ext. Sale</a>
-    <a href="new-purchase.php"  class="qb-btn qb-buy">+ Purchase</a>
+    <a href="new-purchase.php"  class="qb-btn qb-buy">+ New Purchase</a>
     <a href="expenses.php"      class="qb-btn qb-exp">+ Expense</a>
     <a href="loans.php"         class="qb-btn qb-loan">+ Loan by Client</a>
+    <a href="stock.php"         class="qb-btn qb-stock">Stock</a>
     
     <span class="qb-ip">
         &#128187; <span id="qb-ip-text"><?= htmlspecialchars($_nav_server_ip) ?></span>
@@ -324,6 +326,7 @@ try {
 .qb-buy  { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
 .qb-exp  { background: #fef3c7; color: #b45309; border-color: #fde68a; }
 .qb-loan { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
+.qb-stock { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
 .qb-ip {
     margin-left: auto; flex-shrink: 0;
     display: inline-flex; align-items: center; gap: 5px;
