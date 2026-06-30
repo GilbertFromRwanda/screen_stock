@@ -5,16 +5,44 @@ if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't h
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 
+// ── AJAX: product search ──────────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
+    header('Content-Type: application/json');
+    $q          = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
+    $cat_filter = trim($_GET['cat'] ?? '');
+    $cat_sql    = $cat_filter ? " AND p.category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
+    $res = mysqli_query($conn, "
+        SELECT p.id, p.name, p.category, p.unit_measure,
+               r.retail_price, r.pieces_quantity
+        FROM retail_stock r
+        JOIN products p ON r.product_id = p.id
+        WHERE r.pieces_quantity > 0 " . cidAndFor('r') . "
+        AND (p.name LIKE '$q' OR p.category LIKE '$q') $cat_sql
+        ORDER BY p.category, p.name LIMIT 60
+    ");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
+    echo json_encode($rows);
+    exit;
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'get_categories') {
+    header('Content-Type: application/json');
+    $res  = mysqli_query($conn, "
+        SELECT DISTINCT p.category FROM retail_stock r
+        JOIN products p ON r.product_id = p.id
+        WHERE r.pieces_quantity > 0 " . cidAndFor('r') . "
+        AND p.category IS NOT NULL AND p.category != ''
+        ORDER BY p.category
+    ");
+    $cats = [];
+    while ($r = mysqli_fetch_assoc($res)) $cats[] = $r['category'];
+    echo json_encode($cats);
+    exit;
+}
+
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
-
-$retail_products = mysqli_query($conn, "
-    SELECT r.*, p.name, p.unit_measure, p.category
-    FROM retail_stock r
-    JOIN products p ON r.product_id = p.id
-    WHERE r.pieces_quantity > 0 " . cidAndFor('r') . "
-    ORDER BY p.category, p.name
-");
 
 $loan_clients_query = mysqli_query($conn, "
     SELECT name AS client, phone, total_loans AS visits, unpaid_amount AS outstanding
@@ -80,6 +108,16 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         .searchable-select-option:hover,
         .searchable-select-option.highlighted { background: var(--gray-100); color: var(--primary); }
         .searchable-select-option.hidden { display: none; }
+        .sd-loading {
+            padding: 10px 12px; font-size: 13px; color: var(--secondary);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .sd-spinner {
+            display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+            border: 2px solid var(--gray-300); border-top-color: var(--primary);
+            border-radius: 50%; animation: sd-spin .6s linear infinite;
+        }
+        @keyframes sd-spin { to { transform: rotate(360deg); } }
         .split-payment-box { border: 1px solid var(--gray-300); border-radius: var(--radius); overflow: hidden; }
         .split-row { display: flex; align-items: center; padding: 8px 12px; gap: 10px; border-bottom: 1px solid var(--gray-100); }
         .split-row:last-child { border-bottom: none; }
@@ -251,36 +289,20 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <!-- Col 1: Product + details + level -->
                         <div>
                             <div class="form-group">
+                                <label>Category</label>
+                                <div class="searchable-select" id="retailCatWrap">
+                                    <input type="text" class="searchable-select-input" id="retail_cat_search"
+                                           placeholder="All categories…" autocomplete="off" readonly style="cursor:pointer;"
+                                           onfocus="this.removeAttribute('readonly')">
+                                    <div class="searchable-select-dropdown" id="retail_cat_dropdown"></div>
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label>Select Product*</label>
-                                <select id="retail_product_id" name="product_id" required onchange="updateRetailProductDetails()" style="display:none">
-                                    <option value="">Choose product...</option>
-                                    <?php while ($row = mysqli_fetch_assoc($retail_products)): ?>
-                                        <option value="<?php echo $row['product_id']; ?>"
-                                                data-price="<?php echo $row['retail_price']; ?>"
-                                                data-stock="<?php echo $row['pieces_quantity']; ?>"
-                                                data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                                data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                            <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                        </option>
-                                    <?php endwhile; ?>
-                                </select>
+                                <input type="hidden" id="retail_product_id" name="product_id">
                                 <div class="searchable-select" id="retailProductSearchable">
                                     <input type="text" class="searchable-select-input" id="retail_product_search" placeholder="Search product..." autocomplete="off">
-                                    <div class="searchable-select-dropdown" id="retail_product_dropdown">
-                                        <?php
-                                        mysqli_data_seek($retail_products, 0);
-                                        while ($row = mysqli_fetch_assoc($retail_products)):
-                                        ?>
-                                            <div class="searchable-select-option"
-                                                 data-value="<?php echo $row['product_id']; ?>"
-                                                 data-price="<?php echo $row['retail_price']; ?>"
-                                                 data-stock="<?php echo $row['pieces_quantity']; ?>"
-                                                 data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                                 data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                                <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                            </div>
-                                        <?php endwhile; ?>
-                                    </div>
+                                    <div class="searchable-select-dropdown" id="retail_product_dropdown"></div>
                                 </div>
                             </div>
                             <div id="retail_product_details" class="price-history" style="display:none;">
@@ -439,43 +461,162 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
 <script src="script.js"></script>
 <script>
-function initSearchableSelect(wrapperId, searchInputId, dropdownId, hiddenSelectId) {
-    var searchInput  = document.getElementById(searchInputId);
-    var dropdown     = document.getElementById(dropdownId);
-    var hiddenSelect = document.getElementById(hiddenSelectId);
-    var options      = dropdown.querySelectorAll('.searchable-select-option');
-    var hi = -1;
+// ── AJAX product picker ───────────────────────────────────────────────────────
+var retailSelectedProduct = null;
+var retailSelectedCat     = '';
+var retailAllCategories   = [];
 
-    searchInput.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
-    searchInput.addEventListener('input', function() { dropdown.classList.add('open'); hi = -1; filter(); });
-    searchInput.addEventListener('keydown', function(e) {
-        var vis = dropdown.querySelectorAll('.searchable-select-option:not(.hidden)');
+// ── Retail category searchable select ────────────────────────────────────────
+(function() {
+    var catSearch   = document.getElementById('retail_cat_search');
+    var catDropdown = document.getElementById('retail_cat_dropdown');
+
+    function renderCatOpts(filter) {
+        catDropdown.innerHTML = '';
+        var allDiv = document.createElement('div');
+        allDiv.className = 'searchable-select-option';
+        allDiv.textContent = '— All Categories —';
+        allDiv.addEventListener('click', function() { pickCat('', ''); });
+        catDropdown.appendChild(allDiv);
+        var q = filter.toLowerCase();
+        var matched = retailAllCategories.filter(function(c) { return c.toLowerCase().indexOf(q) !== -1; });
+        matched.forEach(function(cat) {
+            var div = document.createElement('div');
+            div.className = 'searchable-select-option';
+            div.textContent = cat;
+            div.addEventListener('click', function() { pickCat(cat, cat); });
+            catDropdown.appendChild(div);
+        });
+        if (!matched.length) {
+            var none = document.createElement('div');
+            none.className = 'searchable-select-option';
+            none.style.color = 'var(--secondary)'; none.style.cursor = 'default';
+            none.textContent = 'No categories found';
+            catDropdown.appendChild(none);
+        }
+    }
+
+    function pickCat(value, label) {
+        retailSelectedCat = value;
+        catSearch.value = label;
+        catSearch.setAttribute('readonly', '');
+        catDropdown.classList.remove('open');
+        document.getElementById('retail_product_search').dispatchEvent(new Event('input'));
+        document.getElementById('retail_product_search').focus();
+    }
+
+    catSearch.addEventListener('focus', function() { renderCatOpts(''); catDropdown.classList.add('open'); });
+    catSearch.addEventListener('input', function() { renderCatOpts(this.value.trim()); catDropdown.classList.add('open'); });
+    catSearch.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { catDropdown.classList.remove('open'); catSearch.setAttribute('readonly',''); }
+    });
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#retailCatWrap')) {
+            catDropdown.classList.remove('open');
+            catSearch.value = retailSelectedCat || '';
+            catSearch.setAttribute('readonly', '');
+        }
+    });
+})();
+
+function loadRetailCategories() {
+    fetch('sale_retail.php?action=get_categories')
+        .then(function(r) { return r.json(); })
+        .then(function(cats) { retailAllCategories = cats; })
+        .catch(function() {});
+}
+loadRetailCategories();
+
+(function() {
+    var search   = document.getElementById('retail_product_search');
+    var dropdown = document.getElementById('retail_product_dropdown');
+    var hidden   = document.getElementById('retail_product_id');
+    var hi = -1, debounce = null;
+
+    function getOptions() { return dropdown.querySelectorAll('.searchable-select-option'); }
+
+    function escH(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function renderOptions(items) {
+        dropdown.innerHTML = '';
+        if (!items.length) {
+            dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--secondary);cursor:default;">No results</div>';
+            return;
+        }
+        items.forEach(function(p) {
+            var label = (p.category ? p.category + '-' : '') + p.name;
+            var div = document.createElement('div');
+            div.className = 'searchable-select-option';
+            div.dataset.id    = p.id;
+            div.dataset.name  = label;
+            div.dataset.price = p.retail_price;
+            div.dataset.stock = p.pieces_quantity;
+            div.dataset.unit  = p.unit_measure || '';
+            div.innerHTML = escH(label) + '<small style="color:var(--secondary);"> · ' +
+                p.pieces_quantity + ' pcs · RWF ' + Number(p.retail_price).toLocaleString() + '</small>';
+            div.addEventListener('click', function() { pick(div); });
+            dropdown.appendChild(div);
+        });
+        hi = -1;
+    }
+
+    function showLoading() {
+        dropdown.innerHTML = '<div class="sd-loading"><span class="sd-spinner"></span> Searching…</div>';
+        dropdown.classList.add('open');
+    }
+
+    function doSearch(q) {
+        showLoading();
+        var url = 'sale_retail.php?action=search_products&q=' + encodeURIComponent(q);
+        if (retailSelectedCat) url += '&cat=' + encodeURIComponent(retailSelectedCat);
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(data) { renderOptions(data); dropdown.classList.add('open'); })
+            .catch(function() {
+                dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--danger);cursor:default;">Failed to load</div>';
+            });
+    }
+
+    search.addEventListener('focus', function() {
+        if (!search.value.trim()) doSearch('');
+        else dropdown.classList.add('open');
+    });
+    search.addEventListener('input', function() {
+        retailSelectedProduct = null; hidden.value = '';
+        hi = -1;
+        clearTimeout(debounce);
+        debounce = setTimeout(function() { doSearch(search.value.trim()); }, 250);
+    });
+    search.addEventListener('keydown', function(e) {
+        var vis = getOptions();
         if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(hi+1, vis.length-1); hl(vis); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(hi-1, 0); hl(vis); }
         else if (e.key === 'Enter')  { e.preventDefault(); if (hi>=0&&vis[hi]) pick(vis[hi]); }
-        else if (e.key === 'Escape') { dropdown.classList.remove('open'); searchInput.blur(); }
+        else if (e.key === 'Escape') dropdown.classList.remove('open');
     });
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('#' + wrapperId)) dropdown.classList.remove('open');
+        if (!e.target.closest('#retailProductSearchable')) dropdown.classList.remove('open');
     });
-    options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
-    function filter() {
-        var term = searchInput.value.toLowerCase();
-        options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1); });
-    }
     function hl(vis) {
-        options.forEach(function(o) { o.classList.remove('highlighted'); });
+        getOptions().forEach(function(o) { o.classList.remove('highlighted'); });
         if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
     }
     function pick(opt) {
-        searchInput.value = opt.textContent.trim();
+        if (!opt.dataset.id) return;
+        hidden.value = opt.dataset.id;
+        retailSelectedProduct = {
+            id:    opt.dataset.id,
+            name:  opt.dataset.name,
+            price: parseFloat(opt.dataset.price) || 0,
+            stock: parseInt(opt.dataset.stock)   || 0,
+            unit:  opt.dataset.unit || ''
+        };
+        search.value = opt.dataset.name;
         dropdown.classList.remove('open'); hi = -1;
-        hiddenSelect.value = opt.getAttribute('data-value');
-        hiddenSelect.dispatchEvent(new Event('change'));
+        updateRetailProductDetails();
     }
-}
-initSearchableSelect('retailProductSearchable', 'retail_product_search', 'retail_product_dropdown', 'retail_product_id');
+})();
 
 function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId) {
     var wrap = document.getElementById(wrapId);
@@ -542,9 +683,7 @@ function goToStep1() {
 }
 
 function updateRetailProductDetails() {
-    var select = document.getElementById('retail_product_id');
-    var opt    = select.options[select.selectedIndex];
-    if (!opt.value) {
+    if (!retailSelectedProduct) {
         document.getElementById('retail_product_details').style.display = 'none';
         document.getElementById('retail_stock_info').innerHTML = '';
         document.getElementById('retail_selling_price').value = '';
@@ -558,9 +697,9 @@ function updateRetailProductDetails() {
         retailCoreValid = false;
         return;
     }
-    var price = opt.dataset.price;
-    var stock = opt.dataset.stock;
-    var name  = opt.dataset.productName;
+    var price = retailSelectedProduct.price;
+    var stock = retailSelectedProduct.stock;
+    var name  = retailSelectedProduct.name;
 
     document.getElementById('retail_selling_price').value = price;
     document.getElementById('pieces_sold').value = '';
@@ -573,9 +712,9 @@ function updateRetailProductDetails() {
     document.getElementById('retail_loan_split').value = 0;
     calculateRetailTotal();
 
-    var retail_pieces = parseInt(opt.dataset.stock) || 0;
+    var retail_pieces = retailSelectedProduct.stock;
     document.getElementById('retail_level_multiplier').value = 1;
-    fetch('ajax_levels.php?product_id=' + opt.value)
+    fetch('ajax_levels.php?product_id=' + retailSelectedProduct.id)
         .then(function(r){ return r.json(); })
         .then(function(data) {
             var sel  = document.getElementById('retail_level_selector');
@@ -624,22 +763,19 @@ function setRetailDefaultPrice() {
     var activeBtn = document.querySelector('#retail_level_buttons .lvl-btn.active');
     if (activeBtn) {
         document.getElementById('retail_selling_price').value = activeBtn.dataset.price;
-    } else {
-        var opt = document.getElementById('retail_product_id').options[document.getElementById('retail_product_id').selectedIndex];
-        if (opt.value) document.getElementById('retail_selling_price').value = opt.dataset.price;
+    } else if (retailSelectedProduct) {
+        document.getElementById('retail_selling_price').value = retailSelectedProduct.price;
     }
     calculateRetailTotal();
 }
 
 function calculateRetailTotal() {
-    var select = document.getElementById('retail_product_id');
-    var opt    = select.options[select.selectedIndex];
-    if (!opt.value) return;
+    if (!retailSelectedProduct) return;
 
     var piecesInput = document.getElementById('pieces_sold');
-    var stock = parseInt(piecesInput.max) > 0 ? parseInt(piecesInput.max) : (parseInt(opt.dataset.stock)||0);
+    var stock = parseInt(piecesInput.max) > 0 ? parseInt(piecesInput.max) : retailSelectedProduct.stock;
     var activeBtn = document.querySelector('#retail_level_buttons .lvl-btn.active');
-    var defaultPrice = activeBtn ? (parseFloat(activeBtn.dataset.price)||0) : (parseFloat(opt.dataset.price)||0);
+    var defaultPrice = activeBtn ? (parseFloat(activeBtn.dataset.price)||0) : retailSelectedProduct.price;
     var qty   = parseInt(document.getElementById('pieces_sold').value) || 0;
     var price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
     var total = qty * price;
@@ -667,7 +803,7 @@ function calculateRetailTotal() {
     document.getElementById('retail_next_btn').disabled = !valid;
 
     if (valid) {
-        document.getElementById('retail_sum_product').textContent = opt.dataset.productName;
+        document.getElementById('retail_sum_product').textContent = retailSelectedProduct.name;
         document.getElementById('retail_sum_qty').textContent = qty;
         document.getElementById('retail_sum_price').textContent = 'RWF ' + price.toLocaleString();
         document.getElementById('retail_sum_total').textContent = 'RWF ' + total.toLocaleString();
@@ -748,7 +884,7 @@ function toggleRetailShortcut(type) {
 }
 
 function handleRetailSubmit() {
-    var opt   = document.getElementById('retail_product_id').options[document.getElementById('retail_product_id').selectedIndex];
+    if (!retailSelectedProduct) return;
     var qty   = document.getElementById('pieces_sold').value;
     var price = parseFloat(document.getElementById('retail_selling_price').value);
     var total = qty * price;
@@ -761,7 +897,7 @@ function handleRetailSubmit() {
     if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
     var ok = confirm(
         'Confirm Retail Sale?\n\n' +
-        'Product: ' + opt.dataset.productName + '\n' +
+        'Product: ' + retailSelectedProduct.name + '\n' +
         'Pieces: ' + qty + '\n' +
         'Price/Piece: RWF ' + price.toLocaleString() + '\n' +
         'Total: RWF ' + total.toLocaleString() + '\n' +

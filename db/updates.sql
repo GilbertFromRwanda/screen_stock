@@ -184,3 +184,24 @@ CREATE TABLE IF NOT EXISTS `client_payments` (
 ALTER TABLE stock_value_cache
   ADD COLUMN IF NOT EXISTS company_id INT NOT NULL DEFAULT 0 AFTER product_id,
   ADD UNIQUE KEY uq_product (product_id, company_id);
+
+
+-- ── order_payments: individual payment transactions against an order ───────────
+CREATE TABLE IF NOT EXISTS `order_payments` (
+    `id`          INT           AUTO_INCREMENT PRIMARY KEY,
+    `company_id`  INT           DEFAULT NULL,
+    `order_id`    INT           NOT NULL,
+    `cash`        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `momo`        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `bank`        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `loan`        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `total`       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `recorded_by` INT           NOT NULL,
+    `note`        VARCHAR(255)  DEFAULT NULL,
+    `created_at`  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_op_order`   (`order_id`),
+    INDEX `idx_op_company` (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 'closed' status for orders
+ALTER TABLE `orders` MODIFY COLUMN `status` ENUM('pending','approved','cancelled','closed') NOT NULL DEFAULT 'pending';

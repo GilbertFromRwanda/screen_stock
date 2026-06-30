@@ -5,21 +5,43 @@ if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't h
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 
+// ── AJAX: product search ──────────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
+    header('Content-Type: application/json');
+    $q          = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
+    $cat_filter = trim($_GET['cat'] ?? '');
+    $cat_sql    = $cat_filter ? " AND p.category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
+    $res = mysqli_query($conn, "
+        SELECT p.id, p.name, p.category,
+               COALESCE(s.package_price, 0) AS bulk_price,
+               COALESCE(r.retail_price, 0)  AS retail_price
+        FROM products p
+        LEFT JOIN stock s        ON s.product_id = p.id " . cidAndFor('s') . "
+        LEFT JOIN retail_stock r ON r.product_id = p.id " . cidAndFor('r') . "
+        WHERE p.deleted = 0 AND (p.name LIKE '$q' OR p.category LIKE '$q') $cat_sql
+        ORDER BY p.category, p.name LIMIT 60
+    ");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
+    echo json_encode($rows);
+    exit;
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'get_categories') {
+    header('Content-Type: application/json');
+    $res  = mysqli_query($conn,
+        "SELECT DISTINCT category FROM products
+         WHERE deleted = 0 AND category IS NOT NULL AND category != ''
+         ORDER BY category"
+    );
+    $cats = [];
+    while ($r = mysqli_fetch_assoc($res)) $cats[] = $r['category'];
+    echo json_encode($cats);
+    exit;
+}
+
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
-
-// All products for picker
-$all_products_query = mysqli_query($conn, "
-    SELECT p.id, p.name, p.category, p.unit_measure,
-           COALESCE(s.package_price, 0) as bulk_price,
-           COALESCE(r.retail_price, 0)  as retail_price
-    FROM products p
-    LEFT JOIN stock s        ON s.product_id = p.id " . cidAndFor('s') . "
-    LEFT JOIN retail_stock r ON r.product_id = p.id " . cidAndFor('r') . "
-    ORDER BY p.category, p.name
-");
-$all_products_arr = [];
-while ($ap = mysqli_fetch_assoc($all_products_query)) $all_products_arr[] = $ap;
 
 // Loan clients
 $loan_clients_query = mysqli_query($conn, "
@@ -98,6 +120,16 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         .searchable-select-option:hover,
         .searchable-select-option.highlighted { background: var(--gray-100); color: var(--primary); }
         .searchable-select-option.hidden { display: none; }
+        .sd-loading {
+            padding: 10px 12px; font-size: 13px; color: var(--secondary);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .sd-spinner {
+            display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+            border: 2px solid var(--gray-300); border-top-color: var(--primary);
+            border-radius: 50%; animation: sd-spin .6s linear infinite;
+        }
+        @keyframes sd-spin { to { transform: rotate(360deg); } }
         .split-payment-box { border: 1px solid var(--gray-300); border-radius: var(--radius); overflow: hidden; }
         .split-row { display: flex; align-items: center; padding: 8px 12px; gap: 10px; border-bottom: 1px solid var(--gray-100); }
         .split-row:last-child { border-bottom: none; }
@@ -248,28 +280,21 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 
                         <!-- Col 1: Product picker / manual -->
                         <div>
+                            <div class="form-group">
+                                <label>Category</label>
+                                <div class="searchable-select" id="extCatWrap">
+                                    <input type="text" class="searchable-select-input" id="ext_cat_search"
+                                           placeholder="All categories…" autocomplete="off" readonly style="cursor:pointer;"
+                                           onfocus="this.removeAttribute('readonly')">
+                                    <div class="searchable-select-dropdown" id="ext_cat_dropdown"></div>
+                                </div>
+                            </div>
                             <div class="form-group" id="ext_picker_mode">
                                 <label>Product*</label>
                                 <div class="searchable-select" id="extProductSearchable">
                                     <input type="text" class="searchable-select-input" id="ext_product_search"
                                            placeholder="Search product..." autocomplete="off">
-                                    <div class="searchable-select-dropdown" id="ext_product_dropdown">
-                                        <?php foreach ($all_products_arr as $ap): ?>
-                                            <div class="searchable-select-option"
-                                                 data-id="<?php echo $ap['id']; ?>"
-                                                 data-name="<?php echo htmlspecialchars($ap['category'].'-'.$ap['name'], ENT_QUOTES); ?>"
-                                                 data-bulk="<?php echo $ap['bulk_price']; ?>"
-                                                 data-retail="<?php echo $ap['retail_price']; ?>">
-                                                <?php echo htmlspecialchars($ap['category'].'-'.$ap['name']); ?>
-                                                <?php if ($ap['bulk_price'] > 0 || $ap['retail_price'] > 0): ?>
-                                                    <small style="color:var(--secondary);">
-                                                        <?php if ($ap['bulk_price'] > 0): ?> bulk:<?php echo number_format($ap['bulk_price'],0); ?><?php endif; ?>
-                                                        <?php if ($ap['retail_price'] > 0): ?> retail:<?php echo number_format($ap['retail_price'],0); ?><?php endif; ?>
-                                                    </small>
-                                                <?php endif; ?>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
+                                    <div class="searchable-select-dropdown" id="ext_product_dropdown"></div>
                                 </div>
                                 <button type="button" class="btn btn-sm" style="margin-top:6px;background:var(--gray-200);color:var(--dark);"
                                         onclick="extSwitchToManual()">+ Not in list? Type manually</button>
@@ -457,17 +482,133 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 
 <script src="script.js"></script>
 <script>
-// --- Product picker ---
+var extSelectedCat   = '';
+var extAllCategories = [];
+
+// ── External category searchable select ──────────────────────────────────────
+(function() {
+    var catSearch   = document.getElementById('ext_cat_search');
+    var catDropdown = document.getElementById('ext_cat_dropdown');
+
+    function renderCatOpts(filter) {
+        catDropdown.innerHTML = '';
+        var allDiv = document.createElement('div');
+        allDiv.className = 'searchable-select-option';
+        allDiv.textContent = '— All Categories —';
+        allDiv.addEventListener('click', function() { pickCat('', ''); });
+        catDropdown.appendChild(allDiv);
+        var q = filter.toLowerCase();
+        var matched = extAllCategories.filter(function(c) { return c.toLowerCase().indexOf(q) !== -1; });
+        matched.forEach(function(cat) {
+            var div = document.createElement('div');
+            div.className = 'searchable-select-option';
+            div.textContent = cat;
+            div.addEventListener('click', function() { pickCat(cat, cat); });
+            catDropdown.appendChild(div);
+        });
+        if (!matched.length) {
+            var none = document.createElement('div');
+            none.className = 'searchable-select-option';
+            none.style.color = 'var(--secondary)'; none.style.cursor = 'default';
+            none.textContent = 'No categories found';
+            catDropdown.appendChild(none);
+        }
+    }
+
+    function pickCat(value, label) {
+        extSelectedCat = value;
+        catSearch.value = label;
+        catSearch.setAttribute('readonly', '');
+        catDropdown.classList.remove('open');
+        document.getElementById('ext_product_search').dispatchEvent(new Event('input'));
+        document.getElementById('ext_product_search').focus();
+    }
+
+    catSearch.addEventListener('focus', function() { renderCatOpts(''); catDropdown.classList.add('open'); });
+    catSearch.addEventListener('input', function() { renderCatOpts(this.value.trim()); catDropdown.classList.add('open'); });
+    catSearch.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { catDropdown.classList.remove('open'); catSearch.setAttribute('readonly',''); }
+    });
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#extCatWrap')) {
+            catDropdown.classList.remove('open');
+            catSearch.value = extSelectedCat || '';
+            catSearch.setAttribute('readonly', '');
+        }
+    });
+})();
+
+function loadExtCategories() {
+    fetch('sale_external.php?action=get_categories')
+        .then(function(r) { return r.json(); })
+        .then(function(cats) { extAllCategories = cats; })
+        .catch(function() {});
+}
+loadExtCategories();
+
+// --- Product picker (AJAX) ---
 (function() {
     var search   = document.getElementById('ext_product_search');
     var dropdown = document.getElementById('ext_product_dropdown');
-    var options  = dropdown.querySelectorAll('.searchable-select-option');
     var hi = -1;
+    var debounce = null;
 
-    search.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
-    search.addEventListener('input',  function() { dropdown.classList.add('open'); hi = -1; filter(); });
+    function getOptions() { return dropdown.querySelectorAll('.searchable-select-option'); }
+
+    function renderOptions(items) {
+        dropdown.innerHTML = '';
+        if (!items.length) {
+            dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--secondary);cursor:default;">No results</div>';
+            return;
+        }
+        items.forEach(function(p) {
+            var label = (p.category ? p.category + '-' : '') + p.name;
+            var hint  = '';
+            if (p.bulk_price > 0)   hint += ' bulk:'   + Number(p.bulk_price).toLocaleString();
+            if (p.retail_price > 0) hint += ' retail:' + Number(p.retail_price).toLocaleString();
+            var div = document.createElement('div');
+            div.className = 'searchable-select-option';
+            div.dataset.id     = p.id;
+            div.dataset.name   = label;
+            div.dataset.bulk   = p.bulk_price;
+            div.dataset.retail = p.retail_price;
+            div.innerHTML = escHtmlExt(label) + (hint ? '<small style="color:var(--secondary);">' + hint + '</small>' : '');
+            div.addEventListener('click', function() { pick(div); });
+            dropdown.appendChild(div);
+        });
+        hi = -1;
+    }
+
+    function showLoading() {
+        dropdown.innerHTML = '<div class="sd-loading"><span class="sd-spinner"></span> Searching…</div>';
+        dropdown.classList.add('open');
+    }
+
+    function doSearch(q) {
+        showLoading();
+        var url = 'sale_external.php?action=search_products&q=' + encodeURIComponent(q);
+        if (extSelectedCat) url += '&cat=' + encodeURIComponent(extSelectedCat);
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(data) { renderOptions(data); dropdown.classList.add('open'); })
+            .catch(function() {
+                dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--danger);cursor:default;">Failed to load</div>';
+            });
+    }
+
+    search.addEventListener('focus', function() {
+        if (!search.value.trim()) doSearch('');
+        else dropdown.classList.add('open');
+    });
+    search.addEventListener('input', function() {
+        document.getElementById('ext_product_name').value = '';
+        document.getElementById('ext_product_id').value   = '0';
+        hi = -1;
+        clearTimeout(debounce);
+        debounce = setTimeout(function() { doSearch(search.value.trim()); }, 250);
+    });
     search.addEventListener('keydown', function(e) {
-        var vis = dropdown.querySelectorAll('.searchable-select-option:not(.hidden)');
+        var vis = getOptions();
         if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(hi+1, vis.length-1); hl(vis); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(hi-1, 0); hl(vis); }
         else if (e.key === 'Enter')  { e.preventDefault(); if (hi>=0&&vis[hi]) pick(vis[hi]); }
@@ -476,21 +617,16 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
     document.addEventListener('click', function(e) {
         if (!e.target.closest('#extProductSearchable')) dropdown.classList.remove('open');
     });
-    options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
-    function filter() {
-        var term = search.value.toLowerCase();
-        options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1); });
-    }
     function hl(vis) {
-        options.forEach(function(o) { o.classList.remove('highlighted'); });
+        getOptions().forEach(function(o) { o.classList.remove('highlighted'); });
         if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
     }
     function pick(opt) {
-        var name   = opt.getAttribute('data-name');
-        var id     = opt.getAttribute('data-id') || '0';
-        var bulk   = parseFloat(opt.getAttribute('data-bulk'))   || 0;
-        var retail = parseFloat(opt.getAttribute('data-retail')) || 0;
+        var name   = opt.dataset.name;
+        var id     = opt.dataset.id   || '0';
+        var bulk   = parseFloat(opt.dataset.bulk)   || 0;
+        var retail = parseFloat(opt.dataset.retail) || 0;
         document.getElementById('ext_product_name').value = name;
         document.getElementById('ext_product_id').value   = id;
         search.value = name;
@@ -500,6 +636,10 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             priceEl.value = bulk > 0 ? bulk : retail;
         }
         calcExtTotal();
+    }
+
+    function escHtmlExt(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 })();
 

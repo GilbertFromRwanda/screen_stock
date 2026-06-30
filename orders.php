@@ -64,12 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_order'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
     header('Content-Type: application/json');
 
-    $order_id   = (int)$_POST['order_id'];
-    $appr_cash  = max(0, (float)($_POST['appr_cash']  ?? 0));
-    $appr_momo  = max(0, (float)($_POST['appr_momo']  ?? 0));
-    $appr_loan  = max(0, (float)($_POST['appr_loan']  ?? 0));
-    $appr_bank  = max(0, (float)($_POST['appr_bank']  ?? 0));
-    $appr_phone = mysqli_real_escape_string($conn, trim($_POST['appr_phone'] ?? ''));
+    $order_id = (int)$_POST['order_id'];
 
     $order = mysqli_fetch_assoc(mysqli_query($conn,
         "SELECT * FROM `orders` WHERE id=$order_id AND status='pending'"));
@@ -80,21 +75,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
 
     $total_amount  = (float)$order['total_amount'];
     $customer_name = mysqli_real_escape_string($conn, $order['order_owner']);
-    $phone         = $appr_phone ?: mysqli_real_escape_string($conn, $order['phone']);
-    $cash_amount   = (float)$order['prepaid_cash'] + $appr_cash;
-    $momo_amount   = (float)$order['prepaid_momo'] + (float)$order['prepaid_bank'] + $appr_momo + $appr_bank;
-    $loan_amount   = (float)$order['prepaid_loan'] + $appr_loan;
+    $phone         = mysqli_real_escape_string($conn, $order['phone']);
+    $cash_amount   = (float)$order['prepaid_cash'];
+    $momo_amount   = (float)$order['prepaid_momo'] + (float)$order['prepaid_bank'];
+    $loan_amount   = (float)$order['prepaid_loan'];
     $total_pay     = $cash_amount + $momo_amount + $loan_amount;
-
-    if (abs($total_pay - $total_amount) > 1) {
-        echo json_encode(['success'=>false,'message'=>
-            'Payment (RWF '.number_format($total_pay,0).') must equal order total (RWF '.number_format($total_amount,0).').']);
-        exit;
-    }
-    if ($loan_amount > 0 && !$phone) {
-        echo json_encode(['success'=>false,'message'=>'Phone required for loan payment.']);
-        exit;
-    }
 
     // Fetch order items (fall back to single-product for old orders)
     $items_q = mysqli_query($conn,
@@ -323,11 +308,134 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
     exit;
 }
 
+// ── AJAX: Add Payment ─────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_payment'])) {
+    header('Content-Type: application/json');
+    $order_id  = (int)$_POST['order_id'];
+    $add_cash  = max(0, (float)($_POST['add_cash'] ?? 0));
+    $add_momo  = max(0, (float)($_POST['add_momo'] ?? 0));
+    $add_bank  = max(0, (float)($_POST['add_bank'] ?? 0));
+    $add_loan  = max(0, (float)($_POST['add_loan'] ?? 0));
+    $total_add = round($add_cash + $add_momo + $add_bank + $add_loan, 2);
+
+    if ($total_add <= 0) {
+        echo json_encode(['success'=>false,'message'=>'Enter at least one payment amount.']); exit;
+    }
+    $order = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT * FROM `orders` WHERE id=$order_id AND status='pending'" . cidAnd()));
+    if (!$order) {
+        echo json_encode(['success'=>false,'message'=>'Order not found or not pending.']); exit;
+    }
+    $new_prepaid = round((float)$order['total_prepaid'] + $total_add, 2);
+    if ($new_prepaid > (float)$order['total_amount'] + 1) {
+        echo json_encode(['success'=>false,'message'=>'Payment would exceed order total (RWF '.number_format((float)$order['total_amount'],0).').']); exit;
+    }
+    mysqli_query($conn, "UPDATE `orders` SET
+        prepaid_cash  = prepaid_cash  + $add_cash,
+        prepaid_momo  = prepaid_momo  + $add_momo,
+        prepaid_bank  = prepaid_bank  + $add_bank,
+        prepaid_loan  = prepaid_loan  + $add_loan,
+        total_prepaid = total_prepaid + $total_add,
+        updated_at    = NOW()
+        WHERE id=$order_id");
+    mysqli_query($conn, "INSERT INTO order_payments
+        (company_id,order_id,cash,momo,bank,loan,total,recorded_by)
+        VALUES(" . cidSql() . ",$order_id,$add_cash,$add_momo,$add_bank,$add_loan,$total_add,$user_id)");
+    logActivity($conn, $_SESSION['user_id'], 'UPDATE', 'orders',
+        "Payment added to order #{$order_id}: Cash=$add_cash Momo=$add_momo Bank=$add_bank Loan=$add_loan",
+        $order_id, ['total_prepaid'=>$order['total_prepaid']], ['total_prepaid'=>$new_prepaid]);
+    $new_remaining = max(0, (float)$order['total_amount'] - $new_prepaid);
+    echo json_encode(['success'=>true,'message'=>'Payment recorded.','new_prepaid'=>$new_prepaid,'new_remaining'=>$new_remaining]);
+    exit;
+}
+
+// ── AJAX: Add Product to Order ────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product_to_order'])) {
+    header('Content-Type: application/json');
+    $order_id      = (int)$_POST['order_id'];
+    $product_id    = (int)$_POST['product_id'];
+    $qty           = (float)$_POST['quantity'];
+    $price         = (float)$_POST['selling_price'];
+    $level_divisor = max(1, (int)($_POST['level_divisor'] ?? 1));
+    $src           = in_array($_POST['stock_source'] ?? 'wh', ['wh','rt']) ? $_POST['stock_source'] : 'wh';
+    $item_total    = round($qty * $price, 2);
+
+    if ($product_id <= 0 || $qty <= 0 || $price <= 0) {
+        echo json_encode(['success'=>false,'message'=>'Invalid product, quantity, or price.']); exit;
+    }
+    $order = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT * FROM `orders` WHERE id=$order_id AND status='pending'" . cidAnd()));
+    if (!$order) {
+        echo json_encode(['success'=>false,'message'=>'Order not found or not pending.']); exit;
+    }
+    $prod = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT name,category FROM products WHERE id=$product_id AND deleted=0"));
+    if (!$prod) {
+        echo json_encode(['success'=>false,'message'=>'Product not found.']); exit;
+    }
+    mysqli_query($conn, "INSERT INTO order_items
+        (order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total)
+        VALUES($order_id,$product_id,'$src',$qty,$level_divisor,$price,$item_total)");
+    $item_id = (int)mysqli_insert_id($conn);
+    mysqli_query($conn, "UPDATE `orders` SET total_amount=total_amount+$item_total, updated_at=NOW() WHERE id=$order_id");
+    logActivity($conn, $_SESSION['user_id'], 'UPDATE', 'orders',
+        "Product '{$prod['name']}' x$qty added to order #{$order_id}",
+        $order_id, ['total_amount'=>$order['total_amount']], ['total_amount'=>(float)$order['total_amount']+$item_total]);
+    echo json_encode([
+        'success'       => true,
+        'message'       => "'{$prod['name']}' added to order.",
+        'item_id'       => $item_id,
+        'product_name'  => $prod['name'],
+        'quantity'      => $qty,
+        'item_total'    => $item_total,
+        'new_total'     => round((float)$order['total_amount'] + $item_total, 2),
+    ]);
+    exit;
+}
+
+// ── AJAX: Close Order ─────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['close_order'])) {
+    header('Content-Type: application/json');
+    $order_id = (int)$_POST['order_id'];
+    $order = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT * FROM `orders` WHERE id=$order_id AND status='pending'" . cidAnd()));
+    if (!$order) {
+        echo json_encode(['success'=>false,'message'=>'Order not found or not pending.']); exit;
+    }
+    mysqli_query($conn, "UPDATE `orders` SET status='closed', updated_at=NOW() WHERE id=$order_id");
+    logActivity($conn, $_SESSION['user_id'], 'CLOSE', 'orders',
+        "Order #{$order_id} closed (locked from further editing)",
+        $order_id, ['status'=>'pending'], ['status'=>'closed']);
+    $order_num = $order['order_number'] ?: "#$order_id";
+    echo json_encode(['success'=>true,'message'=>"Order $order_num has been closed."]);
+    exit;
+}
+
+// ── AJAX: Fetch payment history ───────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'order_payments') {
+    header('Content-Type: application/json');
+    $oid = (int)($_GET['order_id'] ?? 0);
+    $order = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT id, order_number, order_owner, total_amount, total_prepaid, status
+         FROM `orders` WHERE id=$oid" . cidAnd()));
+    if (!$order) { echo json_encode(['success'=>false,'message'=>'Order not found.']); exit; }
+    $res = mysqli_query($conn,
+        "SELECT op.*, u.username AS by_name
+         FROM order_payments op
+         LEFT JOIN users u ON op.recorded_by = u.id
+         WHERE op.order_id = $oid
+         ORDER BY op.created_at ASC");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
+    echo json_encode(['success'=>true,'payments'=>$rows,'order'=>$order]);
+    exit;
+}
+
 // ── Page load ─────────────────────────────────────────────────────────────────
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
 
-$status_filter = in_array($_GET['status'] ?? '', ['pending','approved','cancelled'])
+$status_filter = in_array($_GET['status'] ?? '', ['pending','approved','cancelled','closed'])
     ? $_GET['status'] : '';
 $date_from = isset($_GET['date_from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_from'])
     ? $_GET['date_from'] : date('Y-m-d');
@@ -351,7 +459,7 @@ $orders_res = mysqli_query($conn, "
     LEFT JOIN users uc         ON o.cancelled_by   = uc.id
     LEFT JOIN order_owners oo  ON o.order_owner_id = oo.id
     $where
-    ORDER BY FIELD(o.status,'pending','approved','cancelled'), o.created_at DESC
+    ORDER BY FIELD(o.status,'pending','closed','approved','cancelled'), o.created_at DESC
 ");
 
 // Fetch all orders
@@ -401,6 +509,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
 .badge-pending   { background:#fef9c3; color:#854d0e; }
 .badge-approved  { background:#dcfce7; color:#166534; }
 .badge-cancelled { background:#fee2e2; color:#991b1b; }
+.badge-closed    { background:#f1f5f9; color:#475569; }
 
 .orders-stats { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
 .ostat { flex:1; min-width:150px; background:var(--white); border-radius:var(--radius-lg);
@@ -466,6 +575,8 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
 .rp-part { background:#fef9c3; color:#854d0e; }
 
 
+@keyframes aprod-spin { to { transform:rotate(360deg); } }
+
 #orderToast { display:none; position:fixed; bottom:24px; right:24px;
               padding:13px 20px; border-radius:8px; font-size:14px; font-weight:600;
               z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,.15); max-width:360px; }
@@ -529,6 +640,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
             <option value="pending"   <?php if($status_filter==='pending')   echo 'selected'; ?>>Pending</option>
             <option value="approved"  <?php if($status_filter==='approved')  echo 'selected'; ?>>Approved</option>
             <option value="cancelled" <?php if($status_filter==='cancelled') echo 'selected'; ?>>Cancelled</option>
+            <option value="closed"    <?php if($status_filter==='closed')    echo 'selected'; ?>>Closed</option>
         </select>
         <label style="font-size:13px;color:var(--secondary);margin:0;">From</label>
         <input type="date" name="date_from" value="<?php echo $date_from; ?>" onchange="this.form.submit()"
@@ -635,10 +747,15 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
             <div class="act-menu">
                 <button class="act-item" onclick='openProductsModal(<?php echo $prod_data; ?>);closeActMenus()'><i class="fas fa-box-open"></i> Products</button>
                 <button class="act-item" onclick='printReceipt(<?php echo $print_data; ?>);closeActMenus()'><i class="fas fa-print"></i> Print</button>
+                <button class="act-item" onclick='openPaymentsModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo $isPending ? "true" : "false"; ?>);closeActMenus()'><i class="fas fa-coins"></i> Payments</button>
                 <?php if ($isPending): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" onclick='openAddPaymentModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo (float)$o["total_amount"]; ?>,<?php echo (float)$o["total_prepaid"]; ?>);closeActMenus()'><i class="fas fa-money-bill-wave"></i> Add Payment</button>
+                <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Add Product</a>
                 <div class="act-menu-sep"></div>
                 <button class="act-item" style="color:#16a34a;" onclick='openApproveModal(<?php echo $data; ?>);closeActMenus()'><i class="fas fa-check"></i> Approve</button>
                 <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
+                <button class="act-item" style="color:#d97706;" onclick='openCloseOrderModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-lock"></i> Close Order</button>
                 <?php endif; ?>
                 <?php if ($isPending && in_array($role, ['admin','manager','superadmin'])): ?>
                 <div class="act-menu-sep"></div>
@@ -796,76 +913,22 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
             <strong id="appr_total"></strong>
         </div>
         <div class="dr" id="appr_prep_row" style="display:none;">
-            <span>Prepaid</span>
+            <span>Collected</span>
             <div style="text-align:right;">
                 <strong id="appr_prepaid"></strong>
                 <div id="appr_prepaid_detail" style="font-size:11px;color:var(--secondary);"></div>
             </div>
         </div>
         <div class="dr">
-            <span>Remaining to collect</span>
-            <strong id="appr_remaining" style="color:var(--primary);font-size:15px;"></strong>
+            <span>Remaining Balance</span>
+            <strong id="appr_remaining" style="font-size:15px;"></strong>
         </div>
-    </div>
-
-    <div class="section-lbl" id="appr_collect_lbl">Collect Remaining Payment</div>
-
-    <div id="appr_shortcuts" class="pay-shortcuts">
-        <label class="pay-shortcut-lbl">
-            <input type="checkbox" id="appr_is_cash" onchange="toggleApprShortcut('cash')">
-            <span class="pay-shortcut-name">Is Cash?</span>
-            <span class="pay-shortcut-desc">Full remaining to cash</span>
-        </label>
-        <label class="pay-shortcut-lbl">
-            <input type="checkbox" id="appr_is_momo" onchange="toggleApprShortcut('momo')">
-            <span class="pay-shortcut-name">Is Momo?</span>
-            <span class="pay-shortcut-desc">Full remaining to momo</span>
-        </label>
-        <label class="pay-shortcut-lbl">
-            <input type="checkbox" id="appr_is_bank" onchange="toggleApprShortcut('bank')">
-            <span class="pay-shortcut-name">Is Bank?</span>
-            <span class="pay-shortcut-desc">Full remaining to bank</span>
-        </label>
-        <label class="pay-shortcut-lbl">
-            <input type="checkbox" id="appr_is_loan" onchange="toggleApprShortcut('loan')">
-            <span class="pay-shortcut-name">Is Loan?</span>
-            <span class="pay-shortcut-desc">Full remaining to loan</span>
-        </label>
-    </div>
-
-    <div class="pay-box" id="appr_pay_box">
-        <div class="pay-row">
-            <span class="pay-lbl">Cash</span>
-            <input type="number" id="appr_cash" min="0" step="any" value="0" oninput="apprCalc('cash')">
-        </div>
-        <div class="pay-row">
-            <span class="pay-lbl">Momo</span>
-            <input type="number" id="appr_momo" min="0" step="any" value="0" oninput="apprCalc('momo')">
-        </div>
-        <div class="pay-row">
-            <span class="pay-lbl">Bank</span>
-            <input type="number" id="appr_bank" min="0" step="any" value="0" oninput="apprCalc('bank')">
-        </div>
-        <div class="pay-row">
-            <span class="pay-lbl">Loan</span>
-            <input type="number" id="appr_loan" min="0" step="any" value="0" oninput="apprCalc('loan')">
-        </div>
-        <div class="pay-remaining" id="appr_rem_row">
-            <span>Still unallocated</span>
-            <span id="appr_rem_val">—</span>
-        </div>
-    </div>
-
-    <div id="appr_phone_row" style="display:none;margin-top:12px;">
-        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Client Phone (required for loan)</label>
-        <input type="text" id="appr_phone_input" placeholder="07XXXXXXXX"
-               style="width:100%;padding:9px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;">
     </div>
 
     <button id="appr_submit" class="btn btn-success"
-            style="width:100%;padding:11px;margin-top:16px;" disabled
+            style="width:100%;padding:11px;margin-top:16px;"
             onclick="submitApprove()">
-        Approve &amp; Create Bulk Sale(s)
+        Approve Order
     </button>
 </div>
 </div>
@@ -879,6 +942,144 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
     <div id="prod_items_body"></div>
     <div style="text-align:right;font-weight:700;font-size:15px;padding-top:10px;margin-top:10px;border-top:1px solid var(--gray-200);">
         Total: <span id="prod_total" style="color:var(--primary);"></span>
+    </div>
+</div>
+</div>
+
+<!-- Payments history modal -->
+<div id="paymentsModal" class="modal">
+<div class="modal-box" style="max-width:620px;">
+    <button class="modal-close" onclick="closeModal('paymentsModal')">&times;</button>
+    <div class="modal-title">Payments &mdash; <span id="pm_order_num" style="color:var(--primary);"></span></div>
+
+    <div class="order-detail-box" style="margin-bottom:16px;">
+        <div class="dr"><span>Customer</span><strong id="pm_owner"></strong></div>
+        <div class="dr"><span>Order Total</span><strong id="pm_total"></strong></div>
+        <div class="dr"><span>Total Collected</span><strong id="pm_collected" style="color:#059669;"></strong></div>
+        <div class="dr"><span>Balance Due</span><strong id="pm_balance" style="color:var(--primary);"></strong></div>
+    </div>
+
+    <div id="pm_loading" style="text-align:center;padding:24px;color:var(--secondary);font-size:13px;">Loading…</div>
+    <div id="pm_table_wrap" style="display:none;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="border-bottom:2px solid var(--gray-200);">
+                    <th style="text-align:left;padding:6px 4px;font-size:11px;color:var(--secondary);text-transform:uppercase;">Date</th>
+                    <th style="text-align:right;padding:6px 4px;font-size:11px;color:var(--secondary);text-transform:uppercase;">Cash</th>
+                    <th style="text-align:right;padding:6px 4px;font-size:11px;color:var(--secondary);text-transform:uppercase;">Momo</th>
+                    <th style="text-align:right;padding:6px 4px;font-size:11px;color:var(--secondary);text-transform:uppercase;">Bank</th>
+                    <th style="text-align:right;padding:6px 4px;font-size:11px;color:var(--secondary);text-transform:uppercase;">Loan</th>
+                    <th style="text-align:right;padding:6px 4px;font-size:11px;color:var(--secondary);text-transform:uppercase;">Total</th>
+                    <th style="text-align:left;padding:6px 4px;font-size:11px;color:var(--secondary);text-transform:uppercase;">By</th>
+                </tr>
+            </thead>
+            <tbody id="pm_tbody"></tbody>
+            <tfoot id="pm_tfoot"></tfoot>
+        </table>
+        <div id="pm_empty" style="display:none;text-align:center;padding:20px;color:var(--secondary);font-size:13px;">No payment records yet.</div>
+    </div>
+
+    <!-- Inline Add Payment (pending orders only) -->
+    <div id="pm_add_section" style="display:none;margin-top:20px;border-top:1px solid var(--gray-200);padding-top:16px;">
+        <div class="section-lbl">Add Payment</div>
+        <div class="pay-box">
+            <div class="pay-row"><span class="pay-lbl">Cash</span><input type="number" id="pm_cash" min="0" step="any" value="0" oninput="pmCalc()"></div>
+            <div class="pay-row"><span class="pay-lbl">Momo</span><input type="number" id="pm_momo" min="0" step="any" value="0" oninput="pmCalc()"></div>
+            <div class="pay-row"><span class="pay-lbl">Bank</span><input type="number" id="pm_bank" min="0" step="any" value="0" oninput="pmCalc()"></div>
+            <div class="pay-row"><span class="pay-lbl">Loan</span><input type="number" id="pm_loan" min="0" step="any" value="0" oninput="pmCalc()"></div>
+            <div class="pay-remaining" id="pm_rem_row">
+                <span>New Balance After</span>
+                <span id="pm_rem_val">—</span>
+            </div>
+        </div>
+        <button id="pm_submit" class="btn btn-success" style="width:100%;padding:11px;margin-top:12px;" disabled onclick="submitPaymentFromModal()">
+            Record Payment
+        </button>
+    </div>
+</div>
+</div>
+
+<!-- Add Payment modal -->
+<div id="addPaymentModal" class="modal">
+<div class="modal-box" style="max-width:420px;">
+    <button class="modal-close" onclick="closeModal('addPaymentModal')">&times;</button>
+    <div class="modal-title">Add Payment &mdash; <span id="apm_order_num" style="color:var(--primary);"></span></div>
+    <div class="order-detail-box">
+        <div class="dr"><span>Order Total</span><strong id="apm_total"></strong></div>
+        <div class="dr"><span>Already Prepaid</span><strong id="apm_prepaid"></strong></div>
+        <div class="dr"><span>Remaining</span><strong id="apm_remaining" style="color:var(--primary);"></strong></div>
+    </div>
+    <div class="section-lbl">Additional Payment</div>
+    <div class="pay-box">
+        <div class="pay-row"><span class="pay-lbl">Cash</span><input type="number" id="apm_cash" min="0" step="any" value="0" oninput="apmCalc()"></div>
+        <div class="pay-row"><span class="pay-lbl">Momo</span><input type="number" id="apm_momo" min="0" step="any" value="0" oninput="apmCalc()"></div>
+        <div class="pay-row"><span class="pay-lbl">Bank</span><input type="number" id="apm_bank" min="0" step="any" value="0" oninput="apmCalc()"></div>
+        <div class="pay-row"><span class="pay-lbl">Loan</span><input type="number" id="apm_loan" min="0" step="any" value="0" oninput="apmCalc()"></div>
+        <div class="pay-remaining" id="apm_rem_row">
+            <span>New Balance After</span>
+            <span id="apm_rem_val">—</span>
+        </div>
+    </div>
+    <button id="apm_submit" class="btn btn-success" style="width:100%;padding:11px;margin-top:16px;" disabled onclick="submitAddPayment()">
+        Record Payment
+    </button>
+</div>
+</div>
+
+<!-- Add Product modal -->
+<div id="addProductModal" class="modal">
+<div class="modal-box" style="max-width:500px;">
+    <button class="modal-close" onclick="closeModal('addProductModal')">&times;</button>
+    <div class="modal-title">Add Product &mdash; <span id="aprod_order_num" style="color:var(--primary);"></span></div>
+    <div style="margin-bottom:14px;position:relative;">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Search Product</label>
+        <input type="text" id="aprod_search" placeholder="Type product name or category&hellip;"
+               style="width:100%;padding:9px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;box-sizing:border-box;"
+               oninput="aprodSearch(this.value)">
+        <div id="aprod_results"
+             style="display:none;position:absolute;left:0;right:0;background:var(--white);border:1px solid var(--gray-300);border-top:none;border-radius:0 0 var(--radius) var(--radius);max-height:200px;overflow-y:auto;z-index:100;"></div>
+    </div>
+    <div id="aprod_selected_card" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius);padding:12px 16px;margin-bottom:14px;">
+        <div style="font-weight:700;color:#1e40af;font-size:14px;" id="aprod_sel_name"></div>
+        <div style="font-size:12px;color:var(--secondary);margin-top:2px;" id="aprod_sel_stock"></div>
+    </div>
+    <div id="aprod_form" style="display:none;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div>
+                <label style="font-size:13px;font-weight:600;display:block;margin-bottom:5px;">Quantity</label>
+                <input type="number" id="aprod_qty" min="0.01" step="any" placeholder="0"
+                       style="width:100%;padding:9px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;box-sizing:border-box;"
+                       oninput="aprodCalc()">
+            </div>
+            <div>
+                <label style="font-size:13px;font-weight:600;display:block;margin-bottom:5px;">Unit Price</label>
+                <input type="number" id="aprod_price" min="0.01" step="any" placeholder="0"
+                       style="width:100%;padding:9px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;box-sizing:border-box;"
+                       oninput="aprodCalc()">
+            </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:9px 14px;background:var(--gray-50);border-radius:var(--radius);font-weight:700;font-size:13px;margin-bottom:14px;">
+            <span>Item Total</span>
+            <span id="aprod_item_total" style="color:var(--primary);">RWF 0</span>
+        </div>
+        <button id="aprod_submit" class="btn btn-primary" style="width:100%;padding:11px;" disabled onclick="submitAddProduct()">
+            Add to Order
+        </button>
+    </div>
+</div>
+</div>
+
+<!-- Close Order modal -->
+<div id="closeOrderModal" class="modal">
+<div class="modal-box" style="max-width:400px;">
+    <button class="modal-close" onclick="closeModal('closeOrderModal')">&times;</button>
+    <div class="modal-title">Close Order <span id="co_order_num" style="color:#d97706;"></span></div>
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--radius);padding:12px 14px;margin-bottom:18px;font-size:13px;color:#92400e;">
+        &#128274; Closing this order locks it. No payments, products, approvals, or cancellations will be possible after this.
+    </div>
+    <div style="display:flex;gap:10px;">
+        <button class="btn" style="flex:1;" onclick="closeModal('closeOrderModal')">Back</button>
+        <button class="btn" style="flex:1;background:#d97706;color:#fff;" id="co_submit_btn" onclick="submitCloseOrder()">Confirm Close</button>
     </div>
 </div>
 </div>
@@ -949,33 +1150,30 @@ function submitCancel() {
 }
 
 // ── Approve modal ─────────────────────────────────────────────────────────────
-var _apprRem = 0, _apprId = 0;
+var _apprId = 0;
 
 function openApproveModal(o) {
-    _apprRem = o.total_amount - o.total_prepaid;
-    _apprId  = o.id;
+    _apprId = o.id;
 
     document.getElementById('appr_order_num').textContent = o.order_num;
     document.getElementById('appr_total').textContent     = 'RWF ' + o.total_amount.toLocaleString();
-    document.getElementById('appr_remaining').textContent = 'RWF ' + Math.max(0,_apprRem).toLocaleString();
 
-    // Items list
+    var rem = o.total_amount - o.total_prepaid;
+    var remEl = document.getElementById('appr_remaining');
+    remEl.textContent = 'RWF ' + Math.max(0, rem).toLocaleString();
+    remEl.style.color = rem <= 0 ? '#059669' : 'var(--primary)';
+
     var items = o.items || [];
-    var itemsHtml = '';
-    if (items.length > 0) {
-        itemsHtml = items.map(function(it){
-            return '<div style="font-size:13px;padding:2px 0;">' +
-                escH(it.product) +
-                ' <span style="color:var(--secondary);font-size:12px;">&times;' + it.quantity.toLocaleString() + ' pkg</span>' +
-                ' &nbsp; <strong>RWF ' + it.item_total.toLocaleString() + '</strong></div>';
-        }).join('');
-    }
-    document.getElementById('appr_items_body').innerHTML = itemsHtml;
+    document.getElementById('appr_items_body').innerHTML = items.map(function(it){
+        return '<div style="font-size:13px;padding:2px 0;">'
+            + escH(it.product)
+            + ' <span style="color:var(--secondary);font-size:12px;">&times;' + it.quantity.toLocaleString() + '</span>'
+            + ' &nbsp;<strong>RWF ' + it.item_total.toLocaleString() + '</strong></div>';
+    }).join('');
 
-    // Prepaid row
     if (o.total_prepaid > 0) {
         document.getElementById('appr_prep_row').style.display = '';
-        document.getElementById('appr_prepaid').textContent = 'RWF ' + o.total_prepaid.toLocaleString();
+        document.getElementById('appr_prepaid').textContent    = 'RWF ' + o.total_prepaid.toLocaleString();
         var parts = [];
         if (o.prepaid_cash>0) parts.push('Cash: '+o.prepaid_cash.toLocaleString());
         if (o.prepaid_momo>0) parts.push('Momo: '+o.prepaid_momo.toLocaleString());
@@ -986,70 +1184,10 @@ function openApproveModal(o) {
         document.getElementById('appr_prep_row').style.display = 'none';
     }
 
-    // Payment inputs
-    ['cash','momo','bank','loan'].forEach(function(t) {
-        document.getElementById('appr_is_' + t).checked = false;
-    });
-    document.getElementById('appr_cash').value  = 0;
-    document.getElementById('appr_momo').value  = Math.max(0, _apprRem);
-    document.getElementById('appr_bank').value  = 0;
-    document.getElementById('appr_loan').value  = 0;
-    document.getElementById('appr_phone_input').value = o.phone || '';
-
-    var noRem = _apprRem <= 0;
-    document.getElementById('appr_collect_lbl').textContent = noRem
-        ? 'Order fully prepaid — no collection needed' : 'Collect Remaining Payment';
-    document.getElementById('appr_shortcuts').style.display = noRem ? 'none' : '';
-    document.getElementById('appr_pay_box').style.display   = noRem ? 'none' : '';
-
-    apprCalc();
+    var btn = document.getElementById('appr_submit');
+    btn.disabled = false; btn.textContent = 'Approve Order';
     openModal('approveModal');
 }
-
-function toggleApprShortcut(type) {
-    ['cash','momo','bank','loan'].forEach(function(t) {
-        if (t !== type) document.getElementById('appr_is_' + t).checked = false;
-    });
-    var checked = document.getElementById('appr_is_' + type).checked;
-    var rem = Math.max(0, _apprRem);
-    document.getElementById('appr_cash').value = (checked && type==='cash') ? rem : 0;
-    document.getElementById('appr_momo').value = (checked && type==='momo') ? rem : 0;
-    document.getElementById('appr_bank').value = (checked && type==='bank') ? rem : 0;
-    document.getElementById('appr_loan').value = (checked && type==='loan') ? rem : 0;
-    apprCalc();
-}
-
-function apprCalc(changed) {
-    if (changed) {
-        ['cash','momo','bank','loan'].forEach(function(t) {
-            document.getElementById('appr_is_' + t).checked = false;
-        });
-    }
-    var cashEl = document.getElementById('appr_cash');
-    var momoEl = document.getElementById('appr_momo');
-    var bankEl = document.getElementById('appr_bank');
-    var loanEl = document.getElementById('appr_loan');
-    var cash = parseFloat(cashEl.value)||0;
-    var momo = parseFloat(momoEl.value)||0;
-    var bank = parseFloat(bankEl.value)||0;
-    var loan = parseFloat(loanEl.value)||0;
-
-    if (changed==='cash'||changed==='bank'||changed==='loan') {
-        momo = Math.max(0, _apprRem - cash - bank - loan);
-        momoEl.value = momo;
-    }
-
-    var still   = Math.round(_apprRem - cash - momo - bank - loan);
-    var splitOk = _apprRem <= 0 || still === 0;
-    document.getElementById('appr_rem_val').textContent = 'RWF ' + still.toLocaleString();
-    document.getElementById('appr_rem_row').className =
-        'pay-remaining ' + (splitOk ? 'valid' : 'invalid');
-
-    document.getElementById('appr_phone_row').style.display = loan > 0 ? '' : 'none';
-    var phoneOk = loan<=0 || document.getElementById('appr_phone_input').value.trim().length > 0;
-    document.getElementById('appr_submit').disabled = !(splitOk && phoneOk);
-}
-document.getElementById('appr_phone_input').addEventListener('input', function(){ apprCalc(); });
 
 // ── Approve submit ────────────────────────────────────────────────────────────
 function submitApprove() {
@@ -1057,12 +1195,7 @@ function submitApprove() {
     btn.disabled=true; btn.textContent='Processing…';
     var fd = new FormData();
     fd.append('approve_order','1');
-    fd.append('order_id',    _apprId);
-    fd.append('appr_cash',   document.getElementById('appr_cash').value);
-    fd.append('appr_momo',   document.getElementById('appr_momo').value);
-    fd.append('appr_bank',   document.getElementById('appr_bank').value);
-    fd.append('appr_loan',   document.getElementById('appr_loan').value);
-    fd.append('appr_phone',  document.getElementById('appr_phone_input').value);
+    fd.append('order_id', _apprId);
     fetch('orders.php',{method:'POST',body:fd})
         .then(function(r){ return r.json(); })
         .then(function(res){
@@ -1075,17 +1208,21 @@ function submitApprove() {
                 if (sc) sc.innerHTML =
                     '<span class="badge badge-approved">Approved</span>' +
                     '<br><span class="col-sub">Sale #' + res.sale_id + '</span>';
-                if (ac) ac.querySelectorAll('.act-menu-sep, .act-item[onclick*="openApproveModal"], .act-item.danger').forEach(function(el){ el.remove(); });
+                if (ac) {
+                    var items = ac.querySelectorAll('.act-menu .act-item');
+                    Array.from(items).slice(2).forEach(function(el){ el.remove(); });
+                    ac.querySelectorAll('.act-menu .act-menu-sep').forEach(function(el){ el.remove(); });
+                }
                 if (rc) { rc.className = 'remaining-pill rp-zero'; rc.textContent = 'RWF 0'; }
                 adjustStat('pending',  -1);
                 adjustStat('approved', +1);
+            } else {
+                btn.disabled=false; btn.textContent='Approve Order';
             }
-            btn.textContent='Approve & Create Bulk Sale(s)';
-            btn.disabled=false; apprCalc();
         })
         .catch(function(){
             showToast('Network error.',false);
-            btn.textContent='Approve & Create Bulk Sale(s)'; btn.disabled=false;
+            btn.disabled=false; btn.textContent='Approve Order';
         });
 }
 
@@ -1178,6 +1315,324 @@ function submitDelete() {
             showToast('Network error.', false);
             btn.disabled = false; btn.textContent = 'Delete Permanently';
         });
+}
+
+// ── Payments history modal ────────────────────────────────────────────────────
+var _pmId = 0, _pmIsPending = false, _pmTotal = 0, _pmCollected = 0;
+
+function openPaymentsModal(id, orderNum, isPending) {
+    _pmId = id; _pmIsPending = isPending;
+    document.getElementById('pm_order_num').textContent         = orderNum;
+    document.getElementById('pm_owner').textContent             = '';
+    document.getElementById('pm_total').textContent             = '—';
+    document.getElementById('pm_collected').textContent         = '—';
+    document.getElementById('pm_balance').textContent           = '—';
+    document.getElementById('pm_loading').style.display         = '';
+    document.getElementById('pm_table_wrap').style.display      = 'none';
+    document.getElementById('pm_add_section').style.display     = 'none';
+    ['cash','momo','bank','loan'].forEach(function(t){ document.getElementById('pm_'+t).value = 0; });
+    openModal('paymentsModal');
+    loadPayments(id);
+}
+
+function loadPayments(id) {
+    fetch('orders.php?action=order_payments&order_id=' + id)
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            document.getElementById('pm_loading').style.display = 'none';
+            if (!res.success) { document.getElementById('pm_loading').textContent = res.message || 'Failed to load.'; document.getElementById('pm_loading').style.display=''; return; }
+
+            var o = res.order;
+            _pmTotal     = parseFloat(o.total_amount);
+            _pmCollected = parseFloat(o.total_prepaid);
+
+            document.getElementById('pm_owner').textContent     = o.order_owner || '—';
+            document.getElementById('pm_total').textContent     = 'RWF ' + Math.round(_pmTotal).toLocaleString();
+            document.getElementById('pm_collected').textContent = 'RWF ' + Math.round(_pmCollected).toLocaleString();
+            document.getElementById('pm_balance').textContent   = 'RWF ' + Math.round(Math.max(0, _pmTotal - _pmCollected)).toLocaleString();
+
+            var payments = res.payments || [];
+            var tbody = document.getElementById('pm_tbody');
+            var tfoot = document.getElementById('pm_tfoot');
+
+            if (!payments.length) {
+                tbody.innerHTML = '';
+                tfoot.innerHTML = '';
+                document.getElementById('pm_empty').style.display = '';
+            } else {
+                document.getElementById('pm_empty').style.display = 'none';
+                var sumCash=0,sumMomo=0,sumBank=0,sumLoan=0,sumTotal=0;
+                tbody.innerHTML = payments.map(function(p){
+                    sumCash  += parseFloat(p.cash)||0;
+                    sumMomo  += parseFloat(p.momo)||0;
+                    sumBank  += parseFloat(p.bank)||0;
+                    sumLoan  += parseFloat(p.loan)||0;
+                    sumTotal += parseFloat(p.total)||0;
+                    var dt = new Date(p.created_at);
+                    var dateStr = dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+                    var timeStr = dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+                    var isInitial = p.note === 'Initial prepaid';
+                    function fmt(v){ return parseFloat(v)>0 ? 'RWF '+Math.round(v).toLocaleString() : '<span style="color:var(--gray-300)">—</span>'; }
+                    return '<tr style="border-bottom:1px solid var(--gray-100);">'
+                        + '<td style="padding:7px 4px;">'
+                        + (isInitial ? '<span style="font-size:11px;font-weight:700;background:#eff6ff;color:#1e40af;padding:1px 6px;border-radius:8px;">Initial</span>' : dateStr+'<br><span style="font-size:11px;color:var(--secondary);">'+timeStr+'</span>')
+                        + '</td>'
+                        + '<td style="text-align:right;padding:7px 4px;">'+fmt(p.cash)+'</td>'
+                        + '<td style="text-align:right;padding:7px 4px;">'+fmt(p.momo)+'</td>'
+                        + '<td style="text-align:right;padding:7px 4px;">'+fmt(p.bank)+'</td>'
+                        + '<td style="text-align:right;padding:7px 4px;">'+fmt(p.loan)+'</td>'
+                        + '<td style="text-align:right;padding:7px 4px;font-weight:700;">RWF '+Math.round(p.total).toLocaleString()+'</td>'
+                        + '<td style="padding:7px 4px;font-size:12px;color:var(--secondary);">'+escH(p.by_name||'—')+'</td>'
+                        + '</tr>';
+                }).join('');
+                tfoot.innerHTML = '<tr style="border-top:2px solid var(--gray-200);font-weight:700;">'
+                    + '<td style="padding:7px 4px;">Total</td>'
+                    + '<td style="text-align:right;padding:7px 4px;">'+(sumCash>0?'RWF '+Math.round(sumCash).toLocaleString():'—')+'</td>'
+                    + '<td style="text-align:right;padding:7px 4px;">'+(sumMomo>0?'RWF '+Math.round(sumMomo).toLocaleString():'—')+'</td>'
+                    + '<td style="text-align:right;padding:7px 4px;">'+(sumBank>0?'RWF '+Math.round(sumBank).toLocaleString():'—')+'</td>'
+                    + '<td style="text-align:right;padding:7px 4px;">'+(sumLoan>0?'RWF '+Math.round(sumLoan).toLocaleString():'—')+'</td>'
+                    + '<td style="text-align:right;padding:7px 4px;color:var(--primary);">RWF '+Math.round(sumTotal).toLocaleString()+'</td>'
+                    + '<td></td></tr>';
+            }
+
+            document.getElementById('pm_table_wrap').style.display = '';
+            if (_pmIsPending) {
+                document.getElementById('pm_add_section').style.display = '';
+                pmCalc();
+            }
+        })
+        .catch(function(){ document.getElementById('pm_loading').textContent='Network error.'; document.getElementById('pm_loading').style.display=''; });
+}
+
+function pmCalc() {
+    var cash = parseFloat(document.getElementById('pm_cash').value)||0;
+    var momo = parseFloat(document.getElementById('pm_momo').value)||0;
+    var bank = parseFloat(document.getElementById('pm_bank').value)||0;
+    var loan = parseFloat(document.getElementById('pm_loan').value)||0;
+    var add  = cash+momo+bank+loan;
+    var newRem = Math.max(0, _pmTotal - _pmCollected - add);
+    var over   = (_pmCollected + add) > _pmTotal + 1;
+    document.getElementById('pm_rem_val').textContent = 'RWF ' + Math.round(newRem).toLocaleString();
+    document.getElementById('pm_rem_row').className   = 'pay-remaining ' + (over ? 'invalid' : (newRem<=0 ? 'valid' : ''));
+    document.getElementById('pm_submit').disabled     = (add<=0 || over);
+}
+
+function submitPaymentFromModal() {
+    var btn = document.getElementById('pm_submit');
+    btn.disabled=true; btn.textContent='Saving…';
+    var fd = new FormData();
+    fd.append('add_payment','1'); fd.append('order_id',_pmId);
+    fd.append('add_cash', document.getElementById('pm_cash').value);
+    fd.append('add_momo', document.getElementById('pm_momo').value);
+    fd.append('add_bank', document.getElementById('pm_bank').value);
+    fd.append('add_loan', document.getElementById('pm_loan').value);
+    fetch('orders.php',{method:'POST',body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) {
+                _pmCollected = res.new_prepaid;
+                // Update the summary row
+                document.getElementById('pm_collected').textContent = 'RWF ' + Math.round(_pmCollected).toLocaleString();
+                document.getElementById('pm_balance').textContent   = 'RWF ' + Math.round(Math.max(0,_pmTotal-_pmCollected)).toLocaleString();
+                // Update the remaining pill in the orders table row
+                var rc = document.getElementById('rem_cell_'+_pmId);
+                if (rc) {
+                    rc.className   = 'remaining-pill '+(res.new_remaining<=0?'rp-zero':'rp-part');
+                    rc.textContent = 'RWF '+Math.round(res.new_remaining).toLocaleString();
+                }
+                // Reset form and reload payment rows
+                ['cash','momo','bank','loan'].forEach(function(t){ document.getElementById('pm_'+t).value=0; });
+                pmCalc();
+                document.getElementById('pm_loading').style.display  = '';
+                document.getElementById('pm_table_wrap').style.display = 'none';
+                loadPayments(_pmId);
+            }
+            btn.disabled=false; btn.textContent='Record Payment';
+        })
+        .catch(function(){ showToast('Network error.',false); btn.disabled=false; btn.textContent='Record Payment'; });
+}
+
+// ── Add Payment ───────────────────────────────────────────────────────────────
+var _apmId = 0, _apmTotal = 0, _apmPrepaid = 0;
+function openAddPaymentModal(id, orderNum, total, prepaid) {
+    _apmId = id; _apmTotal = total; _apmPrepaid = prepaid;
+    document.getElementById('apm_order_num').textContent   = orderNum;
+    document.getElementById('apm_total').textContent       = 'RWF ' + total.toLocaleString();
+    document.getElementById('apm_prepaid').textContent     = 'RWF ' + prepaid.toLocaleString();
+    document.getElementById('apm_remaining').textContent   = 'RWF ' + Math.max(0, total - prepaid).toLocaleString();
+    ['cash','momo','bank','loan'].forEach(function(t){ document.getElementById('apm_'+t).value = 0; });
+    apmCalc();
+    openModal('addPaymentModal');
+}
+function apmCalc() {
+    var cash = parseFloat(document.getElementById('apm_cash').value)||0;
+    var momo = parseFloat(document.getElementById('apm_momo').value)||0;
+    var bank = parseFloat(document.getElementById('apm_bank').value)||0;
+    var loan = parseFloat(document.getElementById('apm_loan').value)||0;
+    var total_add    = cash + momo + bank + loan;
+    var new_prepaid  = _apmPrepaid + total_add;
+    var new_rem      = Math.max(0, _apmTotal - new_prepaid);
+    var over         = new_prepaid > _apmTotal + 1;
+    document.getElementById('apm_rem_val').textContent = 'RWF ' + Math.round(new_rem).toLocaleString();
+    document.getElementById('apm_rem_row').className   = 'pay-remaining ' + (over ? 'invalid' : (new_rem <= 0 ? 'valid' : ''));
+    document.getElementById('apm_submit').disabled     = (total_add <= 0 || over);
+}
+function submitAddPayment() {
+    var btn = document.getElementById('apm_submit');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    var fd = new FormData();
+    fd.append('add_payment','1'); fd.append('order_id',_apmId);
+    fd.append('add_cash', document.getElementById('apm_cash').value);
+    fd.append('add_momo', document.getElementById('apm_momo').value);
+    fd.append('add_bank', document.getElementById('apm_bank').value);
+    fd.append('add_loan', document.getElementById('apm_loan').value);
+    fetch('orders.php',{method:'POST',body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) {
+                closeModal('addPaymentModal');
+                var rc = document.getElementById('rem_cell_'+_apmId);
+                if (rc) {
+                    rc.className   = 'remaining-pill ' + (res.new_remaining<=0 ? 'rp-zero' : 'rp-part');
+                    rc.textContent = 'RWF ' + Math.round(res.new_remaining).toLocaleString();
+                }
+            } else { btn.disabled=false; btn.textContent='Record Payment'; }
+        })
+        .catch(function(){ showToast('Network error.',false); btn.disabled=false; btn.textContent='Record Payment'; });
+}
+
+// ── Add Product ───────────────────────────────────────────────────────────────
+var _aprodId=0, _aprodPid=0, _aprodDiv=1, _aprodSrc='wh', _aprodTimer;
+function openAddProductModal(id, orderNum) {
+    _aprodId=id; _aprodPid=0;
+    document.getElementById('aprod_order_num').textContent      = orderNum;
+    document.getElementById('aprod_search').value               = '';
+    document.getElementById('aprod_results').style.display      = 'none';
+    document.getElementById('aprod_results').innerHTML          = '';
+    document.getElementById('aprod_selected_card').style.display= 'none';
+    document.getElementById('aprod_form').style.display         = 'none';
+    document.getElementById('aprod_qty').value                  = '';
+    document.getElementById('aprod_price').value                = '';
+    document.getElementById('aprod_item_total').textContent     = 'RWF 0';
+    document.getElementById('aprod_submit').disabled            = true;
+    openModal('addProductModal');
+}
+function aprodSearch(q) {
+    clearTimeout(_aprodTimer);
+    var box = document.getElementById('aprod_results');
+    if (q.length < 2) { box.style.display='none'; return; }
+    box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:13px;color:var(--secondary);"><span style="width:14px;height:14px;border:2px solid var(--gray-300);border-top-color:var(--primary);border-radius:50%;display:inline-block;animation:aprod-spin .7s linear infinite;flex-shrink:0;"></span>Searching…</div>';
+    box.style.display = 'block';
+    _aprodTimer = setTimeout(function(){
+        fetch('order_new.php?action=search_products&q=' + encodeURIComponent(q))
+            .then(function(r){ return r.json(); })
+            .then(function(rows){
+                if (!rows.length) {
+                    box.innerHTML = '<div style="padding:10px 12px;font-size:13px;color:var(--secondary);">No products found.</div>';
+                } else {
+                    box.innerHTML = rows.map(function(p){
+                        var stock = [];
+                        if (p.stock_qty>0) stock.push(p.stock_qty+' pkg (WH, RWF '+Number(p.default_price).toLocaleString()+')');
+                        if (p.rt_qty>0)    stock.push(p.rt_qty+' pcs (Retail, RWF '+Number(p.rt_price).toLocaleString()+')');
+                        return '<div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--gray-100);" onmouseover="this.style.background=\'var(--gray-50)\'" onmouseout="this.style.background=\'\'" onclick=\'aprodSelectProduct('+JSON.stringify(p)+')\'>'
+                            + '<strong>'+escH(p.name)+'</strong>'
+                            + (p.category ? ' <span style="font-size:11px;color:var(--secondary);">'+escH(p.category)+'</span>' : '')
+                            + '<div style="font-size:11px;color:var(--secondary);margin-top:2px;">'+escH(stock.join(' · '))+'</div>'
+                            + '</div>';
+                    }).join('');
+                }
+                box.style.display = 'block';
+            });
+    }, 280);
+}
+function aprodSelectProduct(p) {
+    _aprodPid = p.id;
+    _aprodDiv = parseInt(p.ppp)||1;
+    _aprodSrc = p.stock_qty>0 ? 'wh' : 'rt';
+    var stockInfo = [];
+    if (p.stock_qty>0) stockInfo.push(p.stock_qty+' pkg in warehouse');
+    if (p.rt_qty>0)    stockInfo.push(p.rt_qty+' pcs retail');
+    document.getElementById('aprod_sel_name').textContent  = p.name + (p.category ? ' — '+p.category : '');
+    document.getElementById('aprod_sel_stock').textContent = stockInfo.join(' · ');
+    document.getElementById('aprod_selected_card').style.display = 'block';
+    document.getElementById('aprod_form').style.display          = 'block';
+    document.getElementById('aprod_results').style.display       = 'none';
+    document.getElementById('aprod_price').value = p.stock_qty>0 ? p.default_price : p.rt_price;
+    document.getElementById('aprod_qty').value   = '';
+    document.getElementById('aprod_qty').focus();
+    aprodCalc();
+}
+function aprodCalc() {
+    var qty   = parseFloat(document.getElementById('aprod_qty').value)||0;
+    var price = parseFloat(document.getElementById('aprod_price').value)||0;
+    document.getElementById('aprod_item_total').textContent = 'RWF ' + Math.round(qty*price).toLocaleString();
+    document.getElementById('aprod_submit').disabled = !(_aprodPid>0 && qty>0 && price>0);
+}
+function submitAddProduct() {
+    var btn = document.getElementById('aprod_submit');
+    btn.disabled=true; btn.textContent='Adding…';
+    var fd = new FormData();
+    fd.append('add_product_to_order','1'); fd.append('order_id',_aprodId);
+    fd.append('product_id',    _aprodPid);
+    fd.append('quantity',      document.getElementById('aprod_qty').value);
+    fd.append('selling_price', document.getElementById('aprod_price').value);
+    fd.append('level_divisor', _aprodDiv);
+    fd.append('stock_source',  _aprodSrc);
+    fetch('orders.php',{method:'POST',body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) {
+                closeModal('addProductModal');
+                var row = document.getElementById('order_row_'+_aprodId);
+                if (row) {
+                    var itemsCell = row.cells[2];
+                    var d = document.createElement('div');
+                    d.style.cssText = 'font-size:13px;line-height:1.6;';
+                    d.innerHTML = '<strong>'+escH(res.product_name)+'</strong>'
+                        + '<span class="col-sub">&nbsp;&times;'+Number(res.quantity).toLocaleString()+'</span>';
+                    itemsCell.appendChild(d);
+                    row.cells[3].innerHTML = '<strong>RWF '+Math.round(res.new_total).toLocaleString()+'</strong>';
+                }
+            } else { btn.disabled=false; btn.textContent='Add to Order'; }
+        })
+        .catch(function(){ showToast('Network error.',false); btn.disabled=false; btn.textContent='Add to Order'; });
+}
+
+// ── Close Order ───────────────────────────────────────────────────────────────
+var _coId = 0;
+function openCloseOrderModal(id, orderNum) {
+    _coId = id;
+    document.getElementById('co_order_num').textContent    = orderNum;
+    document.getElementById('co_submit_btn').disabled      = false;
+    document.getElementById('co_submit_btn').textContent   = 'Confirm Close';
+    openModal('closeOrderModal');
+}
+function submitCloseOrder() {
+    var btn = document.getElementById('co_submit_btn');
+    btn.disabled=true; btn.textContent='Closing…';
+    var fd = new FormData();
+    fd.append('close_order','1'); fd.append('order_id',_coId);
+    fetch('orders.php',{method:'POST',body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) {
+                closeModal('closeOrderModal');
+                var sc = document.querySelector('.status_cell_'+_coId);
+                var ac = document.querySelector('.actions_cell_'+_coId);
+                if (sc) sc.innerHTML = '<span class="badge badge-closed">Closed</span>';
+                if (ac) {
+                    var items = ac.querySelectorAll('.act-menu .act-item');
+                    Array.from(items).slice(2).forEach(function(el){ el.remove(); });
+                    ac.querySelectorAll('.act-menu .act-menu-sep').forEach(function(el){ el.remove(); });
+                }
+                adjustStat('pending', -1);
+            } else { btn.disabled=false; btn.textContent='Confirm Close'; }
+        })
+        .catch(function(){ showToast('Network error.',false); btn.disabled=false; btn.textContent='Confirm Close'; });
 }
 
 // ── Thermal receipt print ─────────────────────────────────────────────────────

@@ -58,6 +58,40 @@ function redirect($url) {
     exit();
 }
 
+// Returns true if the current session user can perform $action on $module.
+// superadmin and admin always return true; manager/user check user_permissions table.
+function hasPermission(string $module, string $action = 'view'): bool {
+    global $conn;
+    $role = $_SESSION['role'] ?? '';
+    if (in_array($role, ['superadmin', 'admin'])) return true;
+
+    $valid  = ['view', 'create', 'edit', 'delete'];
+    $action = in_array($action, $valid) ? $action : 'view';
+    $col    = "can_$action";
+    $uid    = (int)($_SESSION['user_id'] ?? 0);
+    $mod    = mysqli_real_escape_string($conn, $module);
+
+    $r   = mysqli_query($conn, "SELECT $col FROM user_permissions WHERE user_id=$uid AND module='$mod'");
+    $row = $r ? mysqli_fetch_assoc($r) : null;
+    return $row ? (bool)$row[$col] : false;
+}
+
+// Returns all permissions for a user keyed by module → ['view'=>bool,'edit'=>bool,'delete'=>bool]
+function getUserPermissions(int $user_id): array {
+    global $conn;
+    $perms = [];
+    $r = mysqli_query($conn, "SELECT module, can_view, can_create, can_edit, can_delete FROM user_permissions WHERE user_id=$user_id");
+    while ($row = mysqli_fetch_assoc($r)) {
+        $perms[$row['module']] = [
+            'view'   => (bool)$row['can_view'],
+            'create' => (bool)$row['can_create'],
+            'edit'   => (bool)$row['can_edit'],
+            'delete' => (bool)$row['can_delete'],
+        ];
+    }
+    return $perms;
+}
+
 function logActivity(
     mysqli $conn,
     int $user_id,

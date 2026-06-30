@@ -3,6 +3,37 @@ require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('purchases', 'create')) { $_SESSION['flash_error'] = "You don't have permission to create purchases."; redirect('dashboard.php'); }
 
+// ── AJAX: product search ──────────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
+    header('Content-Type: application/json');
+    $q          = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
+    $cat_filter = trim($_GET['cat'] ?? '');
+    $cat_sql    = $cat_filter ? " AND category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
+    $res = mysqli_query($conn,
+        "SELECT id, name, category FROM products
+         WHERE deleted = 0 AND (name LIKE '$q' OR category LIKE '$q') $cat_sql
+         ORDER BY category, name LIMIT 60"
+    );
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
+    echo json_encode($rows);
+    exit;
+}
+
+// ── AJAX: product categories ──────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'get_categories') {
+    header('Content-Type: application/json');
+    $res  = mysqli_query($conn,
+        "SELECT DISTINCT category FROM products
+         WHERE deleted = 0 AND category IS NOT NULL AND category != ''
+         ORDER BY category"
+    );
+    $cats = [];
+    while ($r = mysqli_fetch_assoc($res)) $cats[] = $r['category'];
+    echo json_encode($cats);
+    exit;
+}
+
 // ── AJAX: last purchase cost hint ────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'last_purchase') {
     header('Content-Type: application/json');
@@ -45,6 +76,28 @@ if (isset($_GET['repeat'])) {
 // ── AJAX handler ─────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json');
+
+    // ── Create new product ────────────────────────────────────────────────────
+    if (($_POST['action'] ?? '') === 'create_product') {
+        $name         = trim($_POST['name']         ?? '');
+        $category     = trim($_POST['category']     ?? '');
+        $unit_measure = trim($_POST['unit_measure'] ?? 'box') ?: 'box';
+        if (!$name) { echo json_encode(['ok' => false, 'message' => 'Product name is required.']); exit; }
+        $n = mysqli_real_escape_string($conn, $name);
+        $c = mysqli_real_escape_string($conn, $category);
+        $u = mysqli_real_escape_string($conn, $unit_measure);
+        $dup = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM products WHERE name='$n' AND deleted=0 LIMIT 1"));
+        if ($dup) { echo json_encode(['ok' => false, 'message' => 'A product with this name already exists.']); exit; }
+        mysqli_query($conn, "INSERT INTO products (name, category, unit_measure, reorder_level, unit_price) VALUES ('$n','$c','$u',10,0)");
+        $new_id = (int)mysqli_insert_id($conn);
+        if ($new_id) {
+            // logActivity($conn, 'create', 'product', $new_id, "Created product: $name");
+            echo json_encode(['ok' => true, 'id' => $new_id, 'name' => $name, 'category' => $category]);
+        } else {
+            echo json_encode(['ok' => false, 'message' => 'DB error: ' . mysqli_error($conn)]);
+        }
+        exit;
+    }
 
     // ── Save currency rates ───────────────────────────────────────────────────
     if (($_POST['action'] ?? '') === 'save_rates') {
@@ -156,10 +209,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── Page render ───────────────────────────────────────────────────────────────
-$products_r = mysqli_query($conn, "SELECT id, name, category FROM products WHERE deleted = 0 ORDER BY category, name");
-$products   = [];
-while ($r = mysqli_fetch_assoc($products_r)) $products[] = $r;
-
 $suppliers_r = mysqli_query($conn, "SELECT id, name FROM suppliers " . cidWhere() . " ORDER BY name");
 $suppliers   = [];
 while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
@@ -225,6 +274,16 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
         .sd-option { padding: 9px 12px; cursor: pointer; font-size: 14px; }
         .sd-option:hover, .sd-option.hl { background: var(--gray-100); color: var(--primary); }
         .sd-option.hidden { display: none; }
+        .sd-loading {
+            padding: 10px 12px; font-size: 13px; color: var(--secondary);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .sd-spinner {
+            display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+            border: 2px solid var(--gray-300); border-top-color: var(--primary);
+            border-radius: 50%; animation: sd-spin .6s linear infinite;
+        }
+        @keyframes sd-spin { to { transform: rotate(360deg); } }
 
         /* Levels builder */
         .levels-card { grid-column: 1 / -1; }
@@ -435,6 +494,28 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
             border-radius: var(--radius); font-size: 14px; font-weight: 700;
             background: #f0fdf4; color: var(--dark);
         }
+
+
+        /* New-product button inside dropdown */
+        .sd-new-product {
+            padding: 9px 12px; cursor: pointer; font-size: 13px; font-weight: 600;
+            color: var(--primary); border-top: 1px solid var(--gray-200);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .sd-new-product:hover { background: #eff6ff; }
+
+        /* New-product modal */
+        .np-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,.45); z-index: 5000;
+            align-items: center; justify-content: center;
+        }
+        .np-overlay.open { display: flex; }
+        .np-box {
+            background: var(--white); border-radius: 12px; padding: 24px 26px;
+            width: 100%; max-width: 400px; box-shadow: var(--shadow-lg);
+        }
+        .np-box h3 { margin: 0 0 18px; font-size: 16px; font-weight: 700; }
     </style>
 </head>
 <body>
@@ -472,19 +553,22 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                 <div class="card">
                     <div class="card-title">Product & Details</div>
 
+                    <div class="form-group">
+                        <label>Category</label>
+                        <div class="searchable-wrap" id="catWrap">
+                            <input type="text" id="cat_search" placeholder="All categories…" autocomplete="off" readonly
+                                   style="cursor:pointer;" onfocus="this.removeAttribute('readonly')">
+                            <div class="searchable-dropdown" id="cat_dropdown"></div>
+                        </div>
+                    </div>
+
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px;">
                         <div class="form-group">
                             <label>Product *</label>
                             <div class="searchable-wrap" id="productWrap">
                                 <input type="hidden" id="product_id" name="product_id">
                                 <input type="text" id="product_search" placeholder="Search product…" autocomplete="off">
-                                <div class="searchable-dropdown" id="product_dropdown">
-                                    <?php foreach ($products as $p): ?>
-                                        <div class="sd-option" data-value="<?= $p['id'] ?>">
-                                            <?= htmlspecialchars($p['category'] . ' — ' . $p['name']) ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
+                                <div class="searchable-dropdown" id="product_dropdown"></div>
                             </div>
                         </div>
 
@@ -643,6 +727,29 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
             </div>
 
         </form>
+    </div>
+</div>
+
+<!-- New Product Modal -->
+<div class="np-overlay" id="npModal">
+    <div class="np-box">
+        <h3>New Product</h3>
+        <div class="form-group">
+            <label>Name *</label>
+            <input type="text" id="np_name" placeholder="Product name" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <input type="text" id="np_category" placeholder="e.g. TECNO &amp; INFINIX" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label>Unit Measure</label>
+            <input type="text" id="np_unit" value="box" placeholder="e.g. box, piece, kg">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+            <button type="button" class="btn btn-secondary" onclick="closeNpModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" id="np_save_btn" onclick="submitNewProduct()">Create Product</button>
+        </div>
     </div>
 </div>
 
@@ -884,6 +991,9 @@ function submitPurchase() {
             document.getElementById('product_id').value = '';
             document.getElementById('product_dropdown').classList.remove('open');
             document.getElementById('last-purchase-hint').textContent = '';
+            selectedCat = '';
+            document.getElementById('cat_search').value = '';
+            document.getElementById('cat_search').setAttribute('readonly', '');
             document.getElementById('cost_foreign').value = '';
             document.getElementById('cost_usd').value = '';
             document.getElementById('cost_rwf_converted').value = '';
@@ -904,18 +1014,147 @@ function submitPurchase() {
     });
 }
 
-// ── Searchable product dropdown ───────────────────────────────────────────────
+// ── Category searchable select ────────────────────────────────────────────────
+var selectedCat = '';
+var allCategories = [];
+
+(function () {
+    var catSearch   = document.getElementById('cat_search');
+    var catDropdown = document.getElementById('cat_dropdown');
+
+    function renderCatOptions(filter) {
+        catDropdown.innerHTML = '';
+
+        // "All" option always first
+        var allDiv = document.createElement('div');
+        allDiv.className = 'sd-option';
+        allDiv.dataset.value = '';
+        allDiv.textContent = '— All Categories —';
+        allDiv.addEventListener('click', function() { pickCat('', ''); });
+        catDropdown.appendChild(allDiv);
+
+        var q = filter.toLowerCase();
+        var matched = allCategories.filter(function(c) { return c.toLowerCase().indexOf(q) !== -1; });
+        matched.forEach(function(cat) {
+            var div = document.createElement('div');
+            div.className = 'sd-option';
+            div.dataset.value = cat;
+            div.textContent = cat;
+            div.addEventListener('click', function() { pickCat(cat, cat); });
+            catDropdown.appendChild(div);
+        });
+
+        if (!matched.length) {
+            var none = document.createElement('div');
+            none.className = 'sd-option';
+            none.style.color = 'var(--secondary)';
+            none.style.cursor = 'default';
+            none.textContent = 'No categories found';
+            catDropdown.appendChild(none);
+        }
+    }
+
+    function pickCat(value, label) {
+        selectedCat = value;
+        catSearch.value = label;
+        catSearch.setAttribute('readonly', '');
+        catDropdown.classList.remove('open');
+        document.getElementById('product_search').dispatchEvent(new Event('input'));
+        document.getElementById('product_search').focus();
+    }
+
+    catSearch.addEventListener('focus', function() {
+        renderCatOptions('');
+        catDropdown.classList.add('open');
+    });
+    catSearch.addEventListener('input', function() {
+        renderCatOptions(this.value.trim());
+        catDropdown.classList.add('open');
+    });
+    catSearch.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { catDropdown.classList.remove('open'); catSearch.setAttribute('readonly',''); }
+    });
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#catWrap')) {
+            catDropdown.classList.remove('open');
+            // restore label if user typed but didn't pick
+            catSearch.value = selectedCat || '';
+            catSearch.setAttribute('readonly', '');
+        }
+    });
+})();
+
+function loadCategories() {
+    fetch('new-purchase.php?action=get_categories')
+        .then(function(r) { return r.json(); })
+        .then(function(cats) { allCategories = cats; })
+        .catch(function() {});
+}
+
+// ── Searchable product dropdown (AJAX) ───────────────────────────────────────
 (function () {
     var hidden   = document.getElementById('product_id');
     var search   = document.getElementById('product_search');
     var dropdown = document.getElementById('product_dropdown');
-    var options  = dropdown.querySelectorAll('.sd-option');
     var hlIdx    = -1;
+    var debounce = null;
 
-    search.addEventListener('focus', function () { dropdown.classList.add('open'); filter(); });
-    search.addEventListener('input', function () { dropdown.classList.add('open'); hlIdx = -1; filter(); });
+    function getOptions() { return dropdown.querySelectorAll('.sd-option'); }
+
+    function renderOptions(items) {
+        dropdown.innerHTML = '';
+        if (!items.length) {
+            dropdown.innerHTML = '<div class="sd-option" style="color:var(--secondary);cursor:default;">No results</div>';
+        } else {
+            items.forEach(function (p) {
+                var div = document.createElement('div');
+                div.className = 'sd-option';
+                div.dataset.value = p.id;
+                div.textContent = (p.category ? p.category + ' — ' : '') + p.name;
+                div.addEventListener('click', function () { pick(div); });
+                dropdown.appendChild(div);
+            });
+        }
+        var newBtn = document.createElement('div');
+        newBtn.className = 'sd-new-product';
+        newBtn.innerHTML = '+ New Product';
+        newBtn.addEventListener('click', function () {
+            openNpModal(search.value.trim());
+            dropdown.classList.remove('open');
+        });
+        dropdown.appendChild(newBtn);
+        hlIdx = -1;
+    }
+
+    function showLoading() {
+        dropdown.innerHTML = '<div class="sd-loading"><span class="sd-spinner"></span> Searching…</div>';
+        dropdown.classList.add('open');
+    }
+
+    function doSearch(q) {
+        showLoading();
+        var url = 'new-purchase.php?action=search_products&q=' + encodeURIComponent(q);
+        if (selectedCat) url += '&cat=' + encodeURIComponent(selectedCat);
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) { renderOptions(data); dropdown.classList.add('open'); })
+            .catch(function () {
+                dropdown.innerHTML = '<div class="sd-option" style="color:var(--danger);cursor:default;">Failed to load</div>';
+            });
+    }
+
+    search.addEventListener('focus', function () {
+        if (!search.value.trim()) doSearch('');
+        else dropdown.classList.add('open');
+    });
+    search.addEventListener('input', function () {
+        hidden.value = '';
+        hlIdx = -1;
+        clearTimeout(debounce);
+        debounce = setTimeout(function () { doSearch(search.value.trim()); }, 250);
+    });
     search.addEventListener('keydown', function (e) {
-        var vis = dropdown.querySelectorAll('.sd-option:not(.hidden)');
+        var vis = getOptions();
         if (e.key === 'ArrowDown') { e.preventDefault(); hlIdx = Math.min(hlIdx+1, vis.length-1); hl(vis); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); hlIdx = Math.max(hlIdx-1, 0); hl(vis); }
         else if (e.key === 'Enter') { e.preventDefault(); if (vis[hlIdx]) pick(vis[hlIdx]); }
@@ -924,17 +1163,13 @@ function submitPurchase() {
     document.addEventListener('click', function (e) {
         if (!e.target.closest('#productWrap')) dropdown.classList.remove('open');
     });
-    options.forEach(function (o) { o.addEventListener('click', function () { pick(o); }); });
 
-    function filter() {
-        var t = search.value.toLowerCase();
-        options.forEach(function (o) { o.classList.toggle('hidden', o.textContent.toLowerCase().indexOf(t) < 0); });
-    }
     function hl(vis) {
-        options.forEach(function (o) { o.classList.remove('hl'); });
+        getOptions().forEach(function (o) { o.classList.remove('hl'); });
         if (vis[hlIdx]) { vis[hlIdx].classList.add('hl'); vis[hlIdx].scrollIntoView({block:'nearest'}); }
     }
     function pick(o) {
+        if (!o.dataset.value) return;
         hidden.value = o.dataset.value;
         search.value = o.textContent.trim();
         dropdown.classList.remove('open');
@@ -1167,7 +1402,59 @@ function loadPreset(key, btn) {
     suggestPrices();
 }
 
+// ── New Product modal ─────────────────────────────────────────────────────────
+function openNpModal(prefill) {
+    document.getElementById('np_name').value     = prefill || '';
+    document.getElementById('np_category').value = '';
+    document.getElementById('np_unit').value     = 'box';
+    document.getElementById('npModal').classList.add('open');
+    document.getElementById('np_name').focus();
+}
+function closeNpModal() {
+    document.getElementById('npModal').classList.remove('open');
+}
+document.getElementById('npModal').addEventListener('click', function(e) {
+    if (e.target === this) closeNpModal();
+});
+function submitNewProduct() {
+    var name = document.getElementById('np_name').value.trim();
+    var cat  = document.getElementById('np_category').value.trim();
+    var unit = document.getElementById('np_unit').value.trim() || 'box';
+    if (!name) { showToast('Product name is required.', 'error'); return; }
+
+    var btn = document.getElementById('np_save_btn');
+    btn.disabled = true; btn.textContent = 'Creating…';
+
+    var fd = new FormData();
+    fd.append('action', 'create_product');
+    fd.append('name', name);
+    fd.append('category', cat);
+    fd.append('unit_measure', unit);
+
+    fetch('new-purchase.php', { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false; btn.textContent = 'Create Product';
+            if (d.ok) {
+                document.getElementById('product_id').value    = d.id;
+                document.getElementById('product_search').value =
+                    (d.category ? d.category + ' — ' : '') + d.name;
+                document.getElementById('product_dropdown').classList.remove('open');
+                closeNpModal();
+                showToast('Product "' + d.name + '" created and selected.', 'success');
+                fetchLastPurchase(d.id);
+            } else {
+                showToast(d.message, 'error');
+            }
+        })
+        .catch(function() {
+            btn.disabled = false; btn.textContent = 'Create Product';
+            showToast('Network error.', 'error');
+        });
+}
+
 loadRates();
+loadCategories();
 loadPreset('two', document.querySelectorAll('.preset-card')[1]);
 
 <?php if ($repeat_data): ?>

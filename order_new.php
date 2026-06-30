@@ -86,32 +86,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
                     "INSERT INTO order_items(order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total)
                      VALUES($order_id,$pid,'$src',$qty,$div,$prce,$itot)");
         }
+            if ($total_prepaid > 0) {
+                mysqli_query($conn, "INSERT INTO order_payments
+                    (company_id,order_id,cash,momo,bank,loan,total,recorded_by,note)
+                    VALUES(" . cidSql() . ",$order_id,$prepaid_cash,$prepaid_momo,$prepaid_bank,$prepaid_loan,$total_prepaid,$user_id,'Initial prepaid')");
+            }
             $success = "Order $order_number created successfully for {$owner['name']}.";
         } // end else (ins_ok)
     }
 }
 if (isset($_SESSION['flash_error'])) { $error = $_SESSION['flash_error']; unset($_SESSION['flash_error']); }
 
+// ── AJAX: product search ──────────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
+    header('Content-Type: application/json');
+    $q = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
+    $res = mysqli_query($conn, "
+        SELECT p.id, p.name, p.category,
+               COALESCE(s.quantity,0)           AS stock_qty,
+               COALESCE(s.package_price,0)      AS default_price,
+               COALESCE(s.pieces_per_package,1) AS ppp,
+               COALESCE(rs.pieces_quantity,0)   AS rt_qty,
+               COALESCE(rs.retail_price,0)      AS rt_price
+        FROM products p
+        LEFT JOIN stock        s  ON s.product_id  = p.id
+        LEFT JOIN retail_stock rs ON rs.product_id = p.id
+        WHERE p.deleted = 0
+        AND (p.name LIKE '$q' OR p.category LIKE '$q')
+        HAVING stock_qty > 0 OR rt_qty > 0
+        ORDER BY p.category, p.name LIMIT 60");
+    $rows = [];
+    while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
+    echo json_encode($rows);
+    exit;
+}
+
 // ── Load data ─────────────────────────────────────────────────────────────────
 $owners_arr = [];
 $r = mysqli_query($conn, "SELECT * FROM order_owners " . cidWhere() . " ORDER BY name");
 while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
-
-$prods_arr = [];
-$r = mysqli_query($conn, "
-    SELECT p.id, p.name, p.category,
-           COALESCE(s.quantity,0)           AS stock_qty,
-           COALESCE(s.package_price,0)      AS default_price,
-           COALESCE(s.pieces_per_package,1) AS ppp,
-           COALESCE(rs.pieces_quantity,0)   AS rt_qty,
-           COALESCE(rs.retail_price,0)      AS rt_price
-    FROM products p
-    LEFT JOIN stock        s  ON s.product_id  = p.id
-    LEFT JOIN retail_stock rs ON rs.product_id = p.id
-    WHERE p.deleted = 0
-    HAVING stock_qty > 0 OR rt_qty > 0
-    ORDER BY p.category, p.name");
-while ($row = mysqli_fetch_assoc($r)) $prods_arr[] = $row;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -189,6 +202,9 @@ while ($row = mysqli_fetch_assoc($r)) $prods_arr[] = $row;
 .ss-opt:hover,.ss-opt.hi { background:var(--gray-100); color:var(--primary); }
 .ss-opt.hidden { display:none; }
 .ss-sub { font-size:11px; color:var(--secondary); }
+.sd-loading { display:flex; align-items:center; gap:8px; padding:10px 12px; font-size:13px; color:var(--secondary); }
+.sd-spinner { width:14px; height:14px; border:2px solid var(--gray-300); border-top-color:var(--primary); border-radius:50%; animation:sd-spin .7s linear infinite; flex-shrink:0; }
+@keyframes sd-spin { to { transform:rotate(360deg); } }
 
 .owner-card {
     display:none; background:#eff6ff; border:1px solid #bfdbfe;
@@ -434,48 +450,12 @@ while ($row = mysqli_fetch_assoc($r)) $prods_arr[] = $row;
                 <!-- Left: product search + inputs -->
                 <div>
                     <div class="sec-lbl">Add Product</div>
-                    <select id="product_id" style="display:none">
-                        <option value="">Select…</option>
-                        <?php foreach ($prods_arr as $p): ?>
-                        <option value="<?php echo $p['id']; ?>"
-                            data-name="<?php echo htmlspecialchars($p['category'].'-'.$p['name'], ENT_QUOTES); ?>"
-                            data-price="<?php echo $p['default_price']; ?>"
-                            data-stock="<?php echo $p['stock_qty']; ?>"
-                            data-ppp="<?php echo $p['ppp']; ?>"
-                            data-rt-stock="<?php echo $p['rt_qty']; ?>"
-                            data-rt-price="<?php echo $p['rt_price']; ?>">
-                            <?php echo htmlspecialchars($p['category'].'-'.$p['name']); ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </select>
+                    <input type="hidden" id="product_id" name="product_id">
 
                     <div class="ss-wrap" id="ss_wrap">
                         <input type="text" id="ss_search" class="ss-input"
                                placeholder="Search product…" autocomplete="off">
-                        <div class="ss-drop" id="ss_drop">
-                            <?php foreach ($prods_arr as $p): ?>
-                            <?php
-                                $whTxt = $p['stock_qty'] > 0
-                                    ? number_format((int)$p['stock_qty']).' pkgs WH'
-                                    : '';
-                                $rtTxt = $p['rt_qty'] > 0
-                                    ? number_format((int)$p['rt_qty']).' pcs RT'
-                                    : '';
-                                $sub   = implode(' &middot; ', array_filter([$whTxt, $rtTxt]));
-                            ?>
-                            <div class="ss-opt"
-                                 data-value="<?php echo $p['id']; ?>"
-                                 data-name="<?php echo htmlspecialchars($p['category'].'-'.$p['name'], ENT_QUOTES); ?>"
-                                 data-price="<?php echo $p['default_price']; ?>"
-                                 data-stock="<?php echo $p['stock_qty']; ?>"
-                                 data-ppp="<?php echo $p['ppp']; ?>"
-                                 data-rt-stock="<?php echo $p['rt_qty']; ?>"
-                                 data-rt-price="<?php echo $p['rt_price']; ?>">
-                                <?php echo htmlspecialchars($p['category'].'-'.$p['name']); ?>
-                                <span class="ss-sub">&nbsp;·&nbsp;<?php echo $sub; ?></span>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
+                        <div class="ss-drop" id="ss_drop"></div>
                     </div>
 
                     <!-- Stock type toggle (shown after product selection) -->
@@ -791,16 +771,88 @@ function saveNewOwner() {
 }
 
 // ── Product search ────────────────────────────────────────────────────────────
+var _selectedProd = null;
+
 (function(){
-    var search = document.getElementById('ss_search');
-    var drop   = document.getElementById('ss_drop');
-    var hidden = document.getElementById('product_id');
-    var opts   = drop.querySelectorAll('.ss-opt');
-    var hi = -1;
-    search.addEventListener('focus', function(){ drop.classList.add('open'); filter(); });
-    search.addEventListener('input', function(){ drop.classList.add('open'); hi=-1; filter(); });
+    var search  = document.getElementById('ss_search');
+    var drop    = document.getElementById('ss_drop');
+    var hidden  = document.getElementById('product_id');
+    var hi = -1, _timer = null, _last = '';
+
+    function showLoading() {
+        drop.innerHTML = '<div class="sd-loading"><span class="sd-spinner"></span>Loading…</div>';
+        drop.classList.add('open');
+    }
+    function renderOptions(rows) {
+        hi = -1;
+        if (!rows.length) {
+            drop.innerHTML = '<div class="sd-loading">No results found.</div>';
+            return;
+        }
+        drop.innerHTML = '';
+        rows.forEach(function(p) {
+            var label = p.category + '-' + p.name;
+            var parts = [];
+            if (parseInt(p.stock_qty) > 0) parts.push(Number(p.stock_qty).toLocaleString() + ' pkgs WH');
+            if (parseInt(p.rt_qty)    > 0) parts.push(Number(p.rt_qty).toLocaleString()    + ' pcs RT');
+            var o = document.createElement('div');
+            o.className = 'ss-opt';
+            o.dataset.id      = p.id;
+            o.dataset.name    = label;
+            o.dataset.price   = p.default_price;
+            o.dataset.stock   = p.stock_qty;
+            o.dataset.ppp     = p.ppp;
+            o.dataset.rtStock = p.rt_qty;
+            o.dataset.rtPrice = p.rt_price;
+            o.innerHTML = esc(label) + (parts.length ? '<span class="ss-sub"> &middot; ' + parts.join(' &middot; ') + '</span>' : '');
+            o.addEventListener('click', function(){ pick(o); });
+            drop.appendChild(o);
+        });
+    }
+    function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function doSearch(q) {
+        showLoading();
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '?action=search_products&q=' + encodeURIComponent(q));
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                try { renderOptions(JSON.parse(xhr.responseText)); }
+                catch(e) { drop.innerHTML = '<div class="sd-loading">Failed to load.</div>'; }
+            } else { drop.innerHTML = '<div class="sd-loading">Failed to load.</div>'; }
+        };
+        xhr.onerror = function(){ drop.innerHTML = '<div class="sd-loading">Failed to load.</div>'; };
+        xhr.send();
+    }
+    function vis(){ return Array.from(drop.querySelectorAll('.ss-opt')); }
+    function hl(v){
+        drop.querySelectorAll('.ss-opt').forEach(function(o){ o.classList.remove('hi'); });
+        if (v[hi]) { v[hi].classList.add('hi'); v[hi].scrollIntoView({block:'nearest'}); }
+    }
+    function pick(opt){
+        search.value = opt.dataset.name;
+        hidden.value = opt.dataset.id;
+        _selectedProd = {
+            id:      opt.dataset.id,
+            name:    opt.dataset.name,
+            price:   parseFloat(opt.dataset.price)   || 0,
+            stock:   parseInt(opt.dataset.stock)      || 0,
+            ppp:     parseInt(opt.dataset.ppp)        || 1,
+            rtStock: parseInt(opt.dataset.rtStock)    || 0,
+            rtPrice: parseFloat(opt.dataset.rtPrice)  || 0
+        };
+        drop.classList.remove('open'); hi = -1;
+        onProductChange();
+    }
+    search.addEventListener('focus', function(){ if (!drop.classList.contains('open')) { doSearch(search.value); } });
+    search.addEventListener('input', function(){
+        var q = search.value;
+        _selectedProd = null; hidden.value = '';
+        drop.classList.add('open'); hi = -1;
+        clearTimeout(_timer);
+        _timer = setTimeout(function(){ doSearch(q); }, 250);
+    });
     search.addEventListener('keydown', function(e){
-        var v = Array.from(drop.querySelectorAll('.ss-opt:not(.hidden)'));
+        var v = vis();
         if      (e.key==='ArrowDown'){ e.preventDefault(); hi=Math.min(hi+1,v.length-1); hl(v); }
         else if (e.key==='ArrowUp')  { e.preventDefault(); hi=Math.max(hi-1,0); hl(v); }
         else if (e.key==='Enter')    { e.preventDefault(); if(hi>=0&&v[hi]) pick(v[hi]); }
@@ -809,38 +861,23 @@ function saveNewOwner() {
     document.addEventListener('click', function(e){
         if (!e.target.closest('#ss_wrap')) drop.classList.remove('open');
     });
-    opts.forEach(function(o){ o.addEventListener('click', function(){ pick(o); }); });
-    function filter(){
-        var t = search.value.toLowerCase();
-        opts.forEach(function(o){ o.classList.toggle('hidden', o.dataset.name.toLowerCase().indexOf(t)===-1); });
-    }
-    function hl(v){
-        opts.forEach(function(o){ o.classList.remove('hi'); });
-        if (v[hi]) { v[hi].classList.add('hi'); v[hi].scrollIntoView({block:'nearest'}); }
-    }
-    function pick(opt){
-        search.value = opt.dataset.name;
-        hidden.value = opt.dataset.value;
-        drop.classList.remove('open'); hi=-1;
-        onProductChange(opt);
-    }
 })();
 
 var _stockType = 'wh';
 
-function onProductChange(opt) {
+function onProductChange() {
     var hint = document.getElementById('stock_hint');
     var stypeWrap = document.getElementById('stype_wrap');
-    if (!opt || !opt.dataset) {
+    if (!_selectedProd) {
         hint.textContent = '';
         stypeWrap.style.display = 'none';
         return;
     }
 
-    var whQty  = parseInt(opt.dataset.stock   || '0') || 0;
-    var rtQty  = parseInt(opt.dataset.rtStock || '0') || 0;
-    var whPr   = parseFloat(opt.dataset.price   || '0') || 0;
-    var rtPr   = parseFloat(opt.dataset.rtPrice || '0') || 0;
+    var whQty  = _selectedProd.stock;
+    var rtQty  = _selectedProd.rtStock;
+    var whPr   = _selectedProd.price;
+    var rtPr   = _selectedProd.rtPrice;
 
     // show/enable toggle buttons
     stypeWrap.style.display = 'block';
@@ -863,14 +900,12 @@ function setStockType(type, skipPriceClear) {
     document.getElementById('stype_wh').classList.toggle('active', type === 'wh');
     document.getElementById('stype_rt').classList.toggle('active', type === 'rt');
 
-    var sel = document.getElementById('product_id');
-    var opt = sel.options[sel.selectedIndex];
-    if (!opt || !opt.value) return;
+    if (!_selectedProd) return;
 
-    var whQty = parseInt(opt.dataset.stock    || '0') || 0;
-    var rtQty = parseInt(opt.dataset.rtStock  || '0') || 0;
-    var whPr  = parseFloat(opt.dataset.price   || '0') || 0;
-    var rtPr  = parseFloat(opt.dataset.rtPrice || '0') || 0;
+    var whQty = _selectedProd.stock;
+    var rtQty = _selectedProd.rtStock;
+    var whPr  = _selectedProd.price;
+    var rtPr  = _selectedProd.rtPrice;
 
     var hint = document.getElementById('stock_hint');
     var qtyLbl = document.getElementById('qty_label');
@@ -898,12 +933,8 @@ function setStockType(type, skipPriceClear) {
 }
 
 function useDefaultPrice() {
-    var sel = document.getElementById('product_id');
-    var opt = sel.options[sel.selectedIndex];
-    if (!opt || !opt.value) return;
-    var pr = _stockType === 'wh'
-        ? parseFloat(opt.dataset.price   || '0')
-        : parseFloat(opt.dataset.rtPrice || '0');
+    if (!_selectedProd) return;
+    var pr = _stockType === 'wh' ? _selectedProd.price : _selectedProd.rtPrice;
     if (pr > 0) document.getElementById('price').value = pr;
 }
 
@@ -911,13 +942,11 @@ function useDefaultPrice() {
 var _cart = [];
 
 function addToCart() {
-    var pid   = document.getElementById('product_id').value;
+    var pid   = _selectedProd ? _selectedProd.id : '';
     var pname = document.getElementById('ss_search').value.trim();
     var qty   = parseFloat(document.getElementById('qty').value) || 0;
     var price = parseFloat(document.getElementById('price').value) || 0;
-    var sel   = document.getElementById('product_id');
-    var opt   = sel.options[sel.selectedIndex] || {};
-    var ppp   = parseInt((opt.dataset && opt.dataset.ppp) || '1') || 1;
+    var ppp   = _selectedProd ? (_selectedProd.ppp || 1) : 1;
     var type  = _stockType || 'wh';
     var unit  = type === 'wh' ? 'pkg' : 'pcs';
 
@@ -942,6 +971,7 @@ function addToCart() {
     renderCart();
     document.getElementById('ss_search').value = '';
     document.getElementById('product_id').value = '';
+    _selectedProd = null;
     var qtyEl2 = document.getElementById('qty');
     qtyEl2.value = ''; qtyEl2.max = '';
     document.getElementById('price').value = '';

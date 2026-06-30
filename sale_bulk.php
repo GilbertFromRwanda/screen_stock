@@ -5,18 +5,45 @@ if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't h
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 
+// ── AJAX: product search ──────────────────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
+    header('Content-Type: application/json');
+    $q          = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
+    $cat_filter = trim($_GET['cat'] ?? '');
+    $cat_sql    = $cat_filter ? " AND p.category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
+    $res = mysqli_query($conn, "
+        SELECT p.id, p.name, p.category, p.unit_measure,
+               s.package_price, s.quantity
+        FROM stock s
+        JOIN products p ON s.product_id = p.id
+        WHERE s.quantity > 0 " . cidAndFor('s') . "
+        AND (p.name LIKE '$q' OR p.category LIKE '$q') $cat_sql
+        ORDER BY p.category, p.name LIMIT 60
+    ");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
+    echo json_encode($rows);
+    exit;
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'get_categories') {
+    header('Content-Type: application/json');
+    $res  = mysqli_query($conn, "
+        SELECT DISTINCT p.category FROM stock s
+        JOIN products p ON s.product_id = p.id
+        WHERE s.quantity > 0 " . cidAndFor('s') . "
+        AND p.category IS NOT NULL AND p.category != ''
+        ORDER BY p.category
+    ");
+    $cats = [];
+    while ($r = mysqli_fetch_assoc($res)) $cats[] = $r['category'];
+    echo json_encode($cats);
+    exit;
+}
+
 // Flash messages
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
-
-// Products with stock
-$bulk_products = mysqli_query($conn, "
-    SELECT s.*, p.name, p.unit_measure, p.category
-    FROM stock s
-    JOIN products p ON s.product_id = p.id
-    WHERE s.quantity > 0 " . cidAndFor('s') . "
-    ORDER BY p.category, p.name
-");
 
 // Loan clients for picker
 $loan_clients_query = mysqli_query($conn, "
@@ -83,6 +110,16 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         .searchable-select-option:hover,
         .searchable-select-option.highlighted { background: var(--gray-100); color: var(--primary); }
         .searchable-select-option.hidden { display: none; }
+        .sd-loading {
+            padding: 10px 12px; font-size: 13px; color: var(--secondary);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .sd-spinner {
+            display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+            border: 2px solid var(--gray-300); border-top-color: var(--primary);
+            border-radius: 50%; animation: sd-spin .6s linear infinite;
+        }
+        @keyframes sd-spin { to { transform: rotate(360deg); } }
         .split-payment-box { border: 1px solid var(--gray-300); border-radius: var(--radius); overflow: hidden; }
         .split-row { display: flex; align-items: center; padding: 8px 12px; gap: 10px; border-bottom: 1px solid var(--gray-100); }
         .split-row:last-child { border-bottom: none; }
@@ -254,36 +291,20 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                         <!-- Col 1: Product + details + level -->
                         <div>
                             <div class="form-group">
+                                <label>Category</label>
+                                <div class="searchable-select" id="bulkCatWrap">
+                                    <input type="text" class="searchable-select-input" id="bulk_cat_search"
+                                           placeholder="All categories…" autocomplete="off" readonly style="cursor:pointer;"
+                                           onfocus="this.removeAttribute('readonly')">
+                                    <div class="searchable-select-dropdown" id="bulk_cat_dropdown"></div>
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label>Select Product*</label>
-                                <select id="bulk_product_id" name="product_id" required onchange="updateBulkProductDetails()" style="display:none">
-                                    <option value="">Choose product...</option>
-                                    <?php while ($row = mysqli_fetch_assoc($bulk_products)): ?>
-                                        <option value="<?php echo $row['product_id']; ?>"
-                                                data-price="<?php echo $row['package_price']; ?>"
-                                                data-stock="<?php echo $row['quantity']; ?>"
-                                                data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                                data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                            <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                        </option>
-                                    <?php endwhile; ?>
-                                </select>
+                                <input type="hidden" id="bulk_product_id" name="product_id">
                                 <div class="searchable-select" id="bulkProductSearchable">
                                     <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
-                                    <div class="searchable-select-dropdown" id="bulk_product_dropdown">
-                                        <?php
-                                        mysqli_data_seek($bulk_products, 0);
-                                        while ($row = mysqli_fetch_assoc($bulk_products)):
-                                        ?>
-                                            <div class="searchable-select-option"
-                                                 data-value="<?php echo $row['product_id']; ?>"
-                                                 data-price="<?php echo $row['package_price']; ?>"
-                                                 data-stock="<?php echo $row['quantity']; ?>"
-                                                 data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                                 data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                                <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                            </div>
-                                        <?php endwhile; ?>
-                                    </div>
+                                    <div class="searchable-select-dropdown" id="bulk_product_dropdown"></div>
                                 </div>
                             </div>
                             <div id="bulk_product_details" class="price-history" style="display:none;">
@@ -440,44 +461,162 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
 <script src="script.js"></script>
 <script>
-function initSearchableSelect(wrapperId, searchInputId, dropdownId, hiddenSelectId) {
-    var wrapper      = document.getElementById(wrapperId);
-    var searchInput  = document.getElementById(searchInputId);
-    var dropdown     = document.getElementById(dropdownId);
-    var hiddenSelect = document.getElementById(hiddenSelectId);
-    var options      = dropdown.querySelectorAll('.searchable-select-option');
-    var hi = -1;
+// ── AJAX product picker ───────────────────────────────────────────────────────
+var bulkSelectedProduct = null;
+var bulkSelectedCat     = '';
+var bulkAllCategories   = [];
 
-    searchInput.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
-    searchInput.addEventListener('input', function() { dropdown.classList.add('open'); hi = -1; filter(); });
-    searchInput.addEventListener('keydown', function(e) {
-        var vis = dropdown.querySelectorAll('.searchable-select-option:not(.hidden)');
+// ── Bulk category searchable select ──────────────────────────────────────────
+(function() {
+    var catSearch   = document.getElementById('bulk_cat_search');
+    var catDropdown = document.getElementById('bulk_cat_dropdown');
+
+    function renderCatOpts(filter) {
+        catDropdown.innerHTML = '';
+        var allDiv = document.createElement('div');
+        allDiv.className = 'searchable-select-option';
+        allDiv.textContent = '— All Categories —';
+        allDiv.addEventListener('click', function() { pickCat('', ''); });
+        catDropdown.appendChild(allDiv);
+        var q = filter.toLowerCase();
+        var matched = bulkAllCategories.filter(function(c) { return c.toLowerCase().indexOf(q) !== -1; });
+        matched.forEach(function(cat) {
+            var div = document.createElement('div');
+            div.className = 'searchable-select-option';
+            div.textContent = cat;
+            div.addEventListener('click', function() { pickCat(cat, cat); });
+            catDropdown.appendChild(div);
+        });
+        if (!matched.length) {
+            var none = document.createElement('div');
+            none.className = 'searchable-select-option';
+            none.style.color = 'var(--secondary)'; none.style.cursor = 'default';
+            none.textContent = 'No categories found';
+            catDropdown.appendChild(none);
+        }
+    }
+
+    function pickCat(value, label) {
+        bulkSelectedCat = value;
+        catSearch.value = label;
+        catSearch.setAttribute('readonly', '');
+        catDropdown.classList.remove('open');
+        document.getElementById('bulk_product_search').dispatchEvent(new Event('input'));
+        document.getElementById('bulk_product_search').focus();
+    }
+
+    catSearch.addEventListener('focus', function() { renderCatOpts(''); catDropdown.classList.add('open'); });
+    catSearch.addEventListener('input', function() { renderCatOpts(this.value.trim()); catDropdown.classList.add('open'); });
+    catSearch.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { catDropdown.classList.remove('open'); catSearch.setAttribute('readonly',''); }
+    });
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#bulkCatWrap')) {
+            catDropdown.classList.remove('open');
+            catSearch.value = bulkSelectedCat || '';
+            catSearch.setAttribute('readonly', '');
+        }
+    });
+})();
+
+function loadBulkCategories() {
+    fetch('sale_bulk.php?action=get_categories')
+        .then(function(r) { return r.json(); })
+        .then(function(cats) { bulkAllCategories = cats; })
+        .catch(function() {});
+}
+loadBulkCategories();
+
+(function() {
+    var search   = document.getElementById('bulk_product_search');
+    var dropdown = document.getElementById('bulk_product_dropdown');
+    var hidden   = document.getElementById('bulk_product_id');
+    var hi = -1, debounce = null;
+
+    function getOptions() { return dropdown.querySelectorAll('.searchable-select-option'); }
+
+    function escH(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function renderOptions(items) {
+        dropdown.innerHTML = '';
+        if (!items.length) {
+            dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--secondary);cursor:default;">No results</div>';
+            return;
+        }
+        items.forEach(function(p) {
+            var label = (p.category ? p.category + '-' : '') + p.name;
+            var div = document.createElement('div');
+            div.className = 'searchable-select-option';
+            div.dataset.id    = p.id;
+            div.dataset.name  = label;
+            div.dataset.price = p.package_price;
+            div.dataset.stock = p.quantity;
+            div.dataset.unit  = p.unit_measure || '';
+            div.innerHTML = escH(label) + '<small style="color:var(--secondary);"> · ' +
+                p.quantity + ' pkgs · RWF ' + Number(p.package_price).toLocaleString() + '</small>';
+            div.addEventListener('click', function() { pick(div); });
+            dropdown.appendChild(div);
+        });
+        hi = -1;
+    }
+
+    function showLoading() {
+        dropdown.innerHTML = '<div class="sd-loading"><span class="sd-spinner"></span> Searching…</div>';
+        dropdown.classList.add('open');
+    }
+
+    function doSearch(q) {
+        showLoading();
+        var url = 'sale_bulk.php?action=search_products&q=' + encodeURIComponent(q);
+        if (bulkSelectedCat) url += '&cat=' + encodeURIComponent(bulkSelectedCat);
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(data) { renderOptions(data); dropdown.classList.add('open'); })
+            .catch(function() {
+                dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--danger);cursor:default;">Failed to load</div>';
+            });
+    }
+
+    search.addEventListener('focus', function() {
+        if (!search.value.trim()) doSearch('');
+        else dropdown.classList.add('open');
+    });
+    search.addEventListener('input', function() {
+        bulkSelectedProduct = null; hidden.value = '';
+        hi = -1;
+        clearTimeout(debounce);
+        debounce = setTimeout(function() { doSearch(search.value.trim()); }, 250);
+    });
+    search.addEventListener('keydown', function(e) {
+        var vis = getOptions();
         if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(hi+1, vis.length-1); hl(vis); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(hi-1, 0); hl(vis); }
         else if (e.key === 'Enter')  { e.preventDefault(); if (hi>=0&&vis[hi]) pick(vis[hi]); }
-        else if (e.key === 'Escape') { dropdown.classList.remove('open'); searchInput.blur(); }
+        else if (e.key === 'Escape') dropdown.classList.remove('open');
     });
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('#' + wrapperId)) dropdown.classList.remove('open');
+        if (!e.target.closest('#bulkProductSearchable')) dropdown.classList.remove('open');
     });
-    options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
-    function filter() {
-        var term = searchInput.value.toLowerCase();
-        options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1); });
-    }
     function hl(vis) {
-        options.forEach(function(o) { o.classList.remove('highlighted'); });
+        getOptions().forEach(function(o) { o.classList.remove('highlighted'); });
         if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
     }
     function pick(opt) {
-        searchInput.value = opt.textContent.trim();
+        if (!opt.dataset.id) return;
+        hidden.value = opt.dataset.id;
+        bulkSelectedProduct = {
+            id:    opt.dataset.id,
+            name:  opt.dataset.name,
+            price: parseFloat(opt.dataset.price) || 0,
+            stock: parseInt(opt.dataset.stock)   || 0,
+            unit:  opt.dataset.unit || ''
+        };
+        search.value = opt.dataset.name;
         dropdown.classList.remove('open'); hi = -1;
-        hiddenSelect.value = opt.getAttribute('data-value');
-        hiddenSelect.dispatchEvent(new Event('change'));
+        updateBulkProductDetails();
     }
-}
-initSearchableSelect('bulkProductSearchable', 'bulk_product_search', 'bulk_product_dropdown', 'bulk_product_id');
+})();
 
 function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId) {
     var wrap = document.getElementById(wrapId);
@@ -544,9 +683,7 @@ function goToBulkStep1() {
 }
 
 function updateBulkProductDetails() {
-    var select = document.getElementById('bulk_product_id');
-    var opt    = select.options[select.selectedIndex];
-    if (!opt.value) {
+    if (!bulkSelectedProduct) {
         document.getElementById('bulk_product_details').style.display = 'none';
         document.getElementById('bulk_stock_info').innerHTML = '';
         document.getElementById('bulk_selling_price').value = '';
@@ -560,9 +697,9 @@ function updateBulkProductDetails() {
         bulkCoreValid = false;
         return;
     }
-    var price = opt.dataset.price;
-    var stock = opt.dataset.stock;
-    var name  = opt.dataset.productName;
+    var price = bulkSelectedProduct.price;
+    var stock = bulkSelectedProduct.stock;
+    var name  = bulkSelectedProduct.name;
 
     document.getElementById('bulk_selling_price').value = price;
     document.getElementById('bulk_quantity').value = '';
@@ -576,7 +713,7 @@ function updateBulkProductDetails() {
     calculateBulkTotal();
 
     document.getElementById('bulk_level_divisor').value = 1;
-    fetch('ajax_levels.php?product_id=' + opt.value)
+    fetch('ajax_levels.php?product_id=' + bulkSelectedProduct.id)
         .then(function(r){ return r.json(); })
         .then(function(data) {
             var sel  = document.getElementById('bulk_level_selector');
@@ -622,22 +759,19 @@ function setBulkDefaultPrice() {
     var activeBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
     if (activeBtn) {
         document.getElementById('bulk_selling_price').value = activeBtn.dataset.price;
-    } else {
-        var opt = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
-        if (opt.value) document.getElementById('bulk_selling_price').value = opt.dataset.price;
+    } else if (bulkSelectedProduct) {
+        document.getElementById('bulk_selling_price').value = bulkSelectedProduct.price;
     }
     calculateBulkTotal();
 }
 
 function calculateBulkTotal() {
-    var select = document.getElementById('bulk_product_id');
-    var opt    = select.options[select.selectedIndex];
-    if (!opt.value) return;
+    if (!bulkSelectedProduct) return;
 
     var qtyInput = document.getElementById('bulk_quantity');
-    var stock = parseInt(qtyInput.max) > 0 ? parseInt(qtyInput.max) : (parseInt(opt.dataset.stock)||0);
+    var stock = parseInt(qtyInput.max) > 0 ? parseInt(qtyInput.max) : bulkSelectedProduct.stock;
     var activeBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
-    var defaultPrice = activeBtn ? (parseFloat(activeBtn.dataset.price)||0) : (parseFloat(opt.dataset.price)||0);
+    var defaultPrice = activeBtn ? (parseFloat(activeBtn.dataset.price)||0) : bulkSelectedProduct.price;
     var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
     var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
     var total = qty * price;
@@ -665,7 +799,7 @@ function calculateBulkTotal() {
     document.getElementById('bulk_next_btn').disabled = !valid;
 
     if (valid) {
-        document.getElementById('bulk_sum_product').textContent = opt.dataset.productName;
+        document.getElementById('bulk_sum_product').textContent = bulkSelectedProduct.name;
         document.getElementById('bulk_sum_qty').textContent = qty;
         document.getElementById('bulk_sum_price').textContent = 'RWF ' + price.toLocaleString();
         document.getElementById('bulk_sum_total').textContent = 'RWF ' + total.toLocaleString();
@@ -748,7 +882,7 @@ function toggleBulkShortcut(type) {
 }
 
 function handleBulkSubmit() {
-    var opt     = document.getElementById('bulk_product_id').options[document.getElementById('bulk_product_id').selectedIndex];
+    if (!bulkSelectedProduct) return;
     var qty     = parseInt(document.getElementById('bulk_quantity').value)||0;
     var price   = parseFloat(document.getElementById('bulk_selling_price').value);
     var total   = qty * price;
@@ -765,7 +899,7 @@ function handleBulkSubmit() {
     if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
     var ok = confirm(
         'Confirm Sale?\n\n' +
-        'Product: ' + opt.dataset.productName + '\n' +
+        'Product: ' + bulkSelectedProduct.name + '\n' +
         'Qty: ' + qty + ' ' + levelName + '\n' +
         'Price/' + levelName + ': RWF ' + price.toLocaleString() + '\n' +
         'Total: RWF ' + total.toLocaleString() + '\n' +

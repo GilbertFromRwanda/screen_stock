@@ -354,32 +354,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
 
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .demo-hint {
+        .powered-by {
             margin-top: 32px;
-            padding: 14px 16px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-        }
-
-        .demo-hint p {
+            text-align: center;
             font-size: 12px;
-            color: #64748b;
-            line-height: 1.6;
+            color: #94a3b8;
         }
 
-        .demo-hint p:first-child {
+        .powered-by span {
             font-weight: 600;
-            color: #475569;
-            margin-bottom: 4px;
+            color: #3b82f6;
         }
 
-        .demo-hint code {
-            background: #eff6ff;
+        .powered-by a {
             color: #3b82f6;
-            padding: 1px 5px;
-            border-radius: 4px;
-            font-size: 12px;
+            text-decoration: none;
+        }
+
+        .powered-by a:hover {
+            text-decoration: underline;
         }
 
         @keyframes fadeUp {
@@ -472,9 +465,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                 <button type="submit" id="submit-btn" class="btn-signin">Sign In</button>
             </form>
 
-            <div class="demo-hint">
-                <p>Demo credentials</p>
-                <p>Username: <code>admin</code> &nbsp;&nbsp; Password: <code>admin123</code></p>
+            <div class="powered-by">
+                &copy; <?= date('Y') ?> Powered by <span>Eng Gilbert</span><br>
+                <a href="mailto:askforgilbert@gmail.com">askforgilbert@gmail.com</a>
             </div>
 
         </div>
