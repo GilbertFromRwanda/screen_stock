@@ -6,16 +6,18 @@ if (!hasPermission('purchases', 'create')) { $_SESSION['flash_error'] = "You don
 // ── AJAX: product search ──────────────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
     header('Content-Type: application/json');
-    $q          = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
     $cat_filter = trim($_GET['cat'] ?? '');
     $cat_sql    = $cat_filter ? " AND category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
+    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
+
     $res = mysqli_query($conn,
         "SELECT id, name, category FROM products
-         WHERE deleted = 0 AND (name LIKE '$q' OR category LIKE '$q') $cat_sql
+         WHERE deleted = 0 AND $search_sql $cat_sql
          ORDER BY category, name LIMIT 60"
     );
     $rows = [];
     while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
+
     echo json_encode($rows);
     exit;
 }

@@ -120,4 +120,20 @@ function logActivity(
         VALUES ($cid_sql, $user_id, '$action_esc', '$table_esc', $rec_id, $old_sql, $new_sql, '$ip_esc')
     ");
 }
+// Returns a "MATCH(search_text) AGAINST (... IN BOOLEAN MODE)" condition for the
+// products.search_text fulltext column, or "1=1" when $raw is empty/has no usable terms.
+// Each word becomes a required prefix match (e.g. "ka in" -> +ka* +in*).
+function productSearchSql($conn, string $raw): string {
+    $raw = trim($raw);
+    if ($raw === '') return '1=1';
+    $terms = [];
+    foreach (preg_split('/\s+/', $raw) as $w) {
+        $w = preg_replace('/[+\-><()~*"@]+/', '', $w);
+        if ($w === '') continue;
+        $terms[] = '+' . mysqli_real_escape_string($conn, $w) . '*';
+    }
+    if (!$terms) return '1=1';
+    $match_sql = implode(' ', $terms);
+    return "MATCH(search_text) AGAINST ('$match_sql' IN BOOLEAN MODE)";
+}
 ?>

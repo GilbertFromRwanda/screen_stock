@@ -8,9 +8,9 @@ $cid_sql = cidSql(); $cid_and = cidAnd();
 // ── AJAX: product search ──────────────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
     header('Content-Type: application/json');
-    $q          = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
     $cat_filter = trim($_GET['cat'] ?? '');
     $cat_sql    = $cat_filter ? " AND p.category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
+    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
     $res = mysqli_query($conn, "
         SELECT p.id, p.name, p.category,
                COALESCE(s.package_price, 0) AS bulk_price,
@@ -18,7 +18,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
         FROM products p
         LEFT JOIN stock s        ON s.product_id = p.id " . cidAndFor('s') . "
         LEFT JOIN retail_stock r ON r.product_id = p.id " . cidAndFor('r') . "
-        WHERE p.deleted = 0 AND (p.name LIKE '$q' OR p.category LIKE '$q') $cat_sql
+        WHERE p.deleted = 0 AND $search_sql $cat_sql
         ORDER BY p.category, p.name LIMIT 60
     ");
     $rows = [];

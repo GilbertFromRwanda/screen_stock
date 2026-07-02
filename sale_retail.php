@@ -8,16 +8,16 @@ $cid_sql = cidSql(); $cid_and = cidAnd();
 // ── AJAX: product search ──────────────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
     header('Content-Type: application/json');
-    $q          = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
     $cat_filter = trim($_GET['cat'] ?? '');
     $cat_sql    = $cat_filter ? " AND p.category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
+    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
     $res = mysqli_query($conn, "
         SELECT p.id, p.name, p.category, p.unit_measure,
                r.retail_price, r.pieces_quantity
         FROM retail_stock r
         JOIN products p ON r.product_id = p.id
         WHERE r.pieces_quantity > 0 " . cidAndFor('r') . "
-        AND (p.name LIKE '$q' OR p.category LIKE '$q') $cat_sql
+        AND $search_sql $cat_sql
         ORDER BY p.category, p.name LIMIT 60
     ");
     $rows = [];

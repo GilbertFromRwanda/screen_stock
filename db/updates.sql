@@ -205,3 +205,14 @@ CREATE TABLE IF NOT EXISTS `order_payments` (
 
 -- 'closed' status for orders
 ALTER TABLE `orders` MODIFY COLUMN `status` ENUM('pending','approved','cancelled','closed') NOT NULL DEFAULT 'pending';
+
+
+-- ── products.search_text: generated column + FULLTEXT index for fast product search ──
+-- CONCAT of name + category, used by the AJAX "search_products" endpoints via
+-- MATCH(search_text) AGAINST (... IN BOOLEAN MODE) instead of "name LIKE OR category LIKE".
+ALTER TABLE `products`
+  ADD COLUMN IF NOT EXISTS `search_text` VARCHAR(160)
+    GENERATED ALWAYS AS (CONCAT(`name`, ' ', COALESCE(`category`, ''))) STORED
+    AFTER `category`;
+
+CREATE FULLTEXT INDEX IF NOT EXISTS `ftx_products_search_text` ON `products` (`search_text`);

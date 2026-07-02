@@ -100,7 +100,7 @@ if (isset($_SESSION['flash_error'])) { $error = $_SESSION['flash_error']; unset(
 // ── AJAX: product search ──────────────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
     header('Content-Type: application/json');
-    $q = '%' . mysqli_real_escape_string($conn, trim($_GET['q'] ?? '')) . '%';
+    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
     $res = mysqli_query($conn, "
         SELECT p.id, p.name, p.category,
                COALESCE(s.quantity,0)           AS stock_qty,
@@ -112,7 +112,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
         LEFT JOIN stock        s  ON s.product_id  = p.id
         LEFT JOIN retail_stock rs ON rs.product_id = p.id
         WHERE p.deleted = 0
-        AND (p.name LIKE '$q' OR p.category LIKE '$q')
+        AND $search_sql
         HAVING stock_qty > 0 OR rt_qty > 0
         ORDER BY p.category, p.name LIMIT 60");
     $rows = [];
