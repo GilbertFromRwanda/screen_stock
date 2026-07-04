@@ -5,53 +5,13 @@ if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't h
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 
-// ── AJAX: product search ──────────────────────────────────────────────────────
-if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
-    header('Content-Type: application/json');
-    $cat_filter = trim($_GET['cat'] ?? '');
-    $cat_sql    = $cat_filter ? " AND p.category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
-    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
-    $res = mysqli_query($conn, "
-        SELECT p.id, p.name, p.category, p.unit_measure,
-               s.package_price, s.quantity
-        FROM stock s
-        JOIN products p ON s.product_id = p.id
-        WHERE s.quantity > 0 " . cidAndFor('s') . "
-        AND $search_sql $cat_sql
-        ORDER BY p.category, p.name LIMIT 60
-    ");
-    $rows = [];
-    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
-    echo json_encode($rows);
-    exit;
-}
-
-if (isset($_GET['action']) && $_GET['action'] === 'get_categories') {
-    header('Content-Type: application/json');
-    $res  = mysqli_query($conn, "
-        SELECT DISTINCT p.category FROM stock s
-        JOIN products p ON s.product_id = p.id
-        WHERE s.quantity > 0 " . cidAndFor('s') . "
-        AND p.category IS NOT NULL AND p.category != ''
-        ORDER BY p.category
-    ");
-    $cats = [];
-    while ($r = mysqli_fetch_assoc($res)) $cats[] = $r['category'];
-    echo json_encode($cats);
-    exit;
-}
+// Product search/categories and the loan-client picker are loaded
+// client-side from DataCache (js/data-cache.js) instead of these per-page
+// AJAX endpoints.
 
 // Flash messages
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
-
-// Loan clients for picker
-$loan_clients_query = mysqli_query($conn, "
-    SELECT name AS client, phone, total_loans AS visits, unpaid_amount AS outstanding
-    FROM loan_clients WHERE 1=1 $cid_and ORDER BY updated_at DESC
-");
-$loan_clients_arr = [];
-while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -227,6 +187,55 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
         /* ── 3-col grid (replaces inline style so media queries can override) ── */
         .form-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 24px; align-items: start; }
 
+        /* ── Client card (step 1) ───────────────────────────────────────────── */
+        .client-card {
+            display: none; background: #eff6ff; border: 1px solid #bfdbfe;
+            border-radius: var(--radius); padding: 12px 16px;
+            align-items: center; justify-content: space-between; gap: 10px;
+        }
+        .client-card.show { display: flex; }
+        .client-card-name { font-weight: 700; color: #1e40af; font-size: 15px; }
+        .client-card-meta { color: var(--secondary); font-size: 12px; margin-top: 3px; }
+        .client-card-clear { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; flex-shrink: 0; }
+        .client-card-clear:hover { color: #dc2626; }
+
+        /* ── Payment shortcut chips (compact) ─────────────────────────────────── */
+        .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .shortcut-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border: 1.5px solid var(--gray-300); border-radius: 999px;
+            background: var(--gray-50); cursor: pointer; font-size: 13px; font-weight: 600;
+            white-space: nowrap;
+        }
+        .shortcut-chip input { width: 15px; height: 15px; cursor: pointer; margin: 0; }
+
+        /* ── Step 2: product + cart ───────────────────────────────────────────── */
+        .cart-split { display: grid; grid-template-columns: 1fr 360px; gap: 24px; align-items: start; }
+        @media (max-width: 900px) { .cart-split { grid-template-columns: 1fr; } }
+        .cart-panel { border: 1px solid var(--gray-200); border-radius: var(--radius-lg); overflow: hidden; position: sticky; top: 16px; }
+        .cart-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); font-size: 13px; font-weight: 700; }
+        .cart-badge { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; }
+        .cart-badge.zero { background: var(--gray-300); }
+        .cart-body { min-height: 80px; max-height: 380px; overflow-y: auto; }
+        .cart-empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--secondary); line-height: 1.6; }
+        .cart-item { display: flex; align-items: flex-start; padding: 10px 14px; gap: 8px; border-bottom: 1px solid var(--gray-100); }
+        .cart-item:last-child { border-bottom: none; }
+        .cart-item-info { flex: 1; min-width: 0; }
+        .cart-item-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cart-item-sub { font-size: 12px; color: var(--secondary); margin-top: 2px; }
+        .cart-item-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+        .cart-item-total { font-size: 13px; font-weight: 700; }
+        .cart-rm { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 15px; padding: 0; line-height: 1; }
+        .cart-rm:hover { color: #ef4444; }
+        .cart-foot { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; background: #eff6ff; border-top: 1px solid #bfdbfe; }
+        .cart-foot-lbl { font-size: 12px; font-weight: 700; color: #1e40af; }
+        .cart-foot-val { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+        .add-item-btn {
+            width: 100%; padding: 11px; margin-top: 4px; background: #0ea5e9;
+            color: #fff; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 700; cursor: pointer;
+        }
+        .add-item-btn:hover { background: #0284c7; }
+
         /* ── Responsive ─────────────────────────────────────────────────────── */
         @media (max-width: 900px) {
             .form-3col { grid-template-columns: 1fr 1fr; }
@@ -267,44 +276,66 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
             </div>
             <div id="bulk_sale_alert" class="alert" style="display:none;margin-bottom:16px;"></div>
 
-            <!-- Step indicator -->
-            <div class="steps-indicator">
-                <div class="step-item active" id="bulk_step_dot_1">
-                    <div class="step-circle">1</div>
-                    <div class="step-lbl">Product</div>
-                </div>
-                <div class="step-connector" id="bulk_step_connector"></div>
-                <div class="step-item" id="bulk_step_dot_2">
-                    <div class="step-circle">2</div>
-                    <div class="step-lbl">Payment</div>
-                </div>
-            </div>
-
             <form method="POST" action="sales.php" id="bulkSaleForm">
+                <input type="hidden" id="bulk_items_json" name="items_json" value="[]">
 
-                <!-- ═══════════ STEP 1 ═══════════ -->
+                <!-- ═══════════ Client ═══════════ -->
                 <div id="bulk_step_panel_1">
 
-                    <!-- 3-column: Product | Quantity | Price -->
-                    <div class="form-3col">
-
-                        <!-- Col 1: Product + details + level -->
+                    <div class="client-card" id="bulk_client_card">
                         <div>
+                            <div class="client-card-name" id="bulk_client_card_name"></div>
+                            <div class="client-card-meta" id="bulk_client_card_meta"></div>
+                        </div>
+                        <button type="button" class="client-card-clear" onclick="clearBulkClient()" title="Change client">&times;</button>
+                    </div>
+
+                    <div id="bulk_client_select_area">
+                        <div class="form-group" id="bulkClientPickerGroup" style="display:none;">
+                            <label>Existing Client</label>
+                            <div class="searchable-select" id="bulkClientPickerWrap">
+                                <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
+                                    placeholder="Search registered client..." autocomplete="off">
+                                <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown"></div>
+                            </div>
+                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                        </div>
+                        <div class="form-2col">
                             <div class="form-group">
-                                <label>Category</label>
-                                <div class="searchable-select" id="bulkCatWrap">
-                                    <input type="text" class="searchable-select-input" id="bulk_cat_search"
-                                           placeholder="All categories…" autocomplete="off" readonly style="cursor:pointer;"
-                                           onfocus="this.removeAttribute('readonly')">
-                                    <div class="searchable-select-dropdown" id="bulk_cat_dropdown"></div>
-                                </div>
+                                <label>Client Name</label>
+                                 <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
                             </div>
                             <div class="form-group">
-                                <label>Select Product*</label>
-                                <input type="hidden" id="bulk_product_id" name="product_id">
-                                <div class="searchable-select" id="bulkProductSearchable">
-                                    <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
-                                    <div class="searchable-select-dropdown" id="bulk_product_dropdown"></div>
+                                <label>Client Phone <small style="font-weight:400;color:var(--secondary);">(required only for loans)</small></label>
+                                <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════ Products (cart) ═══════════ -->
+                <div id="bulk_step_panel_2">
+
+                    <div class="cart-split">
+                        <!-- Left: product picker -->
+                        <div>
+                            <div class="form-2col">
+                                <div class="form-group">
+                                    <label>Category</label>
+                                    <div class="searchable-select" id="bulkCatWrap">
+                                        <input type="text" class="searchable-select-input" id="bulk_cat_search"
+                                               placeholder="All categories…" autocomplete="off" readonly style="cursor:pointer;"
+                                               onfocus="this.removeAttribute('readonly')">
+                                        <div class="searchable-select-dropdown" id="bulk_cat_dropdown"></div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Select Product*</label>
+                                    <input type="hidden" id="bulk_product_id" name="product_id">
+                                    <div class="searchable-select" id="bulkProductSearchable">
+                                        <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
+                                        <div class="searchable-select-dropdown" id="bulk_product_dropdown"></div>
+                                    </div>
                                 </div>
                             </div>
                             <div id="bulk_product_details" class="price-history" style="display:none;">
@@ -314,157 +345,112 @@ while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
                                 <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
                                 <div id="bulk_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
                             </div>
-                        </div>
 
-                        <!-- Col 2: Quantity -->
-                        <div class="form-group">
-                            <label id="bulk_qty_label">Quantity (Packages)*</label>
-                            <input type="text" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
-                            <small id="bulk_stock_info" class="field-hint"></small>
-                            <small id="bulk_qty_error" class="field-error"></small>
-                        </div>
-
-                        <!-- Col 3: Price -->
-                        <div class="form-group">
-                            <label>Selling Price (per package)*</label>
-                            <div class="price-input-group">
-                                <input type="text" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
-                                <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
-                            </div>
-                            <div id="bulk_price_warning" class="price-warning"></div>
-                        </div>
-
-                    </div>
-
-                    <!-- Step 1 nav -->
-                    <div class="step-nav" style="justify-content:flex-end;">
-                        <button type="button" id="bulk_next_btn" class="btn btn-primary" disabled onclick="goToBulkStep2()" style="padding:10px 28px;">
-                            Next &rarr;
-                        </button>
-                    </div>
-                </div>
-
-                <!-- ═══════════ STEP 2 ═══════════ -->
-                <div id="bulk_step_panel_2" style="display:none;">
-
-                    <!-- Three-column layout -->
-                    <div class="form-3col">
-
-                        <!-- Col 1: Sale summary -->
-                        <div>
-                            <div class="sale-summary" id="bulk_summary">
-                                <div class="summary-row"><span>Product</span><strong id="bulk_sum_product"></strong></div>
-                                <div class="summary-row"><span>Packages</span><strong id="bulk_sum_qty"></strong></div>
-                                <div class="summary-row"><span>Price/Package</span><strong id="bulk_sum_price"></strong></div>
-                                <div class="summary-row summary-total"><span>Total Amount</span><strong id="bulk_sum_total"></strong></div>
-                            </div>
-                        </div>
-
-                        <!-- Col 2: Customer + shortcuts + loan fields -->
-                        <div>
-                            
-
-                            <div class="form-group" style="margin:0 0 16px;display:flex;flex-direction:column;gap:8px;">
-                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                                    <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
-                                    <span style="font-weight:700;font-size:14px;">Is Loan?</span>
-                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
-                                </label>
-                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                                    <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
-                                    <span style="font-weight:700;font-size:14px;">Is Cash?</span>
-                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
-                                </label>
-                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                                    <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
-                                    <span style="font-weight:700;font-size:14px;">Is Momo?</span>
-                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
-                                </label>
-                            </div>
-
-                            <!-- Loan fields -->
-                            <div id="bulk_loan_fields" style="display:none;">
-                                <?php if ($loan_clients_arr): ?>
+                            <div class="form-2col">
                                 <div class="form-group">
-                                    <label>Existing Client</label>
-                                    <div class="searchable-select" id="bulkClientPickerWrap">
-                                        <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
-                                            placeholder="Search registered client..." autocomplete="off">
-                                        <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown">
-                                            <?php foreach ($loan_clients_arr as $c): ?>
-                                                <div class="searchable-select-option"
-                                                    data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                                    data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                                    <?php echo htmlspecialchars($c['client']); ?>
-                                                    <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                                    <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                                    <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </div>
-                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                                    <label id="bulk_qty_label">Quantity (Packages)*</label>
+                                    <input type="text" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
+                                    <small id="bulk_stock_info" class="field-hint"></small>
+                                    <small id="bulk_qty_error" class="field-error"></small>
                                 </div>
-                                <?php endif; ?>
                                 <div class="form-group">
-                                <label>Customer Name</label>
-                                <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
-                            </div>
-                                <div class="form-group">
-                                    <label>Client Phone*</label>
-                                    <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcBulkSplit()">
+                                    <label>Selling Price (per package)*</label>
+                                    <div class="price-input-group">
+                                        <input type="text" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
+                                        <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
+                                    </div>
+                                    <div id="bulk_price_warning" class="price-warning"></div>
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- Col 3: Payment breakdown + Save -->
-                        <div id="bulk_payment_section">
-                            <div class="form-group">
-                                <label>Payment Breakdown</label>
-                                <div class="split-payment-box">
-                                    <div class="split-row">
-                                        <span class="split-label">Cash</span>
-                                        <input type="text" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
-                                    </div>
-                                    <div class="split-row">
-                                        <span class="split-label">Momo</span>
-                                        <input type="text" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
-                                    </div>
-                                    <div class="split-row">
-                                        <span class="split-label">Loan</span>
-                                        <input type="text" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
-                                    </div>
-                                    <div class="split-row split-remaining-row" id="bulk_remaining_row">
-                                        <span class="split-label">Remaining</span>
-                                        <span id="bulk_remaining">—</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <button type="button" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()" style="width:100%;padding:12px;">
-                                Save Bulk Sale
+                            <button type="button" class="add-item-btn" id="bulk_add_cart_btn" disabled onclick="addBulkToCart()">
+                                + Add to Sale
                             </button>
                         </div>
 
+                        <!-- Right: cart + payment -->
+                        <div>
+                            <div class="cart-panel">
+                                <div class="cart-header">
+                                    Items to Sell
+                                    <span id="bulk_cart_badge" class="cart-badge zero">0</span>
+                                </div>
+                                <div class="cart-body" id="bulk_cart_body">
+                                    <div class="cart-empty">No items yet.<br>Search and add products from the left.</div>
+                                </div>
+                                <div class="cart-foot">
+                                    <span class="cart-foot-lbl">Sale Total</span>
+                                    <span class="cart-foot-val" id="bulk_cart_total">RWF 0</span>
+                                </div>
+                            </div>
+
+                            <!-- ═══════════ Payment (under the cart card) ═══════════ -->
+                            <div id="bulk_step_panel_3" style="margin-top:16px;">
+                                <div class="shortcut-chips">
+                                    <label class="shortcut-chip" title="Full amount goes to loan">
+                                        <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="accent-color:var(--primary);">
+                                        Is Loan?
+                                    </label>
+                                    <label class="shortcut-chip" title="Full amount goes to cash">
+                                        <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="accent-color:#16a34a;">
+                                        Is Cash?
+                                    </label>
+                                    <label class="shortcut-chip" title="Full amount goes to momo">
+                                        <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="accent-color:#2563eb;">
+                                        Is Momo?
+                                    </label>
+                                </div>
+
+                                <div id="bulk_loan_phone_warn" style="display:none;font-size:12px;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;">
+                                    &#9888; Client phone is required when part of the sale goes to loan. Add it above.
+                                </div>
+
+                                <div id="bulk_payment_section">
+                                    <div class="form-group">
+                                        <label>Payment Breakdown</label>
+                                        <div class="split-payment-box">
+                                            <div class="split-row">
+                                                <span class="split-label">Cash</span>
+                                                <input type="text" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
+                                            </div>
+                                            <div class="split-row">
+                                                <span class="split-label">Momo</span>
+                                                <input type="text" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
+                                            </div>
+                                            <div class="split-row">
+                                                <span class="split-label">Loan</span>
+                                                <input type="text" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
+                                            </div>
+                                            <div class="split-row split-remaining-row" id="bulk_remaining_row">
+                                                <span class="split-label">Remaining</span>
+                                                <span id="bulk_remaining">—</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()" style="width:100%;padding:12px;">
+                                        Save Sale
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Step 2 nav -->
-                    <div class="step-nav">
-                        <button type="button" class="btn-step-back" onclick="goToBulkStep1()">&#8592; Back</button>
-                    </div>
                 </div>
 
-                <input type="hidden" id="bulk_level_divisor" name="level_divisor" value="1">
             </form>
         </div>
     </div>
 </div>
 
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script src="script.js"></script>
 <script>
-// ── AJAX product picker ───────────────────────────────────────────────────────
+// ── Product picker, backed by DataCache (js/data-cache.js) ─────────────────────
 var bulkSelectedProduct = null;
 var bulkSelectedCat     = '';
 var bulkAllCategories   = [];
+var bulkCart            = [];
 
 // ── Bulk category searchable select ──────────────────────────────────────────
 (function() {
@@ -524,10 +510,7 @@ var bulkAllCategories   = [];
 })();
 
 function loadBulkCategories() {
-    fetch('sale_bulk.php?action=get_categories')
-        .then(function(r) { return r.json(); })
-        .then(function(cats) { bulkAllCategories = cats; })
-        .catch(function() {});
+    DataCache.getCategories({ withStock: 'wh' }).then(function(cats) { bulkAllCategories = cats; });
 }
 loadBulkCategories();
 
@@ -571,11 +554,21 @@ loadBulkCategories();
 
     function doSearch(q) {
         showLoading();
-        var url = 'sale_bulk.php?action=search_products&q=' + encodeURIComponent(q);
-        if (bulkSelectedCat) url += '&cat=' + encodeURIComponent(bulkSelectedCat);
-        fetch(url)
-            .then(function(r) { return r.json(); })
-            .then(function(data) { renderOptions(data); dropdown.classList.add('open'); })
+        var term = q.toLowerCase();
+        DataCache.getProducts()
+            .then(function(list) {
+                var data = list.filter(function(p) {
+                    if (!(parseFloat(p.wh_qty) > 0)) return false;
+                    if (bulkSelectedCat && p.category !== bulkSelectedCat) return false;
+                    if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                    return true;
+                }).slice(0, 60).map(function(p) {
+                    return { id: p.id, name: p.name, category: p.category, unit_measure: p.unit_measure,
+                             package_price: p.bulk_price, quantity: p.wh_qty };
+                });
+                renderOptions(data);
+                dropdown.classList.add('open');
+            })
             .catch(function() {
                 dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--danger);cursor:default;">Failed to load</div>';
             });
@@ -622,7 +615,7 @@ loadBulkCategories();
     }
 })();
 
-function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId) {
+function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick) {
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
     var search   = document.getElementById(searchId);
@@ -656,37 +649,60 @@ function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phone
         document.getElementById(clientInputId).value = opt.getAttribute('data-client');
         var phoneEl = document.getElementById(phoneInputId);
         phoneEl.value = opt.getAttribute('data-phone');
-        phoneEl.dispatchEvent(new Event('input'));
         search.value = opt.getAttribute('data-client');
         dropdown.classList.remove('open'); hi = -1;
+        if (afterPick) afterPick(opt);
     }
 }
-initLoanClientPicker('bulkClientPickerWrap', 'bulk_client_picker_search', 'bulk_client_picker_dropdown', 'bulk_customer', 'bulk_phone');
 
-var bulkCoreValid = false;
+// Shows the compact "picked client" card in place of the search/name/phone
+// fields. `prefix` matches the id prefix used by that page's client fields
+// (bulk/retail/ext).
+function showClientCard(prefix, opt) {
+    var name        = opt.getAttribute('data-client');
+    var phone       = opt.getAttribute('data-phone');
+    var visits      = parseInt(opt.getAttribute('data-visits')) || 0;
+    var outstanding = parseFloat(opt.getAttribute('data-outstanding')) || 0;
 
-/* ── Step navigation ── */
-function goToBulkStep2() {
-    if (!bulkCoreValid) return;
-    document.getElementById('bulk_step_panel_1').style.display = 'none';
-    document.getElementById('bulk_step_panel_2').style.display = 'block';
-    document.getElementById('bulk_step_dot_1').classList.remove('active');
-    document.getElementById('bulk_step_dot_1').classList.add('done');
-    document.getElementById('bulk_step_dot_2').classList.add('active');
-    document.getElementById('bulk_step_connector').classList.add('done');
-    calcBulkSplit();
+    var meta = [];
+    if (phone) meta.push(phone);
+    meta.push(visits + ' visit' + (visits !== 1 ? 's' : ''));
+    if (outstanding > 0) meta.push('Owes RWF ' + outstanding.toLocaleString());
+
+    document.getElementById(prefix + '_client_card_name').textContent = name;
+    document.getElementById(prefix + '_client_card_meta').textContent = meta.join(' · ');
+    document.getElementById(prefix + '_client_card').classList.add('show');
+    document.getElementById(prefix + '_client_select_area').style.display = 'none';
 }
+function _escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function goToBulkStep1() {
-    document.getElementById('bulk_step_panel_2').style.display = 'none';
-    document.getElementById('bulk_step_panel_1').style.display = 'block';
-    document.getElementById('bulk_step_dot_2').classList.remove('active');
-    document.getElementById('bulk_step_dot_1').classList.remove('done');
-    document.getElementById('bulk_step_dot_1').classList.add('active');
-    document.getElementById('bulk_step_connector').classList.remove('done');
+DataCache.getClients().then(function(list) {
+    if (!list.length) return;
+    document.getElementById('bulkClientPickerGroup').style.display = '';
+    document.getElementById('bulk_client_picker_dropdown').innerHTML = list.map(function(c) {
+        var visits = parseInt(c.total_loans) || 0;
+        var outstanding = parseFloat(c.unpaid_amount) || 0;
+        return '<div class="searchable-select-option" data-client="' + _escH(c.name) +
+            '" data-phone="' + _escH(c.phone) + '" data-visits="' + visits + '" data-outstanding="' + outstanding + '">' + _escH(c.name) +
+            (c.phone ? ' — ' + _escH(c.phone) : '') +
+            '<small style="color:var(--secondary);"> (' + visits + ' visit' + (visits !== 1 ? 's' : '') + ')</small>' +
+            (outstanding > 0 ? '<small style="color:#dc2626;font-weight:600;"> · Owes: RWF ' + outstanding.toLocaleString() + '</small>' : '') +
+            '</div>';
+    }).join('');
+    initLoanClientPicker('bulkClientPickerWrap', 'bulk_client_picker_search', 'bulk_client_picker_dropdown', 'bulk_customer', 'bulk_phone',
+        function(opt) { showClientCard('bulk', opt); });
+});
+
+function clearBulkClient() {
+    document.getElementById('bulk_customer').value = '';
+    document.getElementById('bulk_phone').value = '';
+    document.getElementById('bulk_client_card').classList.remove('show');
+    document.getElementById('bulk_client_select_area').style.display = '';
+    document.getElementById('bulk_client_picker_search') && (document.getElementById('bulk_client_picker_search').value = '');
 }
 
 function updateBulkProductDetails() {
+    var addBtn = document.getElementById('bulk_add_cart_btn');
     if (!bulkSelectedProduct) {
         document.getElementById('bulk_product_details').style.display = 'none';
         document.getElementById('bulk_stock_info').innerHTML = '';
@@ -696,9 +712,7 @@ function updateBulkProductDetails() {
         document.getElementById('bulk_level_selector').style.display = 'none';
         document.getElementById('bulk_level_buttons').innerHTML = '';
         document.getElementById('bulk_qty_label').textContent = 'Quantity (Packages)*';
-        document.getElementById('bulk_level_divisor').value = 1;
-        document.getElementById('bulk_next_btn').disabled = true;
-        bulkCoreValid = false;
+        addBtn.disabled = true;
         return;
     }
     var price = bulkSelectedProduct.price;
@@ -711,12 +725,8 @@ function updateBulkProductDetails() {
     document.getElementById('bulk_stock_info').innerHTML = 'Available: ' + stock + ' packages';
     document.getElementById('bulk_product_details').style.display = 'block';
     document.getElementById('bulk_product_info').innerHTML = name + ' &mdash; Default price: RWF ' + parseFloat(price).toLocaleString();
-    document.getElementById('bulk_cash').value = 0;
-    document.getElementById('bulk_momo').value = 0;
-    document.getElementById('bulk_loan_split').value = 0;
     calculateBulkTotal();
 
-    document.getElementById('bulk_level_divisor').value = 1;
     fetch('ajax_levels.php?product_id=' + bulkSelectedProduct.id)
         .then(function(r){ return r.json(); })
         .then(function(data) {
@@ -743,7 +753,6 @@ function updateBulkProductDetails() {
                         this.classList.add('active');
                         document.getElementById('bulk_selling_price').value = this.dataset.price;
                         document.getElementById('bulk_quantity').max = this.dataset.stock;
-                        document.getElementById('bulk_level_divisor').value = this.dataset.divisor;
                         document.getElementById('bulk_stock_info').innerHTML = 'Available: ' + parseInt(this.dataset.stock).toLocaleString() + ' ' + this.dataset.name;
                         document.getElementById('bulk_qty_label').textContent = 'Quantity (' + this.dataset.name + ')*';
                         calculateBulkTotal();
@@ -770,7 +779,8 @@ function setBulkDefaultPrice() {
 }
 
 function calculateBulkTotal() {
-    if (!bulkSelectedProduct) return;
+    var addBtn = document.getElementById('bulk_add_cart_btn');
+    if (!bulkSelectedProduct) { addBtn.disabled = true; return; }
 
     var qtyInput = document.getElementById('bulk_quantity');
     var stock = parseInt(qtyInput.max) > 0 ? parseInt(qtyInput.max) : bulkSelectedProduct.stock;
@@ -778,7 +788,6 @@ function calculateBulkTotal() {
     var defaultPrice = activeBtn ? (parseFloat(activeBtn.dataset.price)||0) : bulkSelectedProduct.price;
     var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
     var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
-    var total = qty * price;
     var qtyError     = document.getElementById('bulk_qty_error');
     var priceWarning = document.getElementById('bulk_price_warning');
     var valid = true;
@@ -799,46 +808,113 @@ function calculateBulkTotal() {
     }
 
     if (qty < 1 || price < 1) valid = false;
-    bulkCoreValid = valid;
-    document.getElementById('bulk_next_btn').disabled = !valid;
+    addBtn.disabled = !valid;
+}
 
-    if (valid) {
-        document.getElementById('bulk_sum_product').textContent = bulkSelectedProduct.name;
-        document.getElementById('bulk_sum_qty').textContent = qty;
-        document.getElementById('bulk_sum_price').textContent = 'RWF ' + price.toLocaleString();
-        document.getElementById('bulk_sum_total').textContent = 'RWF ' + total.toLocaleString();
+function addBulkToCart() {
+    if (!bulkSelectedProduct) return;
+    var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
+    var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
+    var stock = parseInt(document.getElementById('bulk_quantity').max) || bulkSelectedProduct.stock;
+    if (qty < 1 || price < 1 || qty > stock) return;
 
-        var isLoan = document.getElementById('bulk_is_loan').checked;
-        var isCash = document.getElementById('bulk_is_cash').checked;
-        var isMomo = document.getElementById('bulk_is_momo').checked;
-        var cash = parseFloat(document.getElementById('bulk_cash').value)||0;
-        var momo = parseFloat(document.getElementById('bulk_momo').value)||0;
-        var loan = parseFloat(document.getElementById('bulk_loan_split').value)||0;
-        if (isLoan) {
-            document.getElementById('bulk_cash').value = 0;
-            document.getElementById('bulk_momo').value = 0;
-            document.getElementById('bulk_loan_split').value = total;
-        } else if (isCash) {
-            document.getElementById('bulk_cash').value = total;
-            document.getElementById('bulk_momo').value = 0;
-            document.getElementById('bulk_loan_split').value = 0;
-        } else if (isMomo) {
-            document.getElementById('bulk_cash').value = 0;
-            document.getElementById('bulk_momo').value = total;
-            document.getElementById('bulk_loan_split').value = 0;
-        } else if (cash===0 && momo===0 && loan===0) {
-            document.getElementById('bulk_momo').value = total;
-        }
-        calcBulkSplit();
+    var activeBtn  = document.querySelector('#bulk_level_buttons .lvl-btn.active');
+    var divisor    = activeBtn ? (parseInt(activeBtn.dataset.divisor) || 1) : 1;
+    var levelName  = activeBtn ? activeBtn.dataset.name : 'Package';
+    var pid        = bulkSelectedProduct.id;
+    var name       = bulkSelectedProduct.name;
+
+    var existing = bulkCart.find(function(i){ return i.pid === pid && i.divisor === divisor; });
+    if (existing) {
+        existing.qty += qty;
+        existing.price = price;
     } else {
-        document.getElementById('bulk_submit_btn').disabled = true;
+        bulkCart.push({ pid: pid, name: name, qty: qty, price: price, divisor: divisor, levelName: levelName });
     }
+
+    renderBulkCart();
+    showSaleToast('"' + name + '" added to sale.', true);
+
+    // Reset picker for next product
+    bulkSelectedProduct = null;
+    document.getElementById('bulk_product_search').value = '';
+    document.getElementById('bulk_product_id').value = '';
+    updateBulkProductDetails();
+}
+
+function removeBulkCartItem(pid, divisor) {
+    bulkCart = bulkCart.filter(function(i){ return !(i.pid === pid && i.divisor === divisor); });
+    renderBulkCart();
+}
+
+function renderBulkCart() {
+    var total = bulkCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
+    var badge = document.getElementById('bulk_cart_badge');
+    badge.textContent = bulkCart.length;
+    badge.className   = 'cart-badge' + (bulkCart.length===0 ? ' zero' : '');
+    document.getElementById('bulk_cart_total').textContent = 'RWF ' + Math.round(total).toLocaleString();
+
+    var body = document.getElementById('bulk_cart_body');
+    if (bulkCart.length === 0) {
+        body.innerHTML = '<div class="cart-empty">No items yet.<br>Search and add products from the left.</div>';
+    } else {
+        body.innerHTML = bulkCart.map(function(item){
+            var sub = item.qty * item.price;
+            return '<div class="cart-item">' +
+                '<div class="cart-item-info">' +
+                    '<div class="cart-item-name">' + escBulkHtml(item.name) + '</div>' +
+                    '<div class="cart-item-sub">' + item.qty.toLocaleString() + ' ' + item.levelName + ' &times; RWF ' + item.price.toLocaleString() + '</div>' +
+                '</div>' +
+                '<div class="cart-item-right">' +
+                    '<span class="cart-item-total">RWF ' + Math.round(sub).toLocaleString() + '</span>' +
+                    '<button type="button" class="cart-rm" onclick="removeBulkCartItem(' + JSON.stringify(item.pid) + ',' + item.divisor + ')" title="Remove">&times;</button>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    document.getElementById('bulk_items_json').value = JSON.stringify(
+        bulkCart.map(function(i){
+            return { product_id: i.pid, quantity: i.qty, selling_price: i.price, level_divisor: i.divisor };
+        })
+    );
+    updateBulkPaymentDefaults();
+}
+
+function escBulkHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Applies the Is Loan/Cash/Momo shortcut defaults against the current cart
+// total. Runs on every cart change (not just once on a step transition) so
+// the split stays correct as items are added or removed.
+function updateBulkPaymentDefaults() {
+    var total = bulkCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
+
+    var isLoan = document.getElementById('bulk_is_loan').checked;
+    var isCash = document.getElementById('bulk_is_cash').checked;
+    var isMomo = document.getElementById('bulk_is_momo').checked;
+    var cash = parseFloat(document.getElementById('bulk_cash').value)||0;
+    var momo = parseFloat(document.getElementById('bulk_momo').value)||0;
+    var loan = parseFloat(document.getElementById('bulk_loan_split').value)||0;
+    if (isLoan) {
+        document.getElementById('bulk_cash').value = 0;
+        document.getElementById('bulk_momo').value = 0;
+        document.getElementById('bulk_loan_split').value = total;
+    } else if (isCash) {
+        document.getElementById('bulk_cash').value = total;
+        document.getElementById('bulk_momo').value = 0;
+        document.getElementById('bulk_loan_split').value = 0;
+    } else if (isMomo) {
+        document.getElementById('bulk_cash').value = 0;
+        document.getElementById('bulk_momo').value = total;
+        document.getElementById('bulk_loan_split').value = 0;
+    } else if (cash===0 && momo===0 && loan===0) {
+        document.getElementById('bulk_momo').value = total;
+    }
+    calcBulkSplit();
 }
 
 function calcBulkSplit(changed) {
-    var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
-    var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
-    var total = qty * price;
+    var total = bulkCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
     var cashEl = document.getElementById('bulk_cash');
     var momoEl = document.getElementById('bulk_momo');
     var loanEl = document.getElementById('bulk_loan_split');
@@ -854,13 +930,11 @@ function calcBulkSplit(changed) {
     var splitOk   = remaining === 0;
     document.getElementById('bulk_remaining').textContent = 'RWF ' + remaining.toLocaleString();
     document.getElementById('bulk_remaining_row').className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
-    document.getElementById('bulk_loan_fields').style.display = loan > 0 ? 'block' : 'none';
 
-    var clientOk = loan <= 0 || (
-        document.getElementById('bulk_customer').value.trim().length > 0 &&
-        document.getElementById('bulk_phone').value.trim().length > 0
-    );
-    document.getElementById('bulk_submit_btn').disabled = !(bulkCoreValid && splitOk && clientOk);
+    var phoneOk = loan <= 0 || document.getElementById('bulk_phone').value.trim().length > 0;
+    document.getElementById('bulk_loan_phone_warn').style.display = (loan > 0 && !phoneOk) ? 'block' : 'none';
+
+    document.getElementById('bulk_submit_btn').disabled = !(bulkCart.length > 0 && splitOk && phoneOk);
 }
 
 function toggleBulkShortcut(type) {
@@ -868,9 +942,7 @@ function toggleBulkShortcut(type) {
     if (type !== 'cash') document.getElementById('bulk_is_cash').checked = false;
     if (type !== 'momo') document.getElementById('bulk_is_momo').checked = false;
 
-    var qty   = parseInt(document.getElementById('bulk_quantity').value)   || 0;
-    var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
-    var total = qty * price;
+    var total = bulkCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
     var checked = document.getElementById('bulk_is_' + type).checked;
 
     if (checked) {
@@ -879,36 +951,27 @@ function toggleBulkShortcut(type) {
         document.getElementById('bulk_loan_split').value = type === 'loan' ? total : 0;
     }
     calcBulkSplit();
-    if (type === 'loan' && document.getElementById('bulk_is_loan').checked) {
-        var lf = document.getElementById('bulk_loan_fields');
-        setTimeout(function() { lf.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
-    }
 }
 
+document.getElementById('bulk_phone').addEventListener('input', function() { calcBulkSplit(); });
+
 function handleBulkSubmit() {
-    if (!bulkSelectedProduct) return;
-    var qty     = parseInt(document.getElementById('bulk_quantity').value)||0;
-    var price   = parseFloat(document.getElementById('bulk_selling_price').value);
-    var total   = qty * price;
-    var cash    = parseFloat(document.getElementById('bulk_cash').value)||0;
-    var momo    = parseFloat(document.getElementById('bulk_momo').value)||0;
-    var loan    = parseFloat(document.getElementById('bulk_loan_split').value)||0;
-    var divisor = parseInt(document.getElementById('bulk_level_divisor').value)||1;
-    var pkgsDeducted = Math.ceil(qty / divisor);
-    var activeBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
-    var levelName = activeBtn ? activeBtn.dataset.name : 'Package';
+    if (bulkCart.length === 0) return;
+    var total = bulkCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
+    var cash  = parseFloat(document.getElementById('bulk_cash').value)||0;
+    var momo  = parseFloat(document.getElementById('bulk_momo').value)||0;
+    var loan  = parseFloat(document.getElementById('bulk_loan_split').value)||0;
+    var customer = document.getElementById('bulk_customer').value.trim() || 'client';
     var parts = [];
     if (cash > 0) parts.push('Cash: RWF ' + cash.toLocaleString());
     if (momo > 0) parts.push('Momo: RWF ' + momo.toLocaleString());
     if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
+    var itemLines = bulkCart.map(function(i){ return '- ' + i.name + ': ' + i.qty + ' ' + i.levelName + ' @ RWF ' + i.price.toLocaleString(); }).join('\n');
     var ok = confirm(
-        'Confirm Sale?\n\n' +
-        'Product: ' + bulkSelectedProduct.name + '\n' +
-        'Qty: ' + qty + ' ' + levelName + '\n' +
-        'Price/' + levelName + ': RWF ' + price.toLocaleString() + '\n' +
+        'Confirm Sale for ' + customer + '?\n\n' +
+        itemLines + '\n\n' +
         'Total: RWF ' + total.toLocaleString() + '\n' +
-        'Payment: ' + parts.join(' | ') + '\n\n' +
-        'Stock deduction: ' + pkgsDeducted + ' package(s) from warehouse.'
+        'Payment: ' + parts.join(' | ')
     );
     if (!ok) return;
 
@@ -924,14 +987,18 @@ function handleBulkSubmit() {
         .then(function(res) {
             showSaleToast(res.message, res.success);
             if (res.success) {
-                location.reload();
+                // Sale reduces stock and (on loan) touches loan_clients — invalidate
+                // both before reload so other pages don't read stale cached data.
+                Promise.all([DataCache.invalidate('products'), DataCache.invalidate('clients')])
+                    .then(function() { location.reload(); });
+            } else {
+                btn.textContent = 'Save Sale';
+                btn.disabled = false;
             }
-            btn.textContent = 'Save Bulk Sale';
-            btn.disabled = true;
         })
         .catch(function() {
             showSaleToast('Network error. Please try again.', false);
-            btn.textContent = 'Save Bulk Sale';
+            btn.textContent = 'Save Sale';
             btn.disabled = false;
         });
 }

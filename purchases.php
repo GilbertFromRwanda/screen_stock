@@ -4,12 +4,7 @@ require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('purchases')) { $_SESSION['flash_error'] = "You don't have permission to access Purchases."; redirect('dashboard.php'); }
 
-// Get products and suppliers for dropdown
-$products_query = mysqli_query($conn, "SELECT id, name,category FROM products ORDER BY name");
-$products_arr = [];
-while ($p = mysqli_fetch_assoc($products_query)) {
-    $products_arr[] = $p;
-}
+// Product picker is loaded client-side from DataCache (js/data-cache.js).
 $suppliers_query = mysqli_query($conn, "SELECT id, name FROM suppliers " . cidWhere() . " ORDER BY name");
 $suppliers_arr = [];
 while ($s = mysqli_fetch_assoc($suppliers_query)) {
@@ -75,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_purchase'])) {
         mysqli_query($conn, $update);
         require_once 'stock_value.php';
         recalcStockValue($conn, cid(), (int)$product_id);
+        touchCacheStore($conn, 'products');
         $success = "Purchase added successfully and stock updated";
         $_SESSION['flash_success'] =$success;
     } else {
@@ -143,6 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
             } else {
                 recalcStockValue($conn, cid(), (int)$product_id);
             }
+            touchCacheStore($conn, 'products');
             $_SESSION['flash_success'] = "Purchase updated successfully and stock adjusted";
             logActivity($conn, (int)$_SESSION['user_id'], 'Edit Purchase', "Edited purchase #{$purchase_id}",
                 'purchases', $purchase_id,
@@ -484,13 +481,7 @@ $purchases = mysqli_query($conn, "
                     <div class="searchable-select" id="productSearchable">
                         <input type="hidden" id="product_id" name="product_id" required>
                         <input type="text" class="searchable-select-input" id="product_search" placeholder="Search product..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="product_dropdown">
-                            <?php foreach($products_arr as $row): ?>
-                                <div class="searchable-select-option" data-value="<?php echo $row['id']; ?>">
-                                    <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
+                        <div class="searchable-select-dropdown" id="product_dropdown"></div>
                     </div>
                 </div>
                 <div class="form-group">
@@ -551,13 +542,7 @@ $purchases = mysqli_query($conn, "
                     <div class="searchable-select" id="editProductSearchable">
                         <input type="hidden" id="edit_product_id" name="product_id" required>
                         <input type="text" class="searchable-select-input" id="edit_product_search" placeholder="Search product..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="edit_product_dropdown">
-                            <?php foreach($products_arr as $row): ?>
-                                <div class="searchable-select-option" data-value="<?php echo $row['id']; ?>">
-                                    <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
+                        <div class="searchable-select-dropdown" id="edit_product_dropdown"></div>
                     </div>
                 </div>
                 <div class="form-group">
@@ -595,7 +580,12 @@ $purchases = mysqli_query($conn, "
         </div>
     </div>
 
+    <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+    <script src="js/data-cache.js"></script>
     <script src="script.js"></script>
+    <?php if (isset($success)): ?>
+    <script>DataCache.invalidate('products');</script>
+    <?php endif; ?>
     <script>
         function searchPurchases(term) {
             term = (term || '').toLowerCase().trim();
@@ -640,13 +630,22 @@ $purchases = mysqli_query($conn, "
             });
         }
 
-        // Searchable product select
+        // Searchable product select — options rendered from DataCache
         (function() {
             var hiddenInput = document.getElementById('product_id');
             var searchInput = document.getElementById('product_search');
             var dropdown = document.getElementById('product_dropdown');
-            var options = dropdown.querySelectorAll('.searchable-select-option');
             var highlightedIndex = -1;
+
+            DataCache.getProducts().then(function(list) {
+                dropdown.innerHTML = list.map(function(p) {
+                    return '<div class="searchable-select-option" data-value="' + p.id + '">' +
+                        (p.category || '') + '-' + p.name + '</div>';
+                }).join('');
+                dropdown.querySelectorAll('.searchable-select-option').forEach(function(opt) {
+                    opt.addEventListener('click', function() { selectOption(opt); });
+                });
+            });
 
             searchInput.addEventListener('focus', function() {
                 dropdown.classList.add('open');
@@ -686,15 +685,9 @@ $purchases = mysqli_query($conn, "
                 }
             });
 
-            options.forEach(function(opt) {
-                opt.addEventListener('click', function() {
-                    selectOption(opt);
-                });
-            });
-
             function filterOptions() {
                 var term = searchInput.value.toLowerCase();
-                options.forEach(function(opt) {
+                dropdown.querySelectorAll('.searchable-select-option').forEach(function(opt) {
                     if (opt.textContent.trim().toLowerCase().indexOf(term) > -1) {
                         opt.classList.remove('hidden');
                     } else {
@@ -704,7 +697,7 @@ $purchases = mysqli_query($conn, "
             }
 
             function updateHighlight(visible) {
-                options.forEach(function(o) { o.classList.remove('highlighted'); });
+                dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) { o.classList.remove('highlighted'); });
                 if (visible[highlightedIndex]) {
                     visible[highlightedIndex].classList.add('highlighted');
                     visible[highlightedIndex].scrollIntoView({ block: 'nearest' });
@@ -740,8 +733,17 @@ $purchases = mysqli_query($conn, "
             var hiddenInput = document.getElementById('edit_product_id');
             var searchInput = document.getElementById('edit_product_search');
             var dropdown = document.getElementById('edit_product_dropdown');
-            var options = dropdown.querySelectorAll('.searchable-select-option');
             var highlightedIndex = -1;
+
+            DataCache.getProducts().then(function(list) {
+                dropdown.innerHTML = list.map(function(p) {
+                    return '<div class="searchable-select-option" data-value="' + p.id + '">' +
+                        (p.category || '') + '-' + p.name + '</div>';
+                }).join('');
+                dropdown.querySelectorAll('.searchable-select-option').forEach(function(opt) {
+                    opt.addEventListener('click', function() { selectOption(opt); });
+                });
+            });
 
             searchInput.addEventListener('focus', function() {
                 dropdown.classList.add('open');
@@ -781,15 +783,9 @@ $purchases = mysqli_query($conn, "
                 }
             });
 
-            options.forEach(function(opt) {
-                opt.addEventListener('click', function() {
-                    selectOption(opt);
-                });
-            });
-
             function filterOptions() {
                 var term = searchInput.value.toLowerCase();
-                options.forEach(function(opt) {
+                dropdown.querySelectorAll('.searchable-select-option').forEach(function(opt) {
                     if (opt.textContent.trim().toLowerCase().indexOf(term) > -1) {
                         opt.classList.remove('hidden');
                     } else {
@@ -799,7 +795,7 @@ $purchases = mysqli_query($conn, "
             }
 
             function updateHighlight(visible) {
-                options.forEach(function(o) { o.classList.remove('highlighted'); });
+                dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) { o.classList.remove('highlighted'); });
                 if (visible[highlightedIndex]) {
                     visible[highlightedIndex].classList.add('highlighted');
                     visible[highlightedIndex].scrollIntoView({ block: 'nearest' });

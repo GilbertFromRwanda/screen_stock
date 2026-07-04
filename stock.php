@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_stock'])) {
     ");
     require_once 'stock_value.php';
     recalcStockValue($conn, cid(), $product_id);
+    touchCacheStore($conn, 'products');
     $_SESSION['flash_success'] = "Warehouse stock updated.";
     header("Location: stock.php"); exit;
 }
@@ -40,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_stock'])) 
     ");
     require_once 'stock_value.php';
     recalcStockValue($conn, cid(), $product_id);
+    touchCacheStore($conn, 'products');
     $_SESSION['flash_success'] = "Retail stock updated.";
     header("Location: stock.php"); exit;
 }
@@ -87,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['move_to_retail'])) {
 
         require_once 'stock_value.php';
         recalcStockValue($conn, cid(), $product_id);
+        touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = $move_type === 'packages'
             ? "Moved $packages_to_remove package(s) ($pieces_to_move pieces) to retail shop successfully"
             : "Moved $pieces_to_move pieces to retail shop successfully";

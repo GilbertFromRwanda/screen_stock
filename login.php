@@ -36,7 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             $_SESSION['full_name']  = $user['full_name'];
             $_SESSION['role']       = $user['role'];
             $_SESSION['company_id'] = $user['company_id'] ?? null;
-            mysqli_query($conn, "UPDATE users SET last_login = NOW() WHERE id = " . $user['id']);
+            $time=date('Y-m-d H:i:s');
+            mysqli_query($conn, "UPDATE users SET last_login = '$time' WHERE id = " . $user['id']);
             echo json_encode(['success' => true, 'redirect' => 'dashboard.php']);
         } else {
             echo json_encode(['success' => false, 'error' => 'Invalid username or password']);

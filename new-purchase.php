@@ -3,38 +3,7 @@ require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('purchases', 'create')) { $_SESSION['flash_error'] = "You don't have permission to create purchases."; redirect('dashboard.php'); }
 
-// ── AJAX: product search ──────────────────────────────────────────────────────
-if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
-    header('Content-Type: application/json');
-    $cat_filter = trim($_GET['cat'] ?? '');
-    $cat_sql    = $cat_filter ? " AND category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
-    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
-
-    $res = mysqli_query($conn,
-        "SELECT id, name, category FROM products
-         WHERE deleted = 0 AND $search_sql $cat_sql
-         ORDER BY category, name LIMIT 60"
-    );
-    $rows = [];
-    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
-
-    echo json_encode($rows);
-    exit;
-}
-
-// ── AJAX: product categories ──────────────────────────────────────────────────
-if (isset($_GET['action']) && $_GET['action'] === 'get_categories') {
-    header('Content-Type: application/json');
-    $res  = mysqli_query($conn,
-        "SELECT DISTINCT category FROM products
-         WHERE deleted = 0 AND category IS NOT NULL AND category != ''
-         ORDER BY category"
-    );
-    $cats = [];
-    while ($r = mysqli_fetch_assoc($res)) $cats[] = $r['category'];
-    echo json_encode($cats);
-    exit;
-}
+// Product search/categories are loaded client-side from DataCache (js/data-cache.js).
 
 // ── AJAX: last purchase cost hint ────────────────────────────────────────────
 if (isset($_GET['action']) && $_GET['action'] === 'last_purchase') {
@@ -94,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new_id = (int)mysqli_insert_id($conn);
         if ($new_id) {
             // logActivity($conn, 'create', 'product', $new_id, "Created product: $name");
+            touchCacheStore($conn, 'products');
             echo json_encode(['ok' => true, 'id' => $new_id, 'name' => $name, 'category' => $category]);
         } else {
             echo json_encode(['ok' => false, 'message' => 'DB error: ' . mysqli_error($conn)]);
@@ -200,8 +170,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
         }
         mysqli_commit($conn);
-        require_once 'stock_value.php';
-        recalcStockValue($conn, cid(), $product_id);
+        // require_once 'stock_value.php';
+        // recalcStockValue($conn, cid(), $product_id);
+        touchCacheStore($conn, 'products');
+
         echo json_encode(['ok' => true, 'message' => 'Purchase recorded successfully.']);
     } else {
         mysqli_rollback($conn);
@@ -758,6 +730,8 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 <!-- Toast notification -->
 <div class="toast" id="toast"></div>
 
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script>
 // ── Multi-step navigation ─────────────────────────────────────────────────────
 var currentStep = 1;
@@ -985,6 +959,7 @@ function submitPurchase() {
     .then(function (data) {
         if (data.ok) {
             showToast(data.message, 'success');
+            DataCache.invalidate('products'); // purchase increases stock
             document.getElementById('purchaseForm').reset();
             document.getElementById('levelsContainer').innerHTML = '';
             levelCount = 0;
@@ -1090,10 +1065,7 @@ var allCategories = [];
 })();
 
 function loadCategories() {
-    fetch('new-purchase.php?action=get_categories')
-        .then(function(r) { return r.json(); })
-        .then(function(cats) { allCategories = cats; })
-        .catch(function() {});
+    DataCache.getCategories().then(function(cats) { allCategories = cats; });
 }
 
 // ── Searchable product dropdown (AJAX) ───────────────────────────────────────
@@ -1138,11 +1110,19 @@ function loadCategories() {
 
     function doSearch(q) {
         showLoading();
-        var url = 'new-purchase.php?action=search_products&q=' + encodeURIComponent(q);
-        if (selectedCat) url += '&cat=' + encodeURIComponent(selectedCat);
-        fetch(url)
-            .then(function (r) { return r.json(); })
-            .then(function (data) { renderOptions(data); dropdown.classList.add('open'); })
+        var term = q.toLowerCase();
+        DataCache.getProducts()
+            .then(function (list) {
+                var data = list.filter(function(p) {
+                    if (selectedCat && p.category !== selectedCat) return false;
+                    if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                    return true;
+                }).slice(0, 60).map(function(p) {
+                    return { id: p.id, name: p.name, category: p.category };
+                });
+                renderOptions(data);
+                dropdown.classList.add('open');
+            })
             .catch(function () {
                 dropdown.innerHTML = '<div class="sd-option" style="color:var(--danger);cursor:default;">Failed to load</div>';
             });
@@ -1441,6 +1421,7 @@ function submitNewProduct() {
         .then(function(d) {
             btn.disabled = false; btn.textContent = 'Create Product';
             if (d.ok) {
+                DataCache.invalidate('products'); // new product added to catalog
                 document.getElementById('product_id').value    = d.id;
                 document.getElementById('product_search').value =
                     (d.category ? d.category + ' — ' : '') + d.name;

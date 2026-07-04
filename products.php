@@ -141,6 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
         }
     }
 
+    if ($added > 0) touchCacheStore($conn, 'products');
     echo json_encode(['success' => true, 'added' => $added, 'skipped' => $skipped, 'duplicates' => $duplicates]);
     exit;
 }
@@ -157,6 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
         $_SESSION['flash_error'] = "A product named \"$name\" already exists in the \"$category\" category.";
     } elseif (mysqli_query($conn, "INSERT INTO products (name, category, reorder_level, unit_measure, unit_price)
                               VALUES ('$name','$category','$reorder_level','$unit_measure','$unit_price')")) {
+        touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Product added successfully";
     } else {
         $_SESSION['flash_error'] = "Error adding product: " . mysqli_error($conn);
@@ -183,6 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
         $_SESSION['flash_error'] = "Another product named \"$name\" already exists in the \"$category\" category.";
     } elseif (mysqli_query($conn, "UPDATE products SET name='$name', category='$category', reorder_level='$reorder_level',
                               unit_measure='$unit_measure', unit_price='$unit_price' WHERE id=$id")) {
+        touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Product updated successfully";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Product', "Edited product: $name",
             'products', $id, $old_product,
@@ -200,6 +203,7 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
     $id          = (int)$_GET['delete'];
     $old_product = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,name,category,reorder_level,unit_measure,unit_price FROM products WHERE id=$id")) ?: [];
     mysqli_query($conn, "UPDATE products SET deleted=1 WHERE id=$id");
+    touchCacheStore($conn, 'products');
     logActivity($conn, (int)$_SESSION['user_id'], 'Delete Product', "Deleted product: " . ($old_product['name'] ?? ''),
         'products', $id, $old_product, []);
     header("Location: products.php");

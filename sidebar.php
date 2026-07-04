@@ -88,7 +88,7 @@ try {
             </div>
             <?php endif; ?>
 
-            <?php $oa = in_array($current_page,['orders.php','order_new.php']);
+            <?php $oa = in_array($current_page,['orders.php','order_new.php','order_link_new.php']);
                   $has_ord = hasPermission('orders'); ?>
             <?php if ($has_ord): ?>
             <div class="tn-dropdown<?= $oa?' active':'' ?>">
@@ -97,6 +97,7 @@ try {
                     <a href="orders.php"    class="tn-drop-item<?= $current_page==='orders.php'   ?' active':'' ?>">View Orders</a>
                     <?php if (hasPermission('orders','create')): ?>
                     <a href="order_new.php" class="tn-drop-item<?= $current_page==='order_new.php'?' active':'' ?>">New Order</a>
+                    <a href="order_link_new.php" class="tn-drop-item<?= $current_page==='order_link_new.php'?' active':'' ?>">Customer Order Link</a>
                     <?php endif; ?>
                 </div>
             </div>

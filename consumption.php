@@ -15,24 +15,7 @@ $receivers_query = mysqli_query($conn, "
 $receivers_arr = [];
 while ($r = mysqli_fetch_assoc($receivers_query)) $receivers_arr[] = $r;
 
-// Get products with available stock (retail or warehouse)
-$products_query = mysqli_query($conn,
-    "SELECT p.id, p.name, p.category,
-        COALESCE(rs.retail_price, s.retail_price, 0) AS retail_price,
-        COALESCE(rs.pieces_quantity, 0) AS retail_qty,
-        COALESCE(s.quantity, 0) AS wh_qty
-    FROM products p
-    LEFT JOIN retail_stock rs ON rs.product_id = p.id " . cidAndFor('rs') . "
-    LEFT JOIN stock s ON s.product_id = p.id " . cidAndFor('s') . "
-    WHERE p.deleted = 0
-    HAVING (retail_qty + wh_qty) > 0
-    ORDER BY p.name"
-);
-$products_arr = [];
-while ($p = mysqli_fetch_assoc($products_query)) {
-    $products_arr[] = $p;
-}
-
+// Product picker is loaded client-side from DataCache (js/data-cache.js).
 
 // Handle Add Consumption (normal POST or AJAX)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_consumption'])) {
@@ -60,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_consumption'])) {
             } else {
                 mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id " . cidAnd());
             }
+            touchCacheStore($conn, 'products');
             if ($is_ajax) { header('Content-Type: application/json'); echo json_encode(['success' => true, 'message' => 'Consumption recorded successfully.']); exit; }
             $_SESSION['flash_success'] = "Consumption recorded successfully.";
         } else {
@@ -201,6 +185,7 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
             mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + {$con['qty']} WHERE product_id = {$con['product_id']} " . cidAnd());
         }
         mysqli_query($conn, "DELETE FROM consumption WHERE id=$del_id");
+        touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Consumption record deleted.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Delete Consumption', "Deleted consumption #{$del_id}",
             'consumption', $del_id,
@@ -526,17 +511,7 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
                     <input type="hidden" id="product_id" name="product_id">
                     <input type="text" class="searchable-select-input" id="product_search"
                         placeholder="Search product..." autocomplete="off">
-                    <div class="searchable-select-dropdown" id="product_dropdown">
-                        <?php foreach ($products_arr as $p): ?>
-                            <div class="searchable-select-option"
-                                data-value="<?php echo $p['id']; ?>"
-                                data-price="<?php echo $p['retail_price']; ?>"
-                                data-retail-qty="<?php echo $p['retail_qty']; ?>"
-                                data-wh-qty="<?php echo $p['wh_qty']; ?>">
-                                <?php echo htmlspecialchars($p['category'] . '-' . $p['name']); ?>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
+                    <div class="searchable-select-dropdown" id="product_dropdown"></div>
                 </div>
                 <small id="priceHint" style="color:var(--secondary);margin-top:4px;display:block;"></small>
             </div>
@@ -654,7 +629,12 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
     </div>
 </div>
 
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script src="script.js"></script>
+<?php if (isset($success)): ?>
+<script>DataCache.invalidate('products');</script>
+<?php endif; ?>
 <script>
 var unitPrice = 0;
 var currentRetailQty = 0;
@@ -713,13 +693,26 @@ function applyPrice(price, retailQty, whQty) {
     calcAmount();
 }
 
-// Searchable product select
+// Searchable product select — options rendered from DataCache, limited to
+// products with available stock (retail or warehouse), same as before.
 (function() {
     var hiddenInput  = document.getElementById('product_id');
     var searchInput  = document.getElementById('product_search');
     var dropdown     = document.getElementById('product_dropdown');
-    var options      = dropdown.querySelectorAll('.searchable-select-option');
     var highlighted  = -1;
+
+    DataCache.getProducts().then(function(list) {
+        dropdown.innerHTML = list.filter(function(p) {
+            return (parseFloat(p.retail_qty) || 0) + (parseFloat(p.wh_qty) || 0) > 0;
+        }).map(function(p) {
+            return '<div class="searchable-select-option" data-value="' + p.id +
+                '" data-price="' + p.retail_price + '" data-retail-qty="' + p.retail_qty +
+                '" data-wh-qty="' + p.wh_qty + '">' + (p.category || '') + '-' + p.name + '</div>';
+        }).join('');
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) {
+            o.addEventListener('click', function() { pick(o); });
+        });
+    });
 
     searchInput.addEventListener('focus', function() {
         dropdown.classList.add('open');
@@ -740,16 +733,15 @@ function applyPrice(price, retailQty, whQty) {
     document.addEventListener('click', function(e) {
         if (!e.target.closest('#productSearchable')) dropdown.classList.remove('open');
     });
-    options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
     function filterOpts() {
         var term = searchInput.value.toLowerCase();
-        options.forEach(function(o) {
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) {
             o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term) === -1);
         });
     }
     function setHighlight(visible) {
-        options.forEach(function(o) { o.classList.remove('highlighted'); });
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) { o.classList.remove('highlighted'); });
         if (visible[highlighted]) {
             visible[highlighted].classList.add('highlighted');
             visible[highlighted].scrollIntoView({ block: 'nearest' });
@@ -861,8 +853,9 @@ document.getElementById('consumptionForm').addEventListener('submit', function(e
                 document.getElementById('product_search').value = '';
                 document.getElementById('product_id').value = '';
                 document.getElementById('source').value = 'retail';
-                // Reload page to show new row
-                location.reload();
+                // Consumption reduces stock — invalidate before reload so the
+                // product picker doesn't show stale quantities.
+                DataCache.invalidate('products').then(function() { location.reload(); });
             } else {
                 alertBox.className = 'alert alert-danger';
                 alertBox.textContent = res.message;

@@ -24,6 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_new_client'])) {
 
     header('Content-Type: application/json');
     if ($ok) {
+        touchCacheStore($conn, 'clients');
         echo json_encode(['success' => true]);
     } else {
         $err = mysqli_error($conn);
@@ -74,7 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
 
     if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $client_id WHERE id = $loan_id");
 
-    if ($ok) { mysqli_commit($conn); header('Content-Type: application/json'); echo json_encode(['success' => true]); exit; }
+    if ($ok) {
+        mysqli_commit($conn);
+        touchCacheStore($conn, 'products');
+        touchCacheStore($conn, 'clients');
+        header('Content-Type: application/json'); echo json_encode(['success' => true]); exit;
+    }
     mysqli_rollback($conn);
     header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => mysqli_error($conn)]); exit;
 }
@@ -136,7 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
     if ($ok && $lc_id > 0) {
         $cid_sql = cidSql();
         mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by) VALUES ($cid_sql, $lc_id, $amount_paid, '$payment_date', $received_by)");
-    }
+    
+        }
 
     if ($ok && $lc_id > 0) {
         $ok = (bool)mysqli_query($conn, "
@@ -173,7 +180,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
         $ok = (bool)mysqli_query($conn, "UPDATE sales_external SET loan_amount = GREATEST(0, loan_amount - $amount_paid) WHERE id = {$loan['external_id']}");
     }
 
-    if ($ok) { mysqli_commit($conn); header('Content-Type: application/json'); echo json_encode(['success' => true]); exit; }
+    if ($ok) {
+        mysqli_commit($conn);
+        touchCacheStore($conn, 'clients');
+        header('Content-Type: application/json'); echo json_encode(['success' => true]); exit;
+    }
     mysqli_rollback($conn);
     header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => mysqli_error($conn)]); exit;
 }
@@ -198,7 +209,10 @@ $total         = (float)$_POST['total_amount'];
     $unpaid = mysqli_query($conn, "
         SELECT l.id,
                COALESCE(p.name, l.product_name) AS product_name,
-               COALESCE(p.category, 'External') AS category,
+               CASE WHEN p.category IS NOT NULL THEN p.category
+                    WHEN l.bulk_id   IS NOT NULL THEN 'Bulk Sale'
+                    WHEN l.retail_id IS NOT NULL THEN 'Retail Sale'
+                    ELSE 'External' END AS category,
                l.client, l.loan_date, l.amount,
                COALESCE(lp_sum.paid, 0) AS total_paid,
                (l.amount - COALESCE(lp_sum.paid, 0)) AS balance
@@ -340,6 +354,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
 
     if ($ok) {
         mysqli_commit($conn);
+        touchCacheStore($conn, 'clients');
         header('Content-Type: application/json');
         echo json_encode(['success' => true, 'count' => $count, 'applied' => $total - $remaining]);
     } else {
@@ -359,7 +374,10 @@ $client_id = (int)$_POST['client_id'];
     $loans_q = mysqli_query($conn, "
         SELECT l.*,
             COALESCE(p.name, l.product_name)     AS product_name,
-            COALESCE(p.category, 'External')      AS product_category,
+            CASE WHEN p.category IS NOT NULL THEN p.category
+                 WHEN l.bulk_id   IS NOT NULL THEN 'Bulk Sale'
+                 WHEN l.retail_id IS NOT NULL THEN 'Retail Sale'
+                 ELSE 'External' END              AS product_category,
             COALESCE(SUM(lp.amount_paid), 0)      AS total_paid,
             u.full_name AS given_by_name
         FROM loans l
@@ -449,25 +467,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['recalc_client_balance'
             lc.unpaid_amount = agg.loaned - agg.paid_sum
         WHERE lc.id = $client_id
     ");
+    if ($ok) touchCacheStore($conn, 'clients');
     header('Content-Type: application/json');
     echo json_encode($ok ? ['success'=>true] : ['success'=>false,'message'=>mysqli_error($conn)]);
     exit;
 }
 
-// ── AJAX: Get Clients Table Data ───────────────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_clients_json'])) {
+// ── AJAX: Get Loan Stats (client list itself comes from DataCache.getClients) ──
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_loan_stats'])) {
     $ca = cidAnd();
-    $clients = [];
-    $qr = mysqli_query($conn, "
-        SELECT id AS client_id, name, phone,
-               total_loans AS loan_count,
-               paid_amount + unpaid_amount AS total_loaned,
-               paid_amount AS total_paid
-        FROM loan_clients WHERE 1=1 $ca
-        ORDER BY updated_at DESC
-    ");
-    while ($row = mysqli_fetch_assoc($qr)) $clients[] = $row;
-
     $st = mysqli_fetch_assoc(mysqli_query($conn, "
         SELECT COUNT(DISTINCT l.id)        AS total_loans,
                COUNT(DISTINCT l.client)    AS total_clients,
@@ -480,7 +488,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_clients_json'])) {
     "));
     header('Content-Type: application/json');
     echo json_encode([
-        'clients'     => $clients,
         'stats'       => $st,
         'outstanding' => (float)$st['total_amount'] - (float)$st['total_paid'],
     ]);
@@ -521,6 +528,8 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
 
         if ($ok) {
             mysqli_commit($conn);
+            touchCacheStore($conn, 'products');
+            touchCacheStore($conn, 'clients');
             $_SESSION['flash_success'] = "Loan deleted.";
             logActivity($conn, (int)$_SESSION['user_id'], 'Delete Loan', "Deleted loan #{$del_id} for {$loan['client']}",
                 'loans', $del_id,
@@ -549,28 +558,10 @@ $clients_qr = mysqli_query($conn, "
 $clients_data = [];
 while ($row = mysqli_fetch_assoc($clients_qr)) $clients_data[] = $row;
 
-// Products for dropdown
-$products_query = mysqli_query($conn, "
-    SELECT p.id, p.name, p.category,
-        COALESCE(rs.retail_price, s.retail_price, 0) AS retail_price,
-        COALESCE(rs.pieces_quantity, 0) AS stock_qty
-    FROM products p
-    LEFT JOIN retail_stock rs ON rs.product_id = p.id " . cidAndFor('rs') . "
-    LEFT JOIN stock s ON s.product_id = p.id " . cidAndFor('s') . "
-    WHERE p.deleted = 0 ORDER BY p.name
-");
-$products_arr = [];
-while ($p = mysqli_fetch_assoc($products_query)) $products_arr[] = $p;
-
-// Registered clients (distinct, ordered by most recent)
-$clients_query = mysqli_query($conn, "
-    SELECT client, phone, MAX(loan_date) AS last_visit, COUNT(*) AS visits
-    FROM loans WHERE 1=1 $cid_and
-    GROUP BY client, phone
-    ORDER BY last_visit DESC
-");
-$clients_arr = [];
-while ($c = mysqli_fetch_assoc($clients_query)) $clients_arr[] = $c;
+// Product list and existing-client list for the "New Loan" modal pickers are
+// no longer queried here — they're loaded client-side from DataCache
+// (js/data-cache.js) so the same catalog/client data fetched by one page is
+// reused instantly on every other page instead of being re-queried per file.
 
 // Summary stats (always full, ignoring date filter)
 $stats = mysqli_fetch_assoc(mysqli_query($conn, "
@@ -863,16 +854,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 <div class="searchable-select" id="loanProductWrap">
                     <input type="hidden" id="loan_product_id" name="product_id">
                     <input type="text" class="searchable-select-input" id="loan_product_search" placeholder="Search product..." autocomplete="off">
-                    <div class="searchable-select-dropdown" id="loan_product_dropdown">
-                        <?php foreach ($products_arr as $p): ?>
-                            <div class="searchable-select-option"
-                                data-value="<?php echo $p['id']; ?>"
-                                data-price="<?php echo $p['retail_price']; ?>"
-                                data-stock="<?php echo $p['stock_qty']; ?>">
-                                <?php echo htmlspecialchars($p['category'] . '-' . $p['name']); ?>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
+                    <div class="searchable-select-dropdown" id="loan_product_dropdown"></div>
                 </div>
                 <small id="loanPriceHint" style="color:var(--secondary);margin-top:4px;display:block;"></small>
             </div>
@@ -884,27 +866,15 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 <label>Amount (RWF)*</label>
                 <input type="text" id="loan_amount" name="amount" min="1" step="1" required value="0">
             </div>
-            <?php if ($clients_arr): ?>
-            <div class="form-group">
+            <div class="form-group" id="clientPickerGroup" style="display:none;">
                 <label>Existing Client</label>
                 <div class="searchable-select" id="clientPickerWrap">
                     <input type="text" class="searchable-select-input" id="client_picker_search"
                         placeholder="Search registered client..." autocomplete="off">
-                    <div class="searchable-select-dropdown" id="client_picker_dropdown">
-                        <?php foreach ($clients_arr as $c): ?>
-                            <div class="searchable-select-option"
-                                data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                <?php echo htmlspecialchars($c['client']); ?>
-                                <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
+                    <div class="searchable-select-dropdown" id="client_picker_dropdown"></div>
                 </div>
                 <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
             </div>
-            <?php endif; ?>
             <div class="form-group">
                 <label>Client Name*</label>
                 <input type="text" id="loan_client" name="client" required placeholder="Full name">
@@ -980,7 +950,12 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     </div>
 </div>
 
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script src="script.js"></script>
+<?php if (isset($success)): ?>
+<script>DataCache.invalidate('products');</script>
+<?php endif; ?>
 <script>
 var loanUnitPrice = 0;
 var _cpayRows = [];
@@ -1173,13 +1148,24 @@ function calcLoanAmount() {
     if (loanUnitPrice > 0) document.getElementById('loan_amount').value = qty * loanUnitPrice;
 }
 
-// Searchable select for loan product
+// Searchable select for loan product — options rendered from DataCache once
+// the (shared, cross-page) product list resolves, instead of a PHP loop.
 (function() {
     var hidden   = document.getElementById('loan_product_id');
     var search   = document.getElementById('loan_product_search');
     var dropdown = document.getElementById('loan_product_dropdown');
-    var options  = dropdown.querySelectorAll('.searchable-select-option');
     var hi = -1;
+
+    DataCache.getProducts().then(function(list) {
+        dropdown.innerHTML = list.map(function(p) {
+            return '<div class="searchable-select-option" data-value="' + p.id +
+                '" data-price="' + p.retail_price + '" data-stock="' + p.retail_qty + '">' +
+                _escHtml((p.category || '') + '-' + p.name) + '</div>';
+        }).join('');
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) {
+            o.addEventListener('click', function() { pick(o); });
+        });
+    });
 
     search.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
     search.addEventListener('input', function() { dropdown.classList.add('open'); hi = -1; filter(); });
@@ -1193,14 +1179,15 @@ function calcLoanAmount() {
     document.addEventListener('click', function(e) {
         if (!e.target.closest('#loanProductWrap')) dropdown.classList.remove('open');
     });
-    options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
     function filter() {
         var term = search.value.toLowerCase();
-        options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1); });
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) {
+            o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1);
+        });
     }
     function hl(vis) {
-        options.forEach(function(o) { o.classList.remove('highlighted'); });
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) { o.classList.remove('highlighted'); });
         if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
     }
     function pick(opt) {
@@ -1219,14 +1206,30 @@ function calcLoanAmount() {
 
 document.getElementById('loan_qty').addEventListener('input', calcLoanAmount);
 
-// Client picker
+// Client picker — options rendered from DataCache.getClients() (same cached
+// loan_clients data used across every page's client pickers).
 (function() {
     var wrap     = document.getElementById('clientPickerWrap');
     if (!wrap) return;
+    var group    = document.getElementById('clientPickerGroup');
     var search   = document.getElementById('client_picker_search');
     var dropdown = document.getElementById('client_picker_dropdown');
-    var options  = dropdown.querySelectorAll('.searchable-select-option');
     var hi = -1;
+
+    DataCache.getClients().then(function(list) {
+        if (!list.length) return;
+        group.style.display = '';
+        dropdown.innerHTML = list.map(function(c) {
+            var visits = parseInt(c.total_loans) || 0;
+            return '<div class="searchable-select-option" data-client="' + _escHtml(c.name).replace(/"/g,'&quot;') +
+                '" data-phone="' + _escHtml(c.phone || '').replace(/"/g,'&quot;') + '">' +
+                _escHtml(c.name) + (c.phone ? ' — ' + _escHtml(c.phone) : '') +
+                '<small style="color:var(--secondary);"> (' + visits + ' visit' + (visits !== 1 ? 's' : '') + ')</small></div>';
+        }).join('');
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) {
+            o.addEventListener('click', function() { pick(o); });
+        });
+    });
 
     search.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
     search.addEventListener('input', function() { dropdown.classList.add('open'); hi = -1; filter(); });
@@ -1240,14 +1243,15 @@ document.getElementById('loan_qty').addEventListener('input', calcLoanAmount);
     document.addEventListener('click', function(e) {
         if (!e.target.closest('#clientPickerWrap')) dropdown.classList.remove('open');
     });
-    options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
     function filter() {
         var term = search.value.toLowerCase();
-        options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1); });
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) {
+            o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1);
+        });
     }
     function hl(vis) {
-        options.forEach(function(o) { o.classList.remove('highlighted'); });
+        dropdown.querySelectorAll('.searchable-select-option').forEach(function(o) { o.classList.remove('highlighted'); });
         if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
     }
     function pick(opt) {
@@ -1310,12 +1314,14 @@ ajaxForm('addLoanForm', 'addLoanAlert', 'add_loan', function() {
     document.getElementById('loanPriceHint').textContent = '';
     document.getElementById('loan_product_search').value = '';
     document.getElementById('loan_product_id').value = '';
+    DataCache.invalidate('products'); // loan reduces retail stock
     reloadClientsTable();
 });
 
 ajaxForm('paymentForm', 'paymentAlert', 'add_payment', function() {
     closeModal('paymentModal');
     reloadClientsTable();
+    refreshOpenClientLoans();
 });
 
 ajaxForm('addClientForm', 'addClientAlert', 'add_new_client', function() {
@@ -1389,10 +1395,11 @@ function recalcClientBalance(clientId, btn) {
 }
 
 // ── View client loans modal ────────────────────────────────────────────────────
-var _clLoans = [], _clFilter = 'unpaid', _clPage = 1, _clPageSize = 10, _clName = '';
+var _clLoans = [], _clFilter = 'unpaid', _clPage = 1, _clPageSize = 10, _clName = '', _clClientId = 0;
 
 function viewClientLoans(clientName, clientId) {
     _clName = clientName;
+    _clClientId = clientId;
     _clFilter = 'unpaid';
     _clPage = 1;
     _clLoans = [];
@@ -1437,6 +1444,24 @@ function setClientLoanFilter(btn) {
 
 function clientLoanGoPage(p) { _clPage = p; renderClientLoans(); }
 
+// Re-fetch and re-render the currently open "View Loans" modal so a just-recorded
+// payment shows up in that row without needing to close/reopen the modal.
+function refreshOpenClientLoans() {
+    var modal = document.getElementById('clientLoansModal');
+    if (!modal || modal.style.display !== 'block' || !_clClientId) return;
+
+    var data = new FormData();
+    data.append('get_client_loans', '1');
+    data.append('client_id', _clClientId);
+
+    fetch('loans.php', { method: 'POST', body: data })
+        .then(function(r) { return r.json(); })
+        .then(function(rows) {
+            _clLoans = rows || [];
+            renderClientLoans();
+        });
+}
+
 function renderClientLoans() {
     var filtered = _clLoans.filter(function(l) {
         return _clFilter === 'all' || (parseFloat(l.amount) - parseFloat(l.total_paid)) > 0;
@@ -1477,6 +1502,18 @@ function renderClientLoans() {
             ? '<a href="sales.php?tab=' + saleTab + '&highlight=' + saleId + '" target="_blank" ' +
               'style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 6px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;">' +
               saleTab.charAt(0).toUpperCase() + saleTab.slice(1) + ' ↗</a>' : '';
+        var cartItems = null;
+        try { cartItems = l.cart ? JSON.parse(l.cart) : null; } catch (e) { cartItems = null; }
+        var productCell;
+        if (cartItems && cartItems.length > 1) {
+            productCell =
+                '<div style="font-size:11px;color:var(--secondary);margin-bottom:2px;">' +
+                    _escHtml(l.product_category || '') + ' &middot; ' + cartItems.length + ' items' +
+                '</div>' +
+                cartItems.map(function(ci) { return _escHtml(ci.name) + ' &times;' + ci.quantity; }).join('<br>');
+        } else {
+            productCell = _escHtml(l.product_category || '') + '-' + _escHtml(l.product_name || '—');
+        }
         html += '<tr>' +
             '<td style="white-space:nowrap;">' + saleLink +
             (balance > 0 ? '<button class="btn-pay" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this)" style="margin-right:4px;">Pay</button>' : '') +
@@ -1484,7 +1521,7 @@ function renderClientLoans() {
             '</td>' +
             '<td style="color:var(--secondary);">' + (start + idx + 1) + '</td>' +
             '<td style="white-space:nowrap;">' + l.loan_date + '</td>' +
-            '<td>' + (l.product_category || '') + '-' + (l.product_name || '—') + '</td>' +
+            '<td>' + productCell + '</td>' +
             '<td>RWF ' + parseFloat(l.amount).toLocaleString() + '</td>' +
             '<td>RWF ' + parseFloat(l.total_paid).toLocaleString() + '</td>' +
             '<td class="' + (balance > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(balance).toLocaleString() + '</strong></td>' +
@@ -1813,14 +1850,25 @@ function reloadClientsTable() {
     wrap.innerHTML = '<div style="text-align:center;padding:48px;color:var(--secondary);"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
 
     var fd = new FormData();
-    fd.append('get_clients_json', '1');
+    fd.append('get_loan_stats', '1');
 
-    fetch('loans.php', { method: 'POST', body: fd })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            _updateLoanStats(data.stats, data.outstanding);
-            _updateClientDropdown(data.clients);
-            _renderClientsTable(data.clients);
+    Promise.all([
+        fetch('loans.php', { method: 'POST', body: fd }).then(function(r) { return r.json(); }),
+        DataCache.getClients({ force: true })
+    ])
+        .then(function(results) {
+            var statsRes = results[0];
+            var clients = results[1].map(function(c) {
+                return {
+                    client_id: c.id, name: c.name, phone: c.phone,
+                    loan_count: c.total_loans,
+                    total_loaned: parseFloat(c.paid_amount) + parseFloat(c.unpaid_amount),
+                    total_paid: c.paid_amount
+                };
+            });
+            _updateLoanStats(statsRes.stats, statsRes.outstanding);
+            _updateClientDropdown(clients);
+            _renderClientsTable(clients);
             filterClientTable();
         })
         .catch(function() {

@@ -216,3 +216,57 @@ ALTER TABLE `products`
     AFTER `category`;
 
 CREATE FULLTEXT INDEX IF NOT EXISTS `ftx_products_search_text` ON `products` (`search_text`);
+
+
+-- ── Customer self-order links: new/open pre-pending states, 5-digit code + expiry ──
+ALTER TABLE `orders` MODIFY COLUMN `status` ENUM('new','open','pending','approved','cancelled','closed') NOT NULL DEFAULT 'pending';
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `show_prices` TINYINT(1) NOT NULL DEFAULT 1 AFTER `status`;
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `link_code` CHAR(5) NULL AFTER `show_prices`;
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `link_expires_at` DATETIME NULL AFTER `link_code`;
+CREATE INDEX IF NOT EXISTS `idx_orders_link_code` ON `orders` (`link_code`);
+
+-- Allow free-text (non-catalog) items typed by the customer on the order link
+ALTER TABLE `order_items` MODIFY COLUMN `product_id` INT NULL;
+ALTER TABLE `order_items` ADD COLUMN IF NOT EXISTS `custom_name` VARCHAR(150) NULL AFTER `product_id`;
+ALTER TABLE `order_items` MODIFY COLUMN `stock_source` ENUM('wh','rt','custom') NOT NULL DEFAULT 'wh';
+
+-- Reusable customer links: the link's own order row stays 'open' and spawns a fresh
+-- child order on every submission, instead of being consumed after one order.
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `is_reusable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `link_expires_at`;
+
+-- Traces each child order spawned by a reusable link back to that link's own order row.
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `source_order_id` INT NULL AFTER `is_reusable`;
+CREATE INDEX IF NOT EXISTS `idx_orders_source_order` ON `orders` (`source_order_id`);
+
+-- Per-item origin: was this line added by staff, or by the customer through their order link?
+ALTER TABLE `order_items` ADD COLUMN IF NOT EXISTS `source` ENUM('staff','customer') NOT NULL DEFAULT 'staff' AFTER `item_total`;
+ALTER TABLE `order_items` ADD COLUMN IF NOT EXISTS `added_by` INT NULL AFTER `source`;
+
+-- Who's responsible for handling the order (defaults to whoever created it / the link), and the
+-- physical fulfillment pipeline separate from the approval status.
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `in_charge_id` INT NULL AFTER `created_by`;
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `delivery_status` ENUM('placed','packed','ready','delivered') NOT NULL DEFAULT 'placed' AFTER `status`;
+CREATE INDEX IF NOT EXISTS `idx_orders_in_charge` ON `orders` (`in_charge_id`);
+
+
+-- ── loans.cart: full list of every product sold, for loans that span more than one
+-- product (bulk/retail/external sales now let one client take several products in a
+-- single sale, but a loans row still has only one product_id/qty/amount). When a loan
+-- covers more than one product, product_id is left NULL and this column carries the
+-- itemized list (product_id, name, qty, price, item_total) so the UI can show exactly
+-- what was taken instead of just the first item.
+ALTER TABLE `loans` ADD COLUMN IF NOT EXISTS `cart` JSON NULL AFTER `product_name`;
+
+
+-- ── cache_meta: change-tracking for the client-side IndexedDB cache ───────────
+-- touchCacheStore() (config.php) bumps updated_at whenever products/stock/
+-- retail_stock or loan_clients change. js/data-cache.js polls the cheap
+-- data_api.php?action=meta endpoint and only refetches a store's full data
+-- when the server's updated_at is newer than what it last cached, instead of
+-- blindly expiring every few minutes.
+CREATE TABLE IF NOT EXISTS `cache_meta` (
+    `store_name`  VARCHAR(50) NOT NULL,
+    `company_id`  INT         NOT NULL DEFAULT 0,
+    `updated_at`  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`store_name`, `company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

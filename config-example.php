@@ -136,4 +136,31 @@ function productSearchSql($conn, string $raw): string {
     $match_sql = implode(' ', $terms);
     return "MATCH(search_text) AGAINST ('$match_sql' IN BOOLEAN MODE)";
 }
+
+// Returns a 5-digit numeric code not currently used by any active (new/open, unexpired) order link.
+function generateOrderLinkCode(mysqli $conn): string {
+    for ($i = 0; $i < 20; $i++) {
+        $code = (string)random_int(10000, 99999);
+        $r = mysqli_query($conn, "SELECT id FROM orders
+            WHERE link_code='$code' AND status IN ('new','open') AND (link_expires_at IS NULL OR link_expires_at > NOW())
+            LIMIT 1");
+        if (mysqli_num_rows($r) === 0) return $code;
+    }
+    return (string)random_int(10000, 99999);
+}
+
+// Marks $store ('products' or 'clients') as changed for the current company so
+// js/data-cache.js (via data_api.php?action=meta) knows to refetch instead of
+// serving its IndexedDB copy. Call this right after any write to products,
+// stock, retail_stock, or loan_clients. company_id uses 0 as the superadmin/
+// no-tenant sentinel (cid() is NULL there), matching stock_value_cache's convention.
+function touchCacheStore(mysqli $conn, string $store): void {
+    $store_esc = mysqli_real_escape_string($conn, $store);
+    $cid = cid() ?? 0;
+    mysqli_query($conn, "
+        INSERT INTO cache_meta (store_name, company_id, updated_at)
+        VALUES ('$store_esc', $cid, NOW())
+        ON DUPLICATE KEY UPDATE updated_at = NOW()
+    ");
+}
 ?>

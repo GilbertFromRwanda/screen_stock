@@ -148,6 +148,7 @@ CREATE TABLE `loans` (
   `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `product_name` varchar(255) DEFAULT NULL,
+  `cart` json DEFAULT NULL,
   `qty` int(11) NOT NULL DEFAULT 1,
   `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `client` varchar(100) NOT NULL,
@@ -186,13 +187,16 @@ DROP TABLE IF EXISTS `order_items`;
 CREATE TABLE `order_items` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `order_id` int(11) NOT NULL,
-  `product_id` int(11) NOT NULL,
-  `stock_source` enum('wh','rt') NOT NULL DEFAULT 'wh',
+  `product_id` int(11) DEFAULT NULL,
+  `custom_name` varchar(150) DEFAULT NULL,
+  `stock_source` enum('wh','rt','custom') NOT NULL DEFAULT 'wh',
   `status` enum('pending','fulfilled','out_of_stock') NOT NULL DEFAULT 'pending',
   `quantity` decimal(10,3) NOT NULL,
   `level_divisor` int(11) NOT NULL DEFAULT 1,
   `selling_price` decimal(12,2) NOT NULL DEFAULT 0.00,
   `item_total` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `source` enum('staff','customer') NOT NULL DEFAULT 'staff',
+  `added_by` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_oi_order` (`order_id`),
   KEY `idx_oi_product` (`product_id`)
@@ -230,10 +234,17 @@ CREATE TABLE `orders` (
   `prepaid_bank` decimal(12,2) NOT NULL DEFAULT 0.00,
   `total_prepaid` decimal(12,2) NOT NULL DEFAULT 0.00,
   `refund_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `status` enum('pending','approved','cancelled') NOT NULL DEFAULT 'pending',
+  `status` enum('new','open','pending','approved','cancelled','closed') NOT NULL DEFAULT 'pending',
+  `delivery_status` enum('placed','packed','ready','delivered') NOT NULL DEFAULT 'placed',
+  `show_prices` tinyint(1) NOT NULL DEFAULT 1,
+  `link_code` char(5) DEFAULT NULL,
+  `link_expires_at` datetime DEFAULT NULL,
+  `is_reusable` tinyint(1) NOT NULL DEFAULT 0,
+  `source_order_id` int(11) DEFAULT NULL,
   `cancel_reason` text DEFAULT NULL,
   `note` text DEFAULT NULL,
   `created_by` int(11) DEFAULT NULL,
+  `in_charge_id` int(11) DEFAULT NULL,
   `approved_by` int(11) DEFAULT NULL,
   `cancelled_by` int(11) DEFAULT NULL,
   `sale_id` int(11) DEFAULT NULL,
@@ -247,7 +258,10 @@ CREATE TABLE `orders` (
   KEY `idx_orders_order_owner_id` (`order_owner_id`),
   KEY `idx_orders_created_by` (`created_by`),
   KEY `idx_orders_approved_by` (`approved_by`),
-  KEY `idx_orders_order_number` (`order_number`)
+  KEY `idx_orders_order_number` (`order_number`),
+  KEY `idx_orders_link_code` (`link_code`),
+  KEY `idx_orders_source_order` (`source_order_id`),
+  KEY `idx_orders_in_charge` (`in_charge_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `product_owners`;

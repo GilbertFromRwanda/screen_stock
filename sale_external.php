@@ -5,51 +5,12 @@ if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't h
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 
-// ── AJAX: product search ──────────────────────────────────────────────────────
-if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
-    header('Content-Type: application/json');
-    $cat_filter = trim($_GET['cat'] ?? '');
-    $cat_sql    = $cat_filter ? " AND p.category = '" . mysqli_real_escape_string($conn, $cat_filter) . "'" : '';
-    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
-    $res = mysqli_query($conn, "
-        SELECT p.id, p.name, p.category,
-               COALESCE(s.package_price, 0) AS bulk_price,
-               COALESCE(r.retail_price, 0)  AS retail_price
-        FROM products p
-        LEFT JOIN stock s        ON s.product_id = p.id " . cidAndFor('s') . "
-        LEFT JOIN retail_stock r ON r.product_id = p.id " . cidAndFor('r') . "
-        WHERE p.deleted = 0 AND $search_sql $cat_sql
-        ORDER BY p.category, p.name LIMIT 60
-    ");
-    $rows = [];
-    while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
-    echo json_encode($rows);
-    exit;
-}
-
-if (isset($_GET['action']) && $_GET['action'] === 'get_categories') {
-    header('Content-Type: application/json');
-    $res  = mysqli_query($conn,
-        "SELECT DISTINCT category FROM products
-         WHERE deleted = 0 AND category IS NOT NULL AND category != ''
-         ORDER BY category"
-    );
-    $cats = [];
-    while ($r = mysqli_fetch_assoc($res)) $cats[] = $r['category'];
-    echo json_encode($cats);
-    exit;
-}
+// Product search/categories and the loan-client picker are loaded
+// client-side from DataCache (js/data-cache.js) instead of these per-page
+// AJAX endpoints.
 
 if (isset($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
 if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
-
-// Loan clients
-$loan_clients_query = mysqli_query($conn, "
-    SELECT name AS client, phone, total_loans AS visits, unpaid_amount AS outstanding
-    FROM loan_clients WHERE 1=1 $cid_and ORDER BY updated_at DESC
-");
-$loan_clients_arr = [];
-while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
 // Product owners
 $ext_owners_query = mysqli_query($conn, "
@@ -213,6 +174,55 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         /* ── 3-col grid (replaces inline style so media queries can override) ── */
         .form-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 24px; align-items: start; }
 
+        /* ── Client card (step 1) ───────────────────────────────────────────── */
+        .client-card {
+            display: none; background: #eff6ff; border: 1px solid #bfdbfe;
+            border-radius: var(--radius); padding: 12px 16px;
+            align-items: center; justify-content: space-between; gap: 10px;
+        }
+        .client-card.show { display: flex; }
+        .client-card-name { font-weight: 700; color: #1e40af; font-size: 15px; }
+        .client-card-meta { color: var(--secondary); font-size: 12px; margin-top: 3px; }
+        .client-card-clear { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; flex-shrink: 0; }
+        .client-card-clear:hover { color: #dc2626; }
+
+        /* ── Payment shortcut chips (compact) ─────────────────────────────────── */
+        .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .shortcut-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border: 1.5px solid var(--gray-300); border-radius: 999px;
+            background: var(--gray-50); cursor: pointer; font-size: 13px; font-weight: 600;
+            white-space: nowrap;
+        }
+        .shortcut-chip input { width: 15px; height: 15px; cursor: pointer; margin: 0; }
+
+        /* ── Step 2: product + cart ───────────────────────────────────────────── */
+        .cart-split { display: grid; grid-template-columns: 1fr 360px; gap: 24px; align-items: start; }
+        @media (max-width: 900px) { .cart-split { grid-template-columns: 1fr; } }
+        .cart-panel { border: 1px solid var(--gray-200); border-radius: var(--radius-lg); overflow: hidden; position: sticky; top: 16px; }
+        .cart-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); font-size: 13px; font-weight: 700; }
+        .cart-badge { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; }
+        .cart-badge.zero { background: var(--gray-300); }
+        .cart-body { min-height: 80px; max-height: 380px; overflow-y: auto; }
+        .cart-empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--secondary); line-height: 1.6; }
+        .cart-item { display: flex; align-items: flex-start; padding: 10px 14px; gap: 8px; border-bottom: 1px solid var(--gray-100); }
+        .cart-item:last-child { border-bottom: none; }
+        .cart-item-info { flex: 1; min-width: 0; }
+        .cart-item-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cart-item-sub { font-size: 12px; color: var(--secondary); margin-top: 2px; }
+        .cart-item-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+        .cart-item-total { font-size: 13px; font-weight: 700; }
+        .cart-rm { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 15px; padding: 0; line-height: 1; }
+        .cart-rm:hover { color: #ef4444; }
+        .cart-foot { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; background: #eff6ff; border-top: 1px solid #bfdbfe; }
+        .cart-foot-lbl { font-size: 12px; font-weight: 700; color: #1e40af; }
+        .cart-foot-val { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+        .add-item-btn {
+            width: 100%; padding: 11px; margin-top: 4px; background: #0ea5e9;
+            color: #fff; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 700; cursor: pointer;
+        }
+        .add-item-btn:hover { background: #0284c7; }
+
         /* ── Responsive ─────────────────────────────────────────────────────── */
         @media (max-width: 900px) {
             .form-3col { grid-template-columns: 1fr 1fr; }
@@ -255,30 +265,50 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             </div>
             <div id="ext_sale_alert" class="alert" style="display:none;margin-bottom:16px;"></div>
 
-            <!-- Step indicator -->
-            <div class="steps-indicator">
-                <div class="step-item active" id="ext_step_dot_1">
-                    <div class="step-circle">1</div>
-                    <div class="step-lbl">Product</div>
-                </div>
-                <div class="step-connector" id="ext_step_connector"></div>
-                <div class="step-item" id="ext_step_dot_2">
-                    <div class="step-circle">2</div>
-                    <div class="step-lbl">Payment</div>
-                </div>
-            </div>
-
             <form method="POST" action="sales.php" id="externalSaleForm">
+                <input type="hidden" id="ext_items_json" name="items_json" value="[]">
                 <input type="hidden" id="ext_product_name" name="ext_product_name">
                 <input type="hidden" id="ext_product_id"   name="ext_product_id" value="0">
 
-                <!-- ═══════════ STEP 1 ═══════════ -->
+                <!-- ═══════════ Client ═══════════ -->
                 <div id="ext_step_panel_1">
 
-                    <!-- 3-column: Product | Owner + Qty | Price + Commission + Customer -->
-                    <div class="form-3col">
+                    <div class="client-card" id="ext_client_card">
+                        <div>
+                            <div class="client-card-name" id="ext_client_card_name"></div>
+                            <div class="client-card-meta" id="ext_client_card_meta"></div>
+                        </div>
+                        <button type="button" class="client-card-clear" onclick="clearExtClient()" title="Change client">&times;</button>
+                    </div>
 
-                        <!-- Col 1: Product picker / manual -->
+                    <div id="ext_client_select_area">
+                        <div class="form-group" id="extClientPickerGroup" style="display:none;">
+                            <label>Existing Client</label>
+                            <div class="searchable-select" id="extClientPickerWrap">
+                                <input type="text" class="searchable-select-input" id="ext_client_picker_search"
+                                    placeholder="Search registered client..." autocomplete="off">
+                                <div class="searchable-select-dropdown" id="ext_client_picker_dropdown"></div>
+                            </div>
+                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                        </div>
+                        <div class="form-2col">
+                            <div class="form-group">
+                                <label>Client Name</label>
+                                <input type="text" id="ext_customer_name" name="ext_customer_name" value="client" placeholder="Enter customer name">
+                            </div>
+                            <div class="form-group">
+                                <label>Client Phone <small style="font-weight:400;color:var(--secondary);">(required only for loans)</small></label>
+                                <input type="text" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════ Products (cart) ═══════════ -->
+                <div id="ext_step_panel_2">
+
+                    <div class="cart-split">
+                        <!-- Left: product / owner picker -->
                         <div>
                             <div class="form-group">
                                 <label>Category</label>
@@ -307,10 +337,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                             onclick="extSwitchToPicker()">Back to list</button>
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- Col 2: Owner + Quantity -->
-                        <div>
                             <input type="hidden" id="ext_owner_name"  name="ext_owner_name">
                             <input type="hidden" id="ext_owner_phone" name="ext_owner_phone">
                             <div class="form-group">
@@ -338,141 +365,95 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <input type="text" id="ext_owner_phone_input" placeholder="Phone (optional)" style="flex:1;" oninput="extSyncOwner()">
                                 </div>
                             </div>
-                            <div class="form-group">
-                                <label>Quantity*</label>
-                                <input type="text" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtTotal()">
-                            </div>
-                        </div>
 
-                        <!-- Col 3: Price + Commission + Customer -->
-                        <div>
-                            <div class="form-group">
-                                <label>Unit Price (RWF)*</label>
-                                <input type="text" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtTotal()">
+                            <div class="form-2col">
+                                <div class="form-group">
+                                    <label>Quantity*</label>
+                                    <input type="text" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtValidity()">
+                                </div>
+                                <div class="form-group">
+                                    <label>Unit Price (RWF)*</label>
+                                    <input type="text" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtValidity()">
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>My Commission (RWF)</label>
                                 <input type="text" id="ext_my_revenue" name="ext_my_revenue" min="0" step="1" value="0" placeholder="Your commission">
                             </div>
-                           
-                        </div>
 
-                    </div>
-
-                    <!-- Step 1 nav -->
-                    <div class="step-nav" style="justify-content:flex-end;">
-                        <button type="button" id="ext_next_btn" class="btn btn-primary" disabled onclick="goToExtStep2()" style="padding:10px 28px;">
-                            Next &rarr;
-                        </button>
-                    </div>
-                </div>
-
-                <!-- ═══════════ STEP 2 ═══════════ -->
-                <div id="ext_step_panel_2" style="display:none;">
-
-                    <!-- Three-column layout -->
-                    <div class="form-3col">
-
-                        <!-- Col 1: Sale summary -->
-                        <div>
-                            <div class="sale-summary" id="ext_summary">
-                                <div class="summary-row"><span>Product</span><strong id="ext_sum_product"></strong></div>
-                                <div class="summary-row"><span>Quantity</span><strong id="ext_sum_qty"></strong></div>
-                                <div class="summary-row"><span>Unit Price</span><strong id="ext_sum_price"></strong></div>
-                                <div class="summary-row summary-total"><span>Total Amount</span><strong id="ext_sum_total"></strong></div>
-                            </div>
-                        </div>
-
-                        <!-- Col 2: Payment shortcuts + loan fields -->
-                        <div>
-                            <div class="form-group" style="margin:0 0 16px;display:flex;flex-direction:column;gap:8px;">
-                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                                    <input type="checkbox" id="ext_is_loan" onchange="toggleExtShortcut('loan')" style="width:17px;height:17px;cursor:pointer;accent-color:var(--primary);">
-                                    <span style="font-weight:700;font-size:14px;">Is Loan?</span>
-                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to loan</span>
-                                </label>
-                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                                    <input type="checkbox" id="ext_is_cash" onchange="toggleExtShortcut('cash')" style="width:17px;height:17px;cursor:pointer;accent-color:#16a34a;">
-                                    <span style="font-weight:700;font-size:14px;">Is Cash?</span>
-                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to cash</span>
-                                </label>
-                                <label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1.5px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50);">
-                                    <input type="checkbox" id="ext_is_momo" onchange="toggleExtShortcut('momo')" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;">
-                                    <span style="font-weight:700;font-size:14px;">Is Momo?</span>
-                                    <span style="font-size:12px;color:var(--secondary);">Full amount goes to momo</span>
-                                </label>
-                            </div>
-
-                            <!-- Loan fields -->
-                            <div id="ext_loan_fields" style="display:none;">
-                                <?php if ($loan_clients_arr): ?>
-                                <div class="form-group">
-                                    <label>Existing Client</label>
-                                    <div class="searchable-select" id="extClientPickerWrap">
-                                        <input type="text" class="searchable-select-input" id="ext_client_picker_search"
-                                            placeholder="Search registered client..." autocomplete="off">
-                                        <div class="searchable-select-dropdown" id="ext_client_picker_dropdown">
-                                            <?php foreach ($loan_clients_arr as $c): ?>
-                                                <div class="searchable-select-option"
-                                                    data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                                    data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                                    <?php echo htmlspecialchars($c['client']); ?>
-                                                    <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                                    <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                                    <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </div>
-                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
-                                </div>
-                                <?php endif; ?>
-                                 <div class="form-group">
-                                <label>Customer Name</label>
-                                <input type="text" id="ext_customer_name" name="ext_customer_name" value="client" placeholder="Enter customer name">
-                            </div>
-                                <div class="form-group">
-                                    <label>Client Phone*</label>
-                                    <input type="text" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX" oninput="calcExtSplit()">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Col 3: Payment breakdown + Save -->
-                        <div id="ext_payment_section">
-                            <div class="form-group">
-                                <label>Payment Breakdown</label>
-                                <div class="split-payment-box">
-                                    <div class="split-row">
-                                        <span class="split-label">Cash</span>
-                                        <input type="text" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
-                                    </div>
-                                    <div class="split-row">
-                                        <span class="split-label">Momo</span>
-                                        <input type="text" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
-                                    </div>
-                                    <div class="split-row">
-                                        <span class="split-label">Loan</span>
-                                        <input type="text" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
-                                    </div>
-                                    <div class="split-row split-remaining-row" id="ext_remaining_row">
-                                        <span class="split-label">Remaining</span>
-                                        <span id="ext_remaining">—</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <button type="button" id="ext_submit_btn" class="btn btn-primary" disabled onclick="handleExtSubmit()"
-                                    style="background:var(--warning,#f59e0b);border-color:var(--warning,#f59e0b);width:100%;padding:12px;">
-                                Save External Sale
+                            <button type="button" class="add-item-btn" id="ext_add_cart_btn" disabled onclick="addExtToCart()">
+                                + Add to Sale
                             </button>
                         </div>
 
+                        <!-- Right: cart + payment -->
+                        <div>
+                            <div class="cart-panel">
+                                <div class="cart-header">
+                                    Items to Sell
+                                    <span id="ext_cart_badge" class="cart-badge zero">0</span>
+                                </div>
+                                <div class="cart-body" id="ext_cart_body">
+                                    <div class="cart-empty">No items yet.<br>Search and add products from the left.</div>
+                                </div>
+                                <div class="cart-foot">
+                                    <span class="cart-foot-lbl">Sale Total</span>
+                                    <span class="cart-foot-val" id="ext_cart_total">RWF 0</span>
+                                </div>
+                            </div>
+
+                            <!-- ═══════════ Payment (under the cart card) ═══════════ -->
+                            <div id="ext_step_panel_3" style="margin-top:16px;">
+                                <div class="shortcut-chips">
+                                    <label class="shortcut-chip" title="Full amount goes to loan">
+                                        <input type="checkbox" id="ext_is_loan" onchange="toggleExtShortcut('loan')" style="accent-color:var(--primary);">
+                                        Is Loan?
+                                    </label>
+                                    <label class="shortcut-chip" title="Full amount goes to cash">
+                                        <input type="checkbox" id="ext_is_cash" onchange="toggleExtShortcut('cash')" style="accent-color:#16a34a;">
+                                        Is Cash?
+                                    </label>
+                                    <label class="shortcut-chip" title="Full amount goes to momo">
+                                        <input type="checkbox" id="ext_is_momo" onchange="toggleExtShortcut('momo')" style="accent-color:#2563eb;">
+                                        Is Momo?
+                                    </label>
+                                </div>
+
+                                <div id="ext_loan_phone_warn" style="display:none;font-size:12px;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;">
+                                    &#9888; Client phone is required when part of the sale goes to loan. Add it above.
+                                </div>
+
+                                <div id="ext_payment_section">
+                                    <div class="form-group">
+                                        <label>Payment Breakdown</label>
+                                        <div class="split-payment-box">
+                                            <div class="split-row">
+                                                <span class="split-label">Cash</span>
+                                                <input type="text" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
+                                            </div>
+                                            <div class="split-row">
+                                                <span class="split-label">Momo</span>
+                                                <input type="text" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
+                                            </div>
+                                            <div class="split-row">
+                                                <span class="split-label">Loan</span>
+                                                <input type="text" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
+                                            </div>
+                                            <div class="split-row split-remaining-row" id="ext_remaining_row">
+                                                <span class="split-label">Remaining</span>
+                                                <span id="ext_remaining">—</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" id="ext_submit_btn" class="btn btn-primary" disabled onclick="handleExtSubmit()"
+                                            style="background:var(--warning,#f59e0b);border-color:var(--warning,#f59e0b);width:100%;padding:12px;">
+                                        Save Sale
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Step 2 nav -->
-                    <div class="step-nav">
-                        <button type="button" class="btn-step-back" onclick="goToExtStep1()">&#8592; Back</button>
-                    </div>
                 </div>
 
             </form>
@@ -480,10 +461,13 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
     </div>
 </div>
 
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script src="script.js"></script>
 <script>
 var extSelectedCat   = '';
 var extAllCategories = [];
+var extCart          = [];
 
 // ── External category searchable select ──────────────────────────────────────
 (function() {
@@ -543,10 +527,7 @@ var extAllCategories = [];
 })();
 
 function loadExtCategories() {
-    fetch('sale_external.php?action=get_categories')
-        .then(function(r) { return r.json(); })
-        .then(function(cats) { extAllCategories = cats; })
-        .catch(function() {});
+    DataCache.getCategories().then(function(cats) { extAllCategories = cats; });
 }
 loadExtCategories();
 
@@ -590,11 +571,20 @@ loadExtCategories();
 
     function doSearch(q) {
         showLoading();
-        var url = 'sale_external.php?action=search_products&q=' + encodeURIComponent(q);
-        if (extSelectedCat) url += '&cat=' + encodeURIComponent(extSelectedCat);
-        fetch(url)
-            .then(function(r) { return r.json(); })
-            .then(function(data) { renderOptions(data); dropdown.classList.add('open'); })
+        var term = q.toLowerCase();
+        DataCache.getProducts()
+            .then(function(list) {
+                var data = list.filter(function(p) {
+                    if (extSelectedCat && p.category !== extSelectedCat) return false;
+                    if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                    return true;
+                }).slice(0, 60).map(function(p) {
+                    return { id: p.id, name: p.name, category: p.category,
+                             bulk_price: p.bulk_price, retail_price: p.retail_price };
+                });
+                renderOptions(data);
+                dropdown.classList.add('open');
+            })
             .catch(function() {
                 dropdown.innerHTML = '<div class="searchable-select-option" style="color:var(--danger);cursor:default;">Failed to load</div>';
             });
@@ -639,7 +629,7 @@ loadExtCategories();
         if ((priceEl.value === '' || parseFloat(priceEl.value) === 0) && (bulk > 0 || retail > 0)) {
             priceEl.value = bulk > 0 ? bulk : retail;
         }
-        calcExtTotal();
+        calcExtValidity();
     }
 
     function escHtmlExt(s) {
@@ -653,17 +643,17 @@ function extSwitchToManual() {
     document.getElementById('ext_product_name').value = '';
     document.getElementById('ext_product_id').value = '0';
     document.getElementById('ext_manual_name').focus();
-    calcExtTotal();
+    calcExtValidity();
 }
 function extSwitchToPicker() {
     document.getElementById('ext_manual_mode').style.display = 'none';
     document.getElementById('ext_picker_mode').style.display = 'block';
     document.getElementById('ext_product_name').value = '';
-    calcExtTotal();
+    calcExtValidity();
 }
 function extSetManualName(val) {
     document.getElementById('ext_product_name').value = val.trim();
-    calcExtTotal();
+    calcExtValidity();
 }
 
 // --- Owner picker ---
@@ -716,12 +706,11 @@ function extSyncOwner() {
     if (search) search.value = '';
 }
 
-// --- Loan client picker ---
-(function() {
-    var wrap = document.getElementById('extClientPickerWrap');
+function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick) {
+    var wrap = document.getElementById(wrapId);
     if (!wrap) return;
-    var search   = document.getElementById('ext_client_picker_search');
-    var dropdown = document.getElementById('ext_client_picker_dropdown');
+    var search   = document.getElementById(searchId);
+    var dropdown = document.getElementById(dropdownId);
     var options  = dropdown.querySelectorAll('.searchable-select-option');
     var hi = -1;
 
@@ -735,7 +724,7 @@ function extSyncOwner() {
         else if (e.key === 'Escape') dropdown.classList.remove('open');
     });
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('#extClientPickerWrap')) dropdown.classList.remove('open');
+        if (!e.target.closest('#' + wrapId)) dropdown.classList.remove('open');
     });
     options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
@@ -748,84 +737,174 @@ function extSyncOwner() {
         if (vis[hi]) { vis[hi].classList.add('highlighted'); vis[hi].scrollIntoView({block:'nearest'}); }
     }
     function pick(opt) {
-        document.getElementById('ext_customer_name').value = opt.getAttribute('data-client');
-        var phoneEl = document.getElementById('ext_phone');
+        document.getElementById(clientInputId).value = opt.getAttribute('data-client');
+        var phoneEl = document.getElementById(phoneInputId);
         phoneEl.value = opt.getAttribute('data-phone');
-        phoneEl.dispatchEvent(new Event('input'));
         search.value = opt.getAttribute('data-client');
         dropdown.classList.remove('open'); hi = -1;
+        if (afterPick) afterPick(opt);
     }
-})();
-
-// --- Step navigation ---
-var extCoreValid = false;
-
-function goToExtStep2() {
-    if (!extCoreValid) return;
-    document.getElementById('ext_step_panel_1').style.display = 'none';
-    document.getElementById('ext_step_panel_2').style.display = 'block';
-    document.getElementById('ext_step_dot_1').classList.remove('active');
-    document.getElementById('ext_step_dot_1').classList.add('done');
-    document.getElementById('ext_step_dot_2').classList.add('active');
-    document.getElementById('ext_step_connector').classList.add('done');
-    calcExtSplit();
 }
 
-function goToExtStep1() {
-    document.getElementById('ext_step_panel_2').style.display = 'none';
-    document.getElementById('ext_step_panel_1').style.display = 'block';
-    document.getElementById('ext_step_dot_2').classList.remove('active');
-    document.getElementById('ext_step_dot_1').classList.remove('done');
-    document.getElementById('ext_step_dot_1').classList.add('active');
-    document.getElementById('ext_step_connector').classList.remove('done');
+// Shows the compact "picked client" card in place of the search/name/phone
+// fields. `prefix` matches the id prefix used by that page's client fields
+// (bulk/retail/ext).
+function showClientCard(prefix, opt) {
+    var name        = opt.getAttribute('data-client');
+    var phone       = opt.getAttribute('data-phone');
+    var visits      = parseInt(opt.getAttribute('data-visits')) || 0;
+    var outstanding = parseFloat(opt.getAttribute('data-outstanding')) || 0;
+
+    var meta = [];
+    if (phone) meta.push(phone);
+    meta.push(visits + ' visit' + (visits !== 1 ? 's' : ''));
+    if (outstanding > 0) meta.push('Owes RWF ' + outstanding.toLocaleString());
+
+    document.getElementById(prefix + '_client_card_name').textContent = name;
+    document.getElementById(prefix + '_client_card_meta').textContent = meta.join(' · ');
+    document.getElementById(prefix + '_client_card').classList.add('show');
+    document.getElementById(prefix + '_client_select_area').style.display = 'none';
+}
+
+function _escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+DataCache.getClients().then(function(list) {
+    if (!list.length) return;
+    document.getElementById('extClientPickerGroup').style.display = '';
+    document.getElementById('ext_client_picker_dropdown').innerHTML = list.map(function(c) {
+        var visits = parseInt(c.total_loans) || 0;
+        var outstanding = parseFloat(c.unpaid_amount) || 0;
+        return '<div class="searchable-select-option" data-client="' + _escH(c.name) +
+            '" data-phone="' + _escH(c.phone) + '" data-visits="' + visits + '" data-outstanding="' + outstanding + '">' + _escH(c.name) +
+            (c.phone ? ' — ' + _escH(c.phone) : '') +
+            '<small style="color:var(--secondary);"> (' + visits + ' visit' + (visits !== 1 ? 's' : '') + ')</small>' +
+            (outstanding > 0 ? '<small style="color:#dc2626;font-weight:600;"> · Owes: RWF ' + outstanding.toLocaleString() + '</small>' : '') +
+            '</div>';
+    }).join('');
+    initLoanClientPicker('extClientPickerWrap', 'ext_client_picker_search', 'ext_client_picker_dropdown', 'ext_customer_name', 'ext_phone',
+        function(opt) { showClientCard('ext', opt); });
+});
+
+
+function clearExtClient() {
+    document.getElementById('ext_customer_name').value = '';
+    document.getElementById('ext_phone').value = '';
+    document.getElementById('ext_client_card').classList.remove('show');
+    document.getElementById('ext_client_select_area').style.display = '';
+    document.getElementById('ext_client_picker_search') && (document.getElementById('ext_client_picker_search').value = '');
 }
 
 // --- Core logic ---
-function calcExtTotal() {
+function calcExtValidity() {
     var name  = document.getElementById('ext_product_name').value.trim();
     var qty   = parseInt(document.getElementById('ext_quantity').value) || 0;
     var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
-    var total = qty * price;
     var valid = name.length > 0 && qty > 0 && price > 0;
-    extCoreValid = valid;
-    document.getElementById('ext_next_btn').disabled = !valid;
+    document.getElementById('ext_add_cart_btn').disabled = !valid;
+}
 
-    if (valid) {
-        document.getElementById('ext_sum_product').textContent = name;
-        document.getElementById('ext_sum_qty').textContent = qty;
-        document.getElementById('ext_sum_price').textContent = 'RWF ' + price.toLocaleString();
-        document.getElementById('ext_sum_total').textContent = 'RWF ' + total.toLocaleString();
-        var isLoan = document.getElementById('ext_is_loan').checked;
-        var isCash = document.getElementById('ext_is_cash').checked;
-        var isMomo = document.getElementById('ext_is_momo').checked;
-        var cash = parseFloat(document.getElementById('ext_cash').value)||0;
-        var momo = parseFloat(document.getElementById('ext_momo').value)||0;
-        var loan = parseFloat(document.getElementById('ext_loan').value)||0;
-        if (isLoan) {
-            document.getElementById('ext_cash').value = 0;
-            document.getElementById('ext_momo').value = 0;
-            document.getElementById('ext_loan').value = total;
-        } else if (isCash) {
-            document.getElementById('ext_cash').value = total;
-            document.getElementById('ext_momo').value = 0;
-            document.getElementById('ext_loan').value = 0;
-        } else if (isMomo) {
-            document.getElementById('ext_cash').value = 0;
-            document.getElementById('ext_momo').value = total;
-            document.getElementById('ext_loan').value = 0;
-        } else if (cash===0 && momo===0 && loan===0) {
-            document.getElementById('ext_momo').value = total;
-        }
+function addExtToCart() {
+    var name  = document.getElementById('ext_product_name').value.trim();
+    var pid   = parseInt(document.getElementById('ext_product_id').value) || 0;
+    var qty   = parseInt(document.getElementById('ext_quantity').value) || 0;
+    var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
+    var myRev = parseFloat(document.getElementById('ext_my_revenue').value) || 0;
+    var ownerName  = document.getElementById('ext_owner_name').value.trim();
+    var ownerPhone = document.getElementById('ext_owner_phone').value.trim();
+    if (!name || qty < 1 || price < 1) return;
+
+    extCart.push({ pid: pid, name: name, qty: qty, price: price, myRevenue: myRev, ownerName: ownerName, ownerPhone: ownerPhone });
+    renderExtCart();
+    showSaleToast('"' + name + '" added to sale.', true);
+
+    // Reset picker for next product (keep owner selection — often the same supplier for multiple items)
+    document.getElementById('ext_product_search').value = '';
+    document.getElementById('ext_product_name').value = '';
+    document.getElementById('ext_product_id').value = '0';
+    document.getElementById('ext_manual_name').value = '';
+    document.getElementById('ext_quantity').value = '1';
+    document.getElementById('ext_unit_price').value = '';
+    document.getElementById('ext_my_revenue').value = '0';
+    calcExtValidity();
+}
+
+function removeExtCartItem(idx) {
+    extCart.splice(idx, 1);
+    renderExtCart();
+}
+
+function renderExtCart() {
+    var total = extCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
+    var badge = document.getElementById('ext_cart_badge');
+    badge.textContent = extCart.length;
+    badge.className   = 'cart-badge' + (extCart.length===0 ? ' zero' : '');
+    document.getElementById('ext_cart_total').textContent = 'RWF ' + Math.round(total).toLocaleString();
+
+    var body = document.getElementById('ext_cart_body');
+    if (extCart.length === 0) {
+        body.innerHTML = '<div class="cart-empty">No items yet.<br>Search and add products from the left.</div>';
     } else {
-        document.getElementById('ext_submit_btn').disabled = true;
+        body.innerHTML = extCart.map(function(item, idx){
+            var sub = item.qty * item.price;
+            var ownerTag = item.ownerName ? (' &middot; ' + escExtHtml(item.ownerName)) : '';
+            return '<div class="cart-item">' +
+                '<div class="cart-item-info">' +
+                    '<div class="cart-item-name">' + escExtHtml(item.name) + '</div>' +
+                    '<div class="cart-item-sub">' + item.qty.toLocaleString() + ' &times; RWF ' + item.price.toLocaleString() + ownerTag + '</div>' +
+                '</div>' +
+                '<div class="cart-item-right">' +
+                    '<span class="cart-item-total">RWF ' + Math.round(sub).toLocaleString() + '</span>' +
+                    '<button type="button" class="cart-rm" onclick="removeExtCartItem(' + idx + ')" title="Remove">&times;</button>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    document.getElementById('ext_items_json').value = JSON.stringify(
+        extCart.map(function(i){
+            return {
+                product_id: i.pid, product_name: i.name, quantity: i.qty, unit_price: i.price,
+                my_revenue: i.myRevenue, owner_name: i.ownerName, owner_phone: i.ownerPhone
+            };
+        })
+    );
+    updateExtPaymentDefaults();
+}
+
+function escExtHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Applies the Is Loan/Cash/Momo shortcut defaults against the current cart
+// total. Runs on every cart change (not just once on a step transition) so
+// the split stays correct as items are added or removed.
+function updateExtPaymentDefaults() {
+    var total = extCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
+
+    var isLoan = document.getElementById('ext_is_loan').checked;
+    var isCash = document.getElementById('ext_is_cash').checked;
+    var isMomo = document.getElementById('ext_is_momo').checked;
+    var cash = parseFloat(document.getElementById('ext_cash').value)||0;
+    var momo = parseFloat(document.getElementById('ext_momo').value)||0;
+    var loan = parseFloat(document.getElementById('ext_loan').value)||0;
+    if (isLoan) {
+        document.getElementById('ext_cash').value = 0;
+        document.getElementById('ext_momo').value = 0;
+        document.getElementById('ext_loan').value = total;
+    } else if (isCash) {
+        document.getElementById('ext_cash').value = total;
+        document.getElementById('ext_momo').value = 0;
+        document.getElementById('ext_loan').value = 0;
+    } else if (isMomo) {
+        document.getElementById('ext_cash').value = 0;
+        document.getElementById('ext_momo').value = total;
+        document.getElementById('ext_loan').value = 0;
+    } else if (cash===0 && momo===0 && loan===0) {
+        document.getElementById('ext_momo').value = total;
     }
     calcExtSplit();
 }
 
 function calcExtSplit(changed) {
-    var qty   = parseInt(document.getElementById('ext_quantity').value) || 0;
-    var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
-    var total = qty * price;
+    var total = extCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
     var cashEl = document.getElementById('ext_cash');
     var momoEl = document.getElementById('ext_momo');
     var loanEl = document.getElementById('ext_loan');
@@ -838,24 +917,14 @@ function calcExtSplit(changed) {
     else if (changed === 'loan') { momo = Math.max(0, total-cash-loan); momoEl.value = momo; }
 
     var remaining = Math.round(total - cash - momo - loan);
-    var splitOk   = extCoreValid && remaining === 0;
-    var remEl  = document.getElementById('ext_remaining');
-    var remRow = document.getElementById('ext_remaining_row');
-    if (!extCoreValid) {
-        remEl.textContent = '—';
-        remRow.className = 'split-row split-remaining-row';
-    } else {
-        remEl.textContent = 'RWF ' + remaining.toLocaleString();
-        remRow.className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
-    }
+    var splitOk   = remaining === 0;
+    document.getElementById('ext_remaining').textContent = 'RWF ' + remaining.toLocaleString();
+    document.getElementById('ext_remaining_row').className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
 
-    document.getElementById('ext_loan_fields').style.display = loan > 0 ? 'block' : 'none';
+    var phoneOk = loan <= 0 || document.getElementById('ext_phone').value.trim().length > 0;
+    document.getElementById('ext_loan_phone_warn').style.display = (loan > 0 && !phoneOk) ? 'block' : 'none';
 
-    var clientOk = loan <= 0 || (
-        document.getElementById('ext_customer_name').value.trim().length > 0 &&
-        document.getElementById('ext_phone').value.trim().length > 0
-    );
-    document.getElementById('ext_submit_btn').disabled = !(extCoreValid && splitOk && clientOk);
+    document.getElementById('ext_submit_btn').disabled = !(extCart.length > 0 && splitOk && phoneOk);
 }
 
 function toggleExtShortcut(type) {
@@ -863,9 +932,7 @@ function toggleExtShortcut(type) {
     if (type !== 'cash') document.getElementById('ext_is_cash').checked = false;
     if (type !== 'momo') document.getElementById('ext_is_momo').checked = false;
 
-    var qty   = parseInt(document.getElementById('ext_quantity').value)   || 0;
-    var price = parseFloat(document.getElementById('ext_unit_price').value) || 0;
-    var total = qty * price;
+    var total = extCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
     var checked = document.getElementById('ext_is_' + type).checked;
 
     if (checked) {
@@ -874,29 +941,25 @@ function toggleExtShortcut(type) {
         document.getElementById('ext_loan').value = type === 'loan' ? total : 0;
     }
     calcExtSplit();
-    if (type === 'loan' && document.getElementById('ext_is_loan').checked) {
-        var lf = document.getElementById('ext_loan_fields');
-        setTimeout(function() { lf.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
-    }
 }
 
+document.getElementById('ext_phone').addEventListener('input', function() { calcExtSplit(); });
+
 function handleExtSubmit() {
-    var name  = document.getElementById('ext_product_name').value.trim();
-    var qty   = document.getElementById('ext_quantity').value;
-    var price = parseFloat(document.getElementById('ext_unit_price').value);
-    var total = qty * price;
+    if (extCart.length === 0) return;
+    var total = extCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
     var cash  = parseFloat(document.getElementById('ext_cash').value)||0;
     var momo  = parseFloat(document.getElementById('ext_momo').value)||0;
     var loan  = parseFloat(document.getElementById('ext_loan').value)||0;
+    var customer = document.getElementById('ext_customer_name').value.trim() || 'client';
     var parts = [];
     if (cash > 0) parts.push('Cash: RWF ' + cash.toLocaleString());
     if (momo > 0) parts.push('Momo: RWF ' + momo.toLocaleString());
     if (loan > 0) parts.push('Loan: RWF ' + loan.toLocaleString() + ' (deferred)');
+    var itemLines = extCart.map(function(i){ return '- ' + i.name + ': ' + i.qty + ' @ RWF ' + i.price.toLocaleString(); }).join('\n');
     var ok = confirm(
-        'Confirm External Sale?\n\n' +
-        'Product: ' + name + '\n' +
-        'Quantity: ' + qty + '\n' +
-        'Unit Price: RWF ' + price.toLocaleString() + '\n' +
+        'Confirm External Sale for ' + customer + '?\n\n' +
+        itemLines + '\n\n' +
         'Total: RWF ' + total.toLocaleString() + '\n' +
         'Payment: ' + parts.join(' | ') + '\n\n' +
         'No stock will be deducted.'
@@ -915,14 +978,17 @@ function handleExtSubmit() {
         .then(function(res) {
             showSaleToast(res.message, res.success);
             if (res.success) {
-                location.reload();
+                // External sale doesn't touch owned stock, but may create/update
+                // a loan client — invalidate before reload.
+                DataCache.invalidate('clients').then(function() { location.reload(); });
+            } else {
+                btn.textContent = 'Save Sale';
+                btn.disabled = false;
             }
-            btn.textContent = 'Save External Sale';
-            btn.disabled = true;
         })
         .catch(function() {
             showSaleToast('Network error. Please try again.', false);
-            btn.textContent = 'Save External Sale';
+            btn.textContent = 'Save Sale';
             btn.disabled = false;
         });
 }

@@ -47,8 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
 
         if ($ok) {
             mysqli_commit($conn);
-            require_once 'stock_value.php';
-            recalcStockValue($conn, cid(), (int)$row['product_id']);
+            // require_once 'stock_value.php';
+            // recalcStockValue($conn, cid(), (int)$row['product_id']);
+            touchCacheStore($conn, 'products');
+            if ($del_client_id > 0) touchCacheStore($conn, 'clients');
+
             $_SESSION['flash_success'] = "Bulk sale deleted and stock restored.";
             logActivity($conn, (int)$_SESSION['user_id'], 'Delete Bulk Sale', "Deleted bulk sale #{$id} for " . ($row['customer_name'] ?: 'unknown'),
                 'sales_bulk', $id,
@@ -82,8 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
             mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
         mysqli_query($conn, "UPDATE sales_bulk SET quantity=$new_qty, package_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
-        require_once 'stock_value.php';
-        recalcStockValue($conn, cid(), (int)$old['product_id']);
+        // require_once 'stock_value.php';
+        // recalcStockValue($conn, cid(), (int)$old['product_id']);
+        touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Bulk sale updated.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Bulk Sale', "Edited bulk sale #{$id}",
             'sales_bulk', $id,
@@ -134,8 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale']))
 
         if ($ok) {
             mysqli_commit($conn);
-            require_once 'stock_value.php';
-            recalcStockValue($conn, cid(), (int)$row['product_id']);
+            // require_once 'stock_value.php';
+            // recalcStockValue($conn, cid(), (int)$row['product_id']);
+            touchCacheStore($conn, 'products');
+            if ($del_client_id > 0) touchCacheStore($conn, 'clients');
+
             $_SESSION['flash_success'] = "Retail sale deleted and stock restored.";
             logActivity($conn, (int)$_SESSION['user_id'], 'Delete Retail Sale', "Deleted retail sale #{$id} for " . ($row['customer_name'] ?: 'unknown'),
                 'sales_retail', $id,
@@ -169,8 +176,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
             mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
         mysqli_query($conn, "UPDATE sales_retail SET pieces_sold=$new_qty, retail_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
-        require_once 'stock_value.php';
-        recalcStockValue($conn, cid(), (int)$old['product_id']);
+        // require_once 'stock_value.php';
+        // recalcStockValue($conn, cid(), (int)$old['product_id']);
+        touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Retail sale updated.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Retail Sale', "Edited retail sale #{$id}",
             'sales_retail', $id,
@@ -226,79 +234,136 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_external_sale']))
     header("Location: sales.php?tab=external"); exit;
 }
 
-// Handle External Sale (product not from stock — tracking only)
+// Handle External Sale (product not from stock — tracking only). One client can take
+// several external items in a single sale; each row is inserted separately (loop insert)
+// but the overall payment split is attributed to the first item only — see sales.php's
+// bulk_sale handler below for the same convention.
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
-    $product_name  = mysqli_real_escape_string($conn, trim($_POST['ext_product_name'] ?? ''));
-    $ext_product_id = max(0, (int)($_POST['ext_product_id'] ?? 0));
-    $owner_name    = mysqli_real_escape_string($conn, trim($_POST['ext_owner_name'] ?? ''));
-    $owner_phone   = mysqli_real_escape_string($conn, trim($_POST['ext_owner_phone'] ?? ''));
-    $quantity      = max(1, (int)($_POST['ext_quantity'] ?? 1));
-    $unit_price    = max(0, (float)($_POST['ext_unit_price'] ?? 0));
-    $customer_name = mysqli_real_escape_string($conn, trim($_POST['ext_customer_name'] ?? ''));
+    $customer_name = trim($_POST['ext_customer_name'] ?? '');
+    if ($customer_name === '') $customer_name = 'client';
+    $customer_name = mysqli_real_escape_string($conn, $customer_name);
+    $phone         = mysqli_real_escape_string($conn, trim($_POST['ext_phone'] ?? ''));
     $cash_amount   = max(0, (float)($_POST['ext_cash_amount'] ?? 0));
     $momo_amount   = max(0, (float)($_POST['ext_momo_amount'] ?? 0));
     $loan_amount   = max(0, (float)($_POST['ext_loan_amount'] ?? 0));
-    $my_revenue    = max(0, (float)($_POST['ext_my_revenue'] ?? 0));
-    $phone         = mysqli_real_escape_string($conn, trim($_POST['ext_phone'] ?? ''));
-    $total_amount  = $quantity * $unit_price;
 
-    if (empty($product_name))
-        saleResp(false, "Product name is required for external sale.", 'external');
-    if ($unit_price < 1)
-        saleResp(false, "Unit price must be greater than 0.", 'external');
+    $items = json_decode($_POST['items_json'] ?? '[]', true) ?: [];
+    $cart  = [];
+    foreach ($items as $it) {
+        $pname = trim((string)($it['product_name'] ?? ''));
+        $qty   = (int)($it['quantity'] ?? 0);
+        $price = (float)($it['unit_price'] ?? 0);
+        if ($pname !== '' && $qty > 0 && $price > 0) {
+            $cart[] = [
+                'product_id'   => max(0, (int)($it['product_id'] ?? 0)),
+                'product_name' => $pname,
+                'quantity'     => $qty,
+                'unit_price'   => $price,
+                'my_revenue'   => max(0, (float)($it['my_revenue'] ?? 0)),
+                'owner_name'   => trim((string)($it['owner_name'] ?? '')),
+                'owner_phone'  => trim((string)($it['owner_phone'] ?? '')),
+            ];
+        }
+    }
+    if (empty($cart)) saleResp(false, "Add at least one product to the sale.", 'external');
+
+    $total_amount = 0.0;
+    foreach ($cart as $it) $total_amount += $it['quantity'] * $it['unit_price'];
+    $total_amount = round($total_amount, 2);
+
     if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1)
         saleResp(false, "Payment split must equal total (RWF " . number_format($total_amount, 0) . ").", 'external');
-    if ($loan_amount > 0 && empty($customer_name))
-        saleResp(false, "Client name is required when loan amount is set.", 'external');
     if ($loan_amount > 0 && empty($phone))
         saleResp(false, "Client phone is required when loan amount is set.", 'external');
 
-    // Resolve owner — SELECT outside transaction (read-only)
-    $owner_id_val = 'NULL';
-    $need_new_owner = false;
-    $op = $owner_phone !== '' ? "'$owner_phone'" : 'NULL';
-    if ($owner_name !== '') {
-        $existing = mysqli_fetch_assoc(mysqli_query($conn,
-            "SELECT id FROM product_owners WHERE name='$owner_name' AND (phone='$owner_phone' OR (phone IS NULL AND '$owner_phone'=''))"
-        ));
-        if ($existing) { $owner_id_val = (int)$existing['id']; }
-        else            { $need_new_owner = true; }
-    }
+    $sold_by   = (int)$_SESSION['user_id'];
+    $loan_date = date('Y-m-d');
+    $ph_lc_ext = $phone !== '' ? "'$phone'" : 'NULL';
 
-    $sold_by         = (int)$_SESSION['user_id'];
-    $loan_date       = date('Y-m-d');
-    $loan_product_id = $ext_product_id > 0 ? $ext_product_id : 'NULL';
-    $ph_lc_ext       = $phone !== '' ? "'$phone'" : 'NULL';
+    // The loan record must reflect everything the client took, not just the first cart
+    // item — so when there's more than one product, point it at no single product_id and
+    // describe the whole cart in product_name instead.
+    $loan_product_id_sql = 'NULL';
+    $loan_product_name   = '';
+    $loan_cart_sql       = 'NULL';
+    $loan_qty            = array_sum(array_column($cart, 'quantity'));
+    if (count($cart) === 1 && $cart[0]['product_id'] > 0) {
+        $loan_product_id_sql = $cart[0]['product_id'];
+    }
+    if ($loan_amount > 0) {
+        $loan_names = [];
+        $loan_cart_items = [];
+        foreach ($cart as $it) {
+            $loan_names[] = $it['product_name'] . " ({$it['quantity']})";
+            $loan_cart_items[] = [
+                'product_id' => $it['product_id'], 'name' => $it['product_name'],
+                'quantity' => $it['quantity'], 'price' => $it['unit_price'],
+                'item_total' => round($it['quantity'] * $it['unit_price'], 2),
+            ];
+        }
+        $loan_product_name = mysqli_real_escape_string($conn, implode(', ', $loan_names));
+        $loan_cart_sql = "'" . mysqli_real_escape_string($conn, json_encode($loan_cart_items)) . "'";
+    }
 
     mysqli_begin_transaction($conn);
     $ok = true;
 
-    if ($need_new_owner) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO product_owners (company_id, name, phone) VALUES ($cid_sql, '$owner_name', $op)");
-        if ($ok) $owner_id_val = (int)mysqli_insert_id($conn);
-    }
+    foreach ($cart as $i => $it) {
+        $product_name    = mysqli_real_escape_string($conn, $it['product_name']);
+        $ext_product_id  = $it['product_id'];
+        $quantity        = $it['quantity'];
+        $unit_price      = $it['unit_price'];
+        $my_revenue      = $it['my_revenue'];
+        $item_total      = round($quantity * $unit_price, 2);
+        $owner_name      = mysqli_real_escape_string($conn, $it['owner_name']);
+        $owner_phone     = mysqli_real_escape_string($conn, $it['owner_phone']);
+        $row_cash        = $i === 0 ? $cash_amount : 0;
+        $row_momo        = $i === 0 ? $momo_amount : 0;
+        $row_loan        = $i === 0 ? $loan_amount : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
-                   VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $total_amount, $cash_amount, $momo_amount, $loan_amount, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by)");
-    $ext_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        // Resolve owner for this item
+        $owner_id_val   = 'NULL';
+        $need_new_owner = false;
+        $op = $owner_phone !== '' ? "'$owner_phone'" : 'NULL';
+        if ($owner_name !== '') {
+            $existing = mysqli_fetch_assoc(mysqli_query($conn,
+                "SELECT id FROM product_owners WHERE name='$owner_name' AND (phone='$owner_phone' OR (phone IS NULL AND '$owner_phone'=''))"
+            ));
+            if ($existing) { $owner_id_val = (int)$existing['id']; }
+            else            { $need_new_owner = true; }
+        }
+        if ($need_new_owner) {
+            $ok = (bool)mysqli_query($conn, "INSERT INTO product_owners (company_id, name, phone) VALUES ($cid_sql, '$owner_name', $op)");
+            if ($ok) $owner_id_val = (int)mysqli_insert_id($conn);
+        }
+        if (!$ok) break;
 
-    if ($ok && $loan_amount > 0) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($cid_sql, $loan_product_id, '$product_name', $quantity, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
-        $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-        if ($ok) $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
-            ON DUPLICATE KEY UPDATE
-                id            = LAST_INSERT_ID(id),
-                total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
-        ");
-        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-        if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
-    }
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
+                       VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $item_total, $row_cash, $row_momo, $row_loan, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by)");
+        if (!$ok) break;
+        $ext_sale_id = (int)mysqli_insert_id($conn);
 
-    if ($ok) {
-        mysqli_commit($conn);
+        if ($i === 0 && $loan_amount > 0) {
+            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($cid_sql, $loan_product_id_sql, '$loan_product_name', $loan_cart_sql, $loan_qty, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
+            if ($ok) {
+                $new_loan_id = (int)mysqli_insert_id($conn);
+                $ok = (bool)mysqli_query($conn, "
+                    INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+                    VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
+                    ON DUPLICATE KEY UPDATE
+                        id            = LAST_INSERT_ID(id),
+                        total_loans   = total_loans   + 1,
+                        unpaid_amount = unpaid_amount + $loan_amount
+                ");
+                $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+                if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+           $amount_paid=$cash_amount+$momo_amount;
+             if($amount_paid>0){
+         mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payments On LoanId# $new_loan_id')");
+             }
+                }
+            if (!$ok) break;
+        }
 
         // Auto-add to wishlist — increment client_count if already pending, else insert
         $wl = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM wishlist WHERE product_name='$product_name' AND status='pending' LIMIT 1"));
@@ -307,12 +372,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         } else {
             mysqli_query($conn, "INSERT INTO wishlist (product_name, client_count) VALUES ('$product_name', 1)");
         }
+    }
 
+    if ($ok) {
+        mysqli_commit($conn);
+        if ($loan_amount > 0) touchCacheStore($conn, 'clients');
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
-        saleResp(true, "External sale recorded — " . implode(", ", $parts), 'external');
+        $n = count($cart);
+        saleResp(true, "External sale recorded ($n item" . ($n > 1 ? 's' : '') . ") — " . implode(", ", $parts), 'external');
     } else {
         mysqli_rollback($conn);
         saleResp(false, "Sale could not be recorded. Please try again.", 'external');
@@ -333,136 +403,289 @@ function saleResp(bool $ok, string $msg, string $tab = '') {
     exit;
 }
 
-// Handle Bulk Sale (with split payment: Cash + Momo + Loan)
+// Handle Bulk Sale — one client can take several products in a single sale. Each cart
+// item is inserted as its own sales_bulk row (loop insert), but the overall payment
+// split (cash/momo/loan) is attributed to the first item's row only; other rows carry
+// zero payment amounts so per-row totals stay correct while SUM(cash/momo/loan) across
+// the whole sale still equals what was actually collected.
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
-    $product_id    = (int)$_POST['product_id'];
-    $quantity      = (int)$_POST['quantity'];
-    $selling_price = (float)$_POST['selling_price'];
-    $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
+    $customer_name = trim($_POST['customer_name'] ?? '');
+    if ($customer_name === '') $customer_name = 'client';
+    $customer_name = mysqli_real_escape_string($conn, $customer_name);
+    $phone         = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
     $cash_amount   = max(0, (float)($_POST['cash_amount'] ?? 0));
     $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
     $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
-    $phone         = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
-    $level_divisor = max(1, (int)($_POST['level_divisor'] ?? 1));
-    $total_amount  = $quantity * $selling_price;
-    // Convert sold quantity to top-level packages for stock deduction
-    $packages_to_deduct = (int)ceil($quantity / $level_divisor);
+
+    $items = json_decode($_POST['items_json'] ?? '[]', true) ?: [];
+    $cart  = [];
+    foreach ($items as $it) {
+        $pid   = (int)($it['product_id'] ?? 0);
+        $qty   = (int)($it['quantity'] ?? 0);
+        $price = (float)($it['selling_price'] ?? 0);
+        if ($pid > 0 && $qty > 0 && $price > 0) {
+            $cart[] = ['product_id' => $pid, 'quantity' => $qty, 'selling_price' => $price, 'level_divisor' => max(1, (int)($it['level_divisor'] ?? 1))];
+        }
+    }
+    if (empty($cart)) saleResp(false, "Add at least one product to the sale.", 'bulk');
+
+    $total_amount = 0.0;
+    foreach ($cart as $it) $total_amount += $it['quantity'] * $it['selling_price'];
+    $total_amount = round($total_amount, 2);
 
     if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1)
         saleResp(false, "Payment split must equal total (RWF " . number_format($total_amount, 0) . ").", 'bulk');
-    if ($loan_amount > 0 && empty($customer_name))
-        saleResp(false, "Client name is required when loan amount is set.", 'bulk');
     if ($loan_amount > 0 && empty($phone))
         saleResp(false, "Client phone is required when loan amount is set.", 'bulk');
-    $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id $cid_and"));
-    if (!$stock || $stock['quantity'] < $packages_to_deduct)
-        saleResp(false, "Insufficient stock available.", 'bulk');
-    $sold_by       = (int)$_SESSION['user_id'];
-    $has_loan_flag = $loan_amount > 0 ? 1 : 0;
-    $loan_date     = date('Y-m-d');
-    $ph_lc         = $phone !== '' ? "'$phone'" : 'NULL';
+
+    // Aggregate packages needed per product (a product may appear at more than one level)
+    $needed_pkgs = [];
+    foreach ($cart as $it) {
+        $needed_pkgs[$it['product_id']] = ($needed_pkgs[$it['product_id']] ?? 0) + (int)ceil($it['quantity'] / $it['level_divisor']);
+    }
+    foreach ($needed_pkgs as $pid => $needed) {
+        $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $pid $cid_and"));
+        if (!$stock || $stock['quantity'] < $needed)
+            saleResp(false, "Insufficient stock available for one of the selected products.", 'bulk');
+    }
+
+    $sold_by   = (int)$_SESSION['user_id'];
+    $loan_date = date('Y-m-d');
+    $ph_lc     = $phone !== '' ? "'$phone'" : 'NULL';
+
+    // The loan record must reflect everything the client took, not just the first cart
+    // item — so when there's more than one product, point it at no single product_id,
+    // describe the whole cart in product_name, and store the itemized list in `cart`
+    // (same fallback loans.php already uses for external sales, plus structured detail).
+    $loan_product_names = [];
+    $loan_cart_sql = 'NULL';
+    if ($loan_amount > 0) {
+        $cart_pids = array_unique(array_column($cart, 'product_id'));
+        $names_by_id = [];
+        $pids_sql = implode(',', array_map('intval', $cart_pids));
+        $nres = mysqli_query($conn, "SELECT id, name FROM products WHERE id IN ($pids_sql)");
+        while ($nr = mysqli_fetch_assoc($nres)) $names_by_id[$nr['id']] = $nr['name'];
+        $loan_cart_items = [];
+        foreach ($cart as $it) {
+            $pname = $names_by_id[$it['product_id']] ?? ('#' . $it['product_id']);
+            $loan_product_names[] = "$pname ({$it['quantity']})";
+            $loan_cart_items[] = [
+                'product_id' => $it['product_id'], 'name' => $pname,
+                'quantity' => $it['quantity'], 'price' => $it['selling_price'],
+                'item_total' => round($it['quantity'] * $it['selling_price'], 2),
+            ];
+        }
+        $loan_cart_sql = "'" . mysqli_real_escape_string($conn, json_encode($loan_cart_items)) . "'";
+    }
+    $loan_product_id_sql = count($cart) === 1 ? $cart[0]['product_id'] : 'NULL';
+    $loan_qty            = array_sum(array_column($cart, 'quantity'));
+    $loan_product_name   = mysqli_real_escape_string($conn, implode(', ', $loan_product_names));
 
     mysqli_begin_transaction($conn);
     $ok = true;
+    $touched_products = [];
 
-    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                   VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
-    $bulk_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+    foreach ($cart as $i => $it) {
+        $product_id    = $it['product_id'];
+        $quantity      = $it['quantity'];
+        $selling_price = $it['selling_price'];
+        $level_divisor = $it['level_divisor'];
+        $item_total    = round($quantity * $selling_price, 2);
+        $packages_to_deduct = (int)ceil($quantity / $level_divisor);
+        $row_cash = $i === 0 ? $cash_amount : 0;
+        $row_momo = $i === 0 ? $momo_amount : 0;
+        $row_loan = $i === 0 ? $loan_amount : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_deduct WHERE product_id = $product_id $cid_and");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
+        if (!$ok) break;
+        $bulk_sale_id = (int)mysqli_insert_id($conn);
+        $touched_products[$product_id] = true;
 
-    if ($ok && $loan_amount > 0) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ($cid_sql, '$product_id','$quantity','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$bulk_sale_id)");
-        $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-        if ($ok) $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
-            ON DUPLICATE KEY UPDATE
-                id            = LAST_INSERT_ID(id),
-                total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
-        ");
-        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-        if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+        $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_deduct WHERE product_id = $product_id $cid_and");
+        if (!$ok) break;
+
+        if ($i === 0 && $loan_amount > 0) {
+            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ($cid_sql, $loan_product_id_sql, '$loan_product_name', $loan_cart_sql, $loan_qty, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $bulk_sale_id)");
+            if ($ok) {
+                $new_loan_id = (int)mysqli_insert_id($conn);
+                $ok = (bool)mysqli_query($conn, "
+                    INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+                    VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+                    ON DUPLICATE KEY UPDATE
+                        id            = LAST_INSERT_ID(id),
+                        total_loans   = total_loans   + 1,
+                        unpaid_amount = unpaid_amount + $loan_amount
+                ");
+                $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+                if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+             $amount_paid=$cash_amount+$momo_amount;
+             if($amount_paid>0){
+                mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payments On LoanId# $new_loan_id')");
+            //  mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by,note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by,'Partial payments On LoanId#'.$new_loan_id)");
+             }
+                }
+            if (!$ok) break;
+        }
     }
 
     if ($ok) {
         mysqli_commit($conn);
-        require_once 'stock_value.php';
-        recalcStockValue($conn, cid(), $product_id);
+      //  require_once 'stock_value.php';
+        // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
+        touchCacheStore($conn, 'products');
+        if ($loan_amount > 0) touchCacheStore($conn, 'clients');
+
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
-        saleResp(true, "Bulk sale recorded — " . implode(", ", $parts), 'bulk');
+        $n = count($cart);
+        saleResp(true, "Bulk sale recorded ($n item" . ($n > 1 ? 's' : '') . ") — " . implode(", ", $parts), 'bulk');
     } else {
         mysqli_rollback($conn);
         saleResp(false, "Sale could not be recorded. Please try again.", 'bulk');
     }
 }
 
-// Handle Retail Sale (with split payment: Cash + Momo + Loan)
+// Handle Retail Sale — one client can take several products in a single sale. Each cart
+// item becomes its own sales_retail row (loop insert); the overall payment split is
+// attributed to the first item's row only, matching the bulk_sale handler's convention.
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
-    $product_id       = (int)$_POST['product_id'];
-    $qty_sold         = max(1, (int)$_POST['pieces_sold']);  // user-entered qty in selected level units
-    $selling_price    = (float)$_POST['selling_price'];
-    $customer_name    = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
-    $cash_amount      = max(0, (float)($_POST['cash_amount'] ?? 0));
-    $momo_amount      = max(0, (float)($_POST['momo_amount'] ?? 0));
-    $loan_amount      = max(0, (float)($_POST['loan_amount'] ?? 0));
-    $phone            = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
-    $level_multiplier = max(1, (int)($_POST['level_multiplier'] ?? 1));
-    $pieces_to_deduct = $qty_sold * $level_multiplier;   // actual pieces removed from retail_stock
-    $total_amount     = $qty_sold * $selling_price;
+    $customer_name = trim($_POST['customer_name'] ?? '');
+    if ($customer_name === '') $customer_name = 'client';
+    $customer_name = mysqli_real_escape_string($conn, $customer_name);
+    $phone         = mysqli_real_escape_string($conn, trim($_POST['phone'] ?? ''));
+    $cash_amount   = max(0, (float)($_POST['cash_amount'] ?? 0));
+    $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
+    $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
+
+    $items = json_decode($_POST['items_json'] ?? '[]', true) ?: [];
+    $cart  = [];
+    foreach ($items as $it) {
+        $pid   = (int)($it['product_id'] ?? 0);
+        $qty   = (int)($it['pieces_sold'] ?? 0);
+        $price = (float)($it['selling_price'] ?? 0);
+        if ($pid > 0 && $qty > 0 && $price > 0) {
+            $cart[] = ['product_id' => $pid, 'qty_sold' => $qty, 'selling_price' => $price, 'level_multiplier' => max(1, (int)($it['level_multiplier'] ?? 1))];
+        }
+    }
+    if (empty($cart)) saleResp(false, "Add at least one product to the sale.", 'retail');
+
+    $total_amount = 0.0;
+    foreach ($cart as $it) $total_amount += $it['qty_sold'] * $it['selling_price'];
+    $total_amount = round($total_amount, 2);
 
     if (abs($cash_amount + $momo_amount + $loan_amount - $total_amount) > 1)
         saleResp(false, "Payment split must equal total (RWF " . number_format($total_amount, 0) . ").", 'retail');
-    if ($loan_amount > 0 && empty($customer_name))
-        saleResp(false, "Client name is required when loan amount is set.", 'retail');
     if ($loan_amount > 0 && empty($phone))
         saleResp(false, "Client phone is required when loan amount is set.", 'retail');
-    $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $product_id $cid_and"));
-    if (!$retail || $retail['pieces_quantity'] < $pieces_to_deduct)
-        saleResp(false, "Insufficient retail stock available.", 'retail');
-    $sold_by       = (int)$_SESSION['user_id'];
-    $has_loan_flag = $loan_amount > 0 ? 1 : 0;
-    $loan_date     = date('Y-m-d');
-    $ph_lc         = $phone !== '' ? "'$phone'" : 'NULL';
+
+    // Aggregate pieces needed per product (a product may appear at more than one level)
+    $needed_pieces = [];
+    foreach ($cart as $it) {
+        $needed_pieces[$it['product_id']] = ($needed_pieces[$it['product_id']] ?? 0) + $it['qty_sold'] * $it['level_multiplier'];
+    }
+    foreach ($needed_pieces as $pid => $needed) {
+        $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $pid $cid_and"));
+        if (!$retail || $retail['pieces_quantity'] < $needed)
+            saleResp(false, "Insufficient retail stock available for one of the selected products.", 'retail');
+    }
+
+    $sold_by   = (int)$_SESSION['user_id'];
+    $loan_date = date('Y-m-d');
+    $ph_lc     = $phone !== '' ? "'$phone'" : 'NULL';
+
+    // The loan record must reflect everything the client took, not just the first cart
+    // item — so when there's more than one product, point it at no single product_id and
+    // describe the whole cart in product_name instead (same fallback loans.php already
+    // uses for external sales).
+    $loan_product_names = [];
+    $loan_cart_sql = 'NULL';
+    if ($loan_amount > 0) {
+        $cart_pids = array_unique(array_column($cart, 'product_id'));
+        $names_by_id = [];
+        $pids_sql = implode(',', array_map('intval', $cart_pids));
+        $nres = mysqli_query($conn, "SELECT id, name FROM products WHERE id IN ($pids_sql)");
+        while ($nr = mysqli_fetch_assoc($nres)) $names_by_id[$nr['id']] = $nr['name'];
+        $loan_cart_items = [];
+        foreach ($cart as $it) {
+            $pname = $names_by_id[$it['product_id']] ?? ('#' . $it['product_id']);
+            $loan_product_names[] = "$pname ({$it['qty_sold']})";
+            $loan_cart_items[] = [
+                'product_id' => $it['product_id'], 'name' => $pname,
+                'quantity' => $it['qty_sold'], 'price' => $it['selling_price'],
+                'item_total' => round($it['qty_sold'] * $it['selling_price'], 2),
+            ];
+        }
+        $loan_cart_sql = "'" . mysqli_real_escape_string($conn, json_encode($loan_cart_items)) . "'";
+    }
+    $loan_product_id_sql = count($cart) === 1 ? $cart[0]['product_id'] : 'NULL';
+    $loan_qty            = array_sum(array_column($cart, 'qty_sold'));
+    $loan_product_name   = mysqli_real_escape_string($conn, implode(', ', $loan_product_names));
 
     mysqli_begin_transaction($conn);
     $ok = true;
+    $touched_products = [];
 
-    // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
-    $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                   VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $total_amount, CURDATE(), '$customer_name', $cash_amount, $momo_amount, $loan_amount, $has_loan_flag, $loan_amount, $sold_by)");
-    $retail_sale_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+    foreach ($cart as $i => $it) {
+        $product_id       = $it['product_id'];
+        $qty_sold         = $it['qty_sold'];
+        $selling_price    = $it['selling_price'];
+        $level_multiplier = $it['level_multiplier'];
+        $pieces_to_deduct = $qty_sold * $level_multiplier;   // actual pieces removed from retail_stock
+        $item_total       = round($qty_sold * $selling_price, 2);
+        $row_cash = $i === 0 ? $cash_amount : 0;
+        $row_momo = $i === 0 ? $momo_amount : 0;
+        $row_loan = $i === 0 ? $loan_amount : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_to_deduct WHERE product_id = $product_id $cid_and");
+        // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
+        if (!$ok) break;
+        $retail_sale_id = (int)mysqli_insert_id($conn);
+        $touched_products[$product_id] = true;
 
-    if ($ok && $loan_amount > 0) {
-        $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ($cid_sql, '$product_id','$pieces_to_deduct','$loan_amount','$customer_name','$phone','$loan_date',$sold_by,$retail_sale_id)");
-        $new_loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-        if ($ok) $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
-            ON DUPLICATE KEY UPDATE
-                id            = LAST_INSERT_ID(id),
-                total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
-        ");
-        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-        if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+        $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_to_deduct WHERE product_id = $product_id $cid_and");
+        if (!$ok) break;
+
+        if ($i === 0 && $loan_amount > 0) {
+            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ($cid_sql, $loan_product_id_sql, '$loan_product_name', $loan_cart_sql, $loan_qty, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $retail_sale_id)");
+            if ($ok) {
+                $new_loan_id = (int)mysqli_insert_id($conn);
+                $ok = (bool)mysqli_query($conn, "
+                    INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+                    VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+                    ON DUPLICATE KEY UPDATE
+                        id            = LAST_INSERT_ID(id),
+                        total_loans   = total_loans   + 1,
+                        unpaid_amount = unpaid_amount + $loan_amount
+                ");
+                $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+                if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
+            $amount_paid=$cash_amount+$momo_amount;
+             if($amount_paid>0){
+                mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payments On LoanId# $new_loan_id')");
+            //  mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by,note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by,'Partial payments On LoanId#'.$new_loan_id)");
+             }
+                }
+            if (!$ok) break;
+        }
     }
 
     if ($ok) {
         mysqli_commit($conn);
-        require_once 'stock_value.php';
-        recalcStockValue($conn, cid(), $product_id);
+        // require_once 'stock_value.php';
+        // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
+        touchCacheStore($conn, 'products');
+        if ($loan_amount > 0) touchCacheStore($conn, 'clients');
+
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
         if ($momo_amount > 0) $parts[] = "Momo: RWF " . number_format($momo_amount, 0);
         if ($loan_amount > 0) $parts[] = "Loan: RWF " . number_format($loan_amount, 0);
-        saleResp(true, "Retail sale recorded — " . implode(", ", $parts), 'retail');
+        $n = count($cart);
+        saleResp(true, "Retail sale recorded ($n item" . ($n > 1 ? 's' : '') . ") — " . implode(", ", $parts), 'retail');
     } else {
         mysqli_rollback($conn);
         saleResp(false, "Sale could not be recorded. Please try again.", 'retail');
@@ -626,21 +849,9 @@ if (isset($_SESSION['flash_error'])) {
 $last_sale_type = $_SESSION['flash_sale_type'] ?? null;
 unset($_SESSION['flash_sale_type']);
 
-// Get products for bulk sale
-$bulk_products = mysqli_query($conn, "
-    SELECT s.*, p.name, p.unit_measure ,p.category
-    FROM stock s
-    JOIN products p ON s.product_id = p.id
-    WHERE s.quantity > 0 " . cidAndFor('s') . "
-");
-
-// Get products for retail sale
-$retail_products = mysqli_query($conn, "
-    SELECT r.*, p.name, p.unit_measure,p.category
-    FROM retail_stock r
-    JOIN products p ON r.product_id = p.id
-    WHERE r.pieces_quantity > 0 " . cidAndFor('r') . "
-");
+// Bulk/retail/external product pickers and loan-client pickers below are no
+// longer queried here — they're loaded client-side from DataCache
+// (js/data-cache.js), which is shared across every page in the app.
 
 $highlight_sale_id  = (int)($_GET['highlight'] ?? 0);
 $highlight_sale_tab = in_array($_GET['tab'] ?? '', ['bulk','retail','external']) ? $_GET['tab'] : '';
@@ -721,27 +932,6 @@ if ($highlight_sale_id > 0 && $highlight_sale_tab !== '') {
         ORDER BY se.created_at DESC
     ");
 }
-
-// All products for external sale picker (with price hints)
-$all_products_query = mysqli_query($conn, "
-    SELECT p.id, p.name, p.category, p.unit_measure,
-           COALESCE(s.package_price, 0) as bulk_price,
-           COALESCE(r.retail_price, 0)  as retail_price
-    FROM products p
-    LEFT JOIN stock s        ON s.product_id = p.id " . cidAndFor('s') . "
-    LEFT JOIN retail_stock r ON r.product_id = p.id " . cidAndFor('r') . "
-    ORDER BY p.category, p.name
-");
-$all_products_arr = [];
-while ($ap = mysqli_fetch_assoc($all_products_query)) $all_products_arr[] = $ap;
-
-// Existing loan clients for picker
-$loan_clients_query = mysqli_query($conn, "
-    SELECT name AS client, phone, total_loans AS visits, unpaid_amount AS outstanding
-    FROM loan_clients WHERE 1=1 $cid_and ORDER BY updated_at DESC
-");
-$loan_clients_arr = [];
-while ($c = mysqli_fetch_assoc($loan_clients_query)) $loan_clients_arr[] = $c;
 
 // Product owners for picker
 $ext_owners_query = mysqli_query($conn, "
@@ -1266,452 +1456,6 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         </div>
     </div>
 
-    <!-- Bulk Sale Modal -->
-    <div id="bulkSaleModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('bulkSaleModal')">&times;</span>
-            <h2>New Bulk Sale (Full Package)</h2>
-            <form method="POST" action="" id="bulkSaleForm">
-                <div class="form-group">
-                    <label for="bulk_product_id">Select Product*</label>
-                    <select id="bulk_product_id" name="product_id" required onchange="updateBulkProductDetails()" style="display:none">
-                        <option value="">Choose product...</option>
-                        <?php
-                        mysqli_data_seek($bulk_products, 0);
-                        while($row = mysqli_fetch_assoc($bulk_products)):
-                        ?>
-                            <option value="<?php echo $row['product_id']; ?>"
-                                    data-price="<?php echo $row['package_price']; ?>"
-                                    data-stock="<?php echo $row['quantity']; ?>"
-                                    data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                    data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                <?php echo htmlspecialchars($row['category']).'- '.  htmlspecialchars($row['name']); ?>
-                            </option>
-                        <?php endwhile; ?>
-                    </select>
-                    <div class="searchable-select" id="bulkProductSearchable">
-                        <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="bulk_product_dropdown">
-                            <?php
-                            mysqli_data_seek($bulk_products, 0);
-                            while($row = mysqli_fetch_assoc($bulk_products)):
-                            ?>
-                                <div class="searchable-select-option"
-                                     data-value="<?php echo $row['product_id']; ?>"
-                                     data-price="<?php echo $row['package_price']; ?>"
-                                     data-stock="<?php echo $row['quantity']; ?>"
-                                     data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                     data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                    <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                </div>
-                            <?php endwhile; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="bulk_product_details" class="price-history" style="display: none;">
-                    <strong>Product Info:</strong>
-                    <span id="bulk_product_info"></span>
-                </div>
-
-                <!-- Level selector -->
-                <div id="bulk_level_selector" style="display:none;margin-bottom:16px;">
-                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
-                    <div id="bulk_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="bulk_quantity" id="bulk_qty_label">Quantity (Packages)*</label>
-                    <input type="text" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
-                    <small id="bulk_stock_info" class="field-hint"></small>
-                    <small id="bulk_qty_error" class="field-error"></small>
-                </div>
-
-                <div class="form-group">
-                    <label for="bulk_selling_price">Selling Price (per package)*</label>
-                    <div class="price-input-group">
-                        <input type="text" id="bulk_selling_price" name="selling_price"
-                               step="1" required min="1"
-                               oninput="calculateBulkTotal()">
-                        <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
-                    </div>
-                    <div id="bulk_price_warning" class="price-warning"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="bulk_customer">Customer Name</label>
-                    <input type="text" id="bulk_customer" name="customer_name" value="client"
-                           placeholder="Enter customer name">
-                </div>
-
-                <div id="bulk_payment_section" style="display:none;">
-                    <div class="form-group">
-                        <label>Payment Breakdown</label>
-                        <div class="split-payment-box">
-                            <div class="split-row">
-                                <span class="split-label">Cash</span>
-                                <input type="text" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
-                            </div>
-                            <div class="split-row">
-                                <span class="split-label">Momo</span>
-                                <input type="text" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
-                            </div>
-                            <div class="split-row">
-                                <span class="split-label">Loan</span>
-                                <input type="text" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
-                            </div>
-                            <div class="split-row split-remaining-row" id="bulk_remaining_row">
-                                <span class="split-label">Remaining</span>
-                                <span id="bulk_remaining">—</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="bulk_loan_fields" style="display:none;">
-                        <?php if ($loan_clients_arr): ?>
-                        <div class="form-group">
-                            <label>Existing Client</label>
-                            <div class="searchable-select" id="bulkClientPickerWrap">
-                                <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
-                                    placeholder="Search registered client..." autocomplete="off">
-                                <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown">
-                                    <?php foreach ($loan_clients_arr as $c): ?>
-                                        <div class="searchable-select-option"
-                                            data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                            data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                            <?php echo htmlspecialchars($c['client']); ?>
-                                            <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                            <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                            <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
-                        </div>
-                        <?php endif; ?>
-                        <div class="form-group">
-                            <label for="bulk_phone">Client Phone*</label>
-                            <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcBulkSplit()">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="sale-summary" id="bulk_summary" style="display:none;">
-                    <div class="summary-row"><span>Product</span><strong id="bulk_sum_product"></strong></div>
-                    <div class="summary-row"><span>Packages</span><strong id="bulk_sum_qty"></strong></div>
-                    <div class="summary-row"><span>Price/Package</span><strong id="bulk_sum_price"></strong></div>
-                    <div class="summary-row summary-total"><span>Total Amount</span><strong id="bulk_sum_total"></strong></div>
-                </div>
-
-                <input type="hidden" id="bulk_level_divisor" name="level_divisor" value="1">
-                <button type="button" name="bulk_sale" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()">Save Bulk Sale</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Retail Sale Modal -->
-    <div id="retailSaleModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('retailSaleModal')">&times;</span>
-            <h2>New Retail Sale (Piece by Piece)</h2>
-            <form method="POST" action="" id="retailSaleForm">
-                <div class="form-group">
-                    <label for="retail_product_id">Select Product*</label>
-                    <select id="retail_product_id" name="product_id" required onchange="updateRetailProductDetails()" style="display:none">
-                        <option value="">Choose product...</option>
-                        <?php
-                        mysqli_data_seek($retail_products, 0);
-                        while($row = mysqli_fetch_assoc($retail_products)):
-                        ?>
-                            <option value="<?php echo $row['product_id']; ?>"
-                                    data-price="<?php echo $row['retail_price']; ?>"
-                                    data-stock="<?php echo $row['pieces_quantity']; ?>"
-                                    data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                    data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                            </option>
-                        <?php endwhile; ?>
-                    </select>
-                    <div class="searchable-select" id="retailProductSearchable">
-                        <input type="text" class="searchable-select-input" id="retail_product_search" placeholder="Search product..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="retail_product_dropdown">
-                            <?php
-                            mysqli_data_seek($retail_products, 0);
-                            while($row = mysqli_fetch_assoc($retail_products)):
-                            ?>
-                                <div class="searchable-select-option"
-                                     data-value="<?php echo $row['product_id']; ?>"
-                                     data-price="<?php echo $row['retail_price']; ?>"
-                                     data-stock="<?php echo $row['pieces_quantity']; ?>"
-                                     data-product-name="<?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>"
-                                     data-unit="<?php echo htmlspecialchars($row['unit_measure']); ?>">
-                                    <?php echo htmlspecialchars($row['category'].'-'.$row['name']); ?>
-                                </div>
-                            <?php endwhile; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="retail_product_details" class="price-history" style="display: none;">
-                    <strong>Product Info:</strong>
-                    <span id="retail_product_info"></span>
-                </div>
-
-                <!-- Level selector -->
-                <div id="retail_level_selector" style="display:none;margin-bottom:16px;">
-                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px;">Select Selling Level</label>
-                    <div id="retail_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="pieces_sold" id="retail_qty_label">Number of Pieces*</label>
-                    <input type="text" id="pieces_sold" name="pieces_sold" required min="1" oninput="calculateRetailTotal()">
-                    <small id="retail_stock_info" class="field-hint"></small>
-                    <small id="retail_qty_error" class="field-error"></small>
-                </div>
-
-                <div class="form-group">
-                    <label for="retail_selling_price">Selling Price (per piece)*</label>
-                    <div class="price-input-group">
-                        <input type="text" id="retail_selling_price" name="selling_price"
-                               step="1" required min="1"
-                               oninput="calculateRetailTotal()">
-                        <span class="default-price-badge" onclick="setRetailDefaultPrice()">Use Default</span>
-                    </div>
-                    <div id="retail_price_warning" class="price-warning"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="retail_customer">Customer Name</label>
-                    <input type="text" id="retail_customer" name="customer_name" value="client"
-                           placeholder="Enter customer name">
-                </div>
-
-                <div id="retail_payment_section" style="display:none;">
-                    <div class="form-group">
-                        <label>Payment Breakdown</label>
-                        <div class="split-payment-box">
-                            <div class="split-row">
-                                <span class="split-label">Cash</span>
-                                <input type="text" id="retail_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcRetailSplit('cash')">
-                            </div>
-                            <div class="split-row">
-                                <span class="split-label">Momo</span>
-                                <input type="text" id="retail_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcRetailSplit('momo')">
-                            </div>
-                            <div class="split-row">
-                                <span class="split-label">Loan</span>
-                                <input type="text" id="retail_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcRetailSplit('loan')">
-                            </div>
-                            <div class="split-row split-remaining-row" id="retail_remaining_row">
-                                <span class="split-label">Remaining</span>
-                                <span id="retail_remaining">—</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="retail_loan_fields" style="display:none;">
-                        <?php if ($loan_clients_arr): ?>
-                        <div class="form-group">
-                            <label>Existing Client</label>
-                            <div class="searchable-select" id="retailClientPickerWrap">
-                                <input type="text" class="searchable-select-input" id="retail_client_picker_search"
-                                    placeholder="Search registered client..." autocomplete="off">
-                                <div class="searchable-select-dropdown" id="retail_client_picker_dropdown">
-                                    <?php foreach ($loan_clients_arr as $c): ?>
-                                        <div class="searchable-select-option"
-                                            data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                            data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                            <?php echo htmlspecialchars($c['client']); ?>
-                                            <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                            <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                            <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
-                        </div>
-                        <?php endif; ?>
-                        <div class="form-group">
-                            <label for="retail_phone">Client Phone*</label>
-                            <input type="text" id="retail_phone" name="phone" placeholder="e.g. 07XXXXXXXX" oninput="calcRetailSplit()">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="sale-summary" id="retail_summary" style="display:none;">
-                    <div class="summary-row"><span>Product</span><strong id="retail_sum_product"></strong></div>
-                    <div class="summary-row"><span>Pieces</span><strong id="retail_sum_qty"></strong></div>
-                    <div class="summary-row"><span>Price/Piece</span><strong id="retail_sum_price"></strong></div>
-                    <div class="summary-row summary-total"><span>Total Amount</span><strong id="retail_sum_total"></strong></div>
-                </div>
-
-                <input type="hidden" id="retail_level_multiplier" name="level_multiplier" value="1">
-                <button type="button" name="retail_sale" id="retail_submit_btn" class="btn btn-primary" disabled onclick="handleRetailSubmit()">Save Retail Sale</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- External Sale Modal -->
-    <div id="externalSaleModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('externalSaleModal')">&times;</span>
-            <h2>External Sale (Track Only)</h2>
-            <p style="color:var(--secondary);font-size:13px;margin-top:-8px;margin-bottom:16px;">Product is not from your stock — transaction is recorded for collection tracking only.</p>
-            <form method="POST" action="" id="externalSaleForm">
-                <!-- hidden fields that actually get submitted -->
-                <input type="hidden" id="ext_product_name" name="ext_product_name">
-                <input type="hidden" id="ext_product_id" name="ext_product_id" value="0">
-
-                <div class="form-group" id="ext_picker_mode">
-                    <label>Product*</label>
-                    <div class="searchable-select" id="extProductSearchable">
-                        <input type="text" class="searchable-select-input" id="ext_product_search"
-                               placeholder="Search product..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="ext_product_dropdown">
-                            <?php foreach ($all_products_arr as $ap): ?>
-                                <div class="searchable-select-option"
-                                     data-id="<?php echo $ap['id']; ?>"
-                                     data-name="<?php echo htmlspecialchars($ap['category'].'-'.$ap['name'], ENT_QUOTES); ?>"
-                                     data-bulk="<?php echo $ap['bulk_price']; ?>"
-                                     data-retail="<?php echo $ap['retail_price']; ?>">
-                                    <?php echo htmlspecialchars($ap['category'].'-'.$ap['name']); ?>
-                                    <?php if ($ap['bulk_price'] > 0 || $ap['retail_price'] > 0): ?>
-                                        <small style="color:var(--secondary);">
-                                            <?php if ($ap['bulk_price'] > 0): ?> bulk:<?php echo number_format($ap['bulk_price'],0); ?><?php endif; ?>
-                                            <?php if ($ap['retail_price'] > 0): ?> retail:<?php echo number_format($ap['retail_price'],0); ?><?php endif; ?>
-                                        </small>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <button type="button" class="btn btn-sm" style="margin-top:6px;background:var(--gray-200);color:var(--dark);"
-                            onclick="extSwitchToManual()">+ Not in list? Type manually</button>
-                </div>
-
-                <div class="form-group" id="ext_manual_mode" style="display:none;">
-                    <label for="ext_manual_name">Product Name*</label>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <input type="text" id="ext_manual_name" placeholder="Type product name..." style="flex:1;" oninput="extSetManualName(this.value)">
-                        <button type="button" class="btn btn-sm" style="background:var(--gray-200);color:var(--dark);white-space:nowrap;"
-                                onclick="extSwitchToPicker()">Back to list</button>
-                    </div>
-                </div>
-
-                <!-- Product Owner -->
-                <input type="hidden" id="ext_owner_name" name="ext_owner_name">
-                <input type="hidden" id="ext_owner_phone" name="ext_owner_phone">
-                <div class="form-group">
-                    <label>Product Owner</label>
-                    <?php if ($ext_owners_arr): ?>
-                    <div class="searchable-select" id="extOwnerPickerWrap">
-                        <input type="text" class="searchable-select-input" id="ext_owner_search"
-                               placeholder="Search registered owner..." autocomplete="off">
-                        <div class="searchable-select-dropdown" id="ext_owner_dropdown">
-                            <?php foreach ($ext_owners_arr as $o): ?>
-                                <div class="searchable-select-option"
-                                     data-id="<?php echo $o['id']; ?>"
-                                     data-owner="<?php echo htmlspecialchars($o['owner_name'], ENT_QUOTES); ?>"
-                                     data-phone="<?php echo htmlspecialchars($o['owner_phone'] ?? '', ENT_QUOTES); ?>">
-                                    <?php echo htmlspecialchars($o['owner_name']); ?>
-                                    <?php if ($o['owner_phone']): ?> — <?php echo htmlspecialchars($o['owner_phone']); ?><?php endif; ?>
-                                    <small style="color:var(--secondary);"> (<?php echo $o['total_sales']; ?> sale<?php echo $o['total_sales']>1?'s':''; ?>)</small>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick existing or fill in a new owner below.</small>
-                    <?php endif; ?>
-                    <div style="display:flex;gap:8px;margin-top:6px;">
-                        <input type="text" id="ext_owner_name_input" placeholder="Owner name"
-                               style="flex:2;" oninput="extSyncOwner()">
-                        <input type="text" id="ext_owner_phone_input" placeholder="Phone (optional)"
-                               style="flex:1;" oninput="extSyncOwner()">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="ext_quantity">Quantity*</label>
-                    <input type="text" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtTotal()">
-                </div>
-                <div class="form-group">
-                    <label for="ext_unit_price">Unit Price (RWF)*</label>
-                    <input type="text" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtTotal()">
-                </div>
-                <div class="form-group">
-                    <label for="ext_my_revenue">My Commission (RWF)</label>
-                    <input type="text" id="ext_my_revenue" name="ext_my_revenue" min="0" step="1" value="0" placeholder="Your commission from this sale">
-                </div>
-                <div class="form-group">
-                    <label for="ext_customer_name">Customer Name</label>
-                    <input type="text" id="ext_customer_name" name="ext_customer_name" value="client" placeholder="Enter customer name">
-                </div>
-
-                <div id="ext_payment_section">
-                    <div class="form-group">
-                        <label>Payment Breakdown</label>
-                        <div class="split-payment-box">
-                            <div class="split-row">
-                                <span class="split-label">Cash</span>
-                                <input type="text" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
-                            </div>
-                            <div class="split-row">
-                                <span class="split-label">Momo</span>
-                                <input type="text" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
-                            </div>
-                            <div class="split-row">
-                                <span class="split-label">Loan</span>
-                                <input type="text" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
-                            </div>
-                            <div class="split-row split-remaining-row" id="ext_remaining_row">
-                                <span class="split-label">Remaining</span>
-                                <span id="ext_remaining">—</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="ext_loan_fields" style="display:none;">
-                        <?php if ($loan_clients_arr): ?>
-                        <div class="form-group">
-                            <label>Existing Client</label>
-                            <div class="searchable-select" id="extClientPickerWrap">
-                                <input type="text" class="searchable-select-input" id="ext_client_picker_search"
-                                    placeholder="Search registered client..." autocomplete="off">
-                                <div class="searchable-select-dropdown" id="ext_client_picker_dropdown">
-                                    <?php foreach ($loan_clients_arr as $c): ?>
-                                        <div class="searchable-select-option"
-                                            data-client="<?php echo htmlspecialchars($c['client'], ENT_QUOTES); ?>"
-                                            data-phone="<?php echo htmlspecialchars($c['phone'], ENT_QUOTES); ?>">
-                                            <?php echo htmlspecialchars($c['client']); ?>
-                                            <?php if ($c['phone']): ?> — <?php echo htmlspecialchars($c['phone']); ?><?php endif; ?>
-                                            <small style="color:var(--secondary);"> (<?php echo $c['visits']; ?> visit<?php echo $c['visits']>1?'s':''; ?>)</small>
-                                            <?php if ($c['outstanding'] > 0): ?><small style="color:#dc2626;font-weight:600;"> · Owes: RWF <?php echo number_format($c['outstanding'],0); ?></small><?php endif; ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
-                        </div>
-                        <?php endif; ?>
-                        <div class="form-group">
-                            <label for="ext_phone">Client Phone*</label>
-                            <input type="text" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX" oninput="calcExtSplit()">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="sale-summary" id="ext_summary" style="display:none;">
-                    <div class="summary-row"><span>Product</span><strong id="ext_sum_product"></strong></div>
-                    <div class="summary-row"><span>Quantity</span><strong id="ext_sum_qty"></strong></div>
-                    <div class="summary-row"><span>Unit Price</span><strong id="ext_sum_price"></strong></div>
-                    <div class="summary-row summary-total"><span>Total Amount</span><strong id="ext_sum_total"></strong></div>
-                </div>
-
-                <button type="button" id="ext_submit_btn" class="btn btn-primary" disabled onclick="handleExtSubmit()" style="background:var(--warning,#f59e0b);border-color:var(--warning,#f59e0b);">Save External Sale</button>
-            </form>
-        </div>
-    </div>
-
     <!-- Edit Bulk Sale Modal -->
     <div id="editBulkModal" class="modal">
         <div class="modal-content">
@@ -1844,6 +1588,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             var searchInput = document.getElementById(searchInputId);
             var dropdown = document.getElementById(dropdownId);
             var hiddenSelect = document.getElementById(hiddenSelectId);
+            if (!wrapper || !searchInput || !dropdown || !hiddenSelect) return;
             var options = dropdown.querySelectorAll('.searchable-select-option');
             var highlightedIndex = -1;
 
@@ -2435,6 +2180,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         (function() {
             var search   = document.getElementById('ext_product_search');
             var dropdown = document.getElementById('ext_product_dropdown');
+            if (!search || !dropdown) return;
             var options  = dropdown.querySelectorAll('.searchable-select-option');
             var hi = -1;
 

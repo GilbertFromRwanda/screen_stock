@@ -41,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust'])) {
     }
 
     recalcStockValue($conn, $pid);
+    touchCacheStore($conn, 'products');
 
     $today = date('Y-m-d');
     if ($reason !== '') {
@@ -350,6 +351,8 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
     </div>
 </div>
 
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script src="script.js"></script>
 <script>
 function openModal(pid, name, whQty, rtQty, rtPrice, pkgPrice) {
@@ -382,7 +385,7 @@ document.getElementById('adjForm').addEventListener('submit', function(e) {
     fetch('stock_adjust.php', { method: 'POST', body: data })
         .then(function(r) { return r.json(); })
         .then(function(j) {
-            if (j.ok) location.reload();
+            if (j.ok) DataCache.invalidate('products').then(function() { location.reload(); });
         })
         .finally(function() {
             btn.disabled = false;

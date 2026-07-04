@@ -398,7 +398,8 @@ function avatarColor($name) {
                                 <td><span class="role-badge <?php echo $user['role']; ?>"><?php echo ucfirst($user['role']); ?></span></td>
                                 <td><span class="status-badge <?php echo $user['status']; ?>"><?php echo ucfirst($user['status']); ?></span></td>
                                 <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
-                                <td><?php echo $user['last_login'] ? date('M d, Y', strtotime($user['last_login'])) : '<span style="color:var(--gray-400);">—</span>'; ?></td>
+                                <td><?php echo $user['last_login'] ? date('M d, Y h:i A', strtotime($user['last_login'])) : '<span style="color:var(--gray-400);">—</span>'; ?></td>
+                               
                                 <td>
                                     <div class="act-menu-wrap">
                                         <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>

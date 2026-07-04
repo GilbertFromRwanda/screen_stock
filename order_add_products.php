@@ -14,20 +14,53 @@ $order = mysqli_fetch_assoc(mysqli_query($conn,
     "SELECT o.*, oo.location AS owner_location
      FROM `orders` o
      LEFT JOIN order_owners oo ON o.order_owner_id = oo.id
-     WHERE o.id=$order_id AND o.status='pending'" . cidAndFor('o')));
+     WHERE o.id=$order_id AND o.status IN ('pending','open')" . cidAndFor('o')));
 
 if (!$order) {
-    $_SESSION['flash_error'] = 'Order not found or not pending.';
+    $_SESSION['flash_error'] = 'Order not found or not editable.';
     redirect('orders.php');
 }
 
 // ── Fetch existing items ───────────────────────────────────────────────────────
 $existing_items = [];
 $ei_res = mysqli_query($conn,
-    "SELECT oi.*, p.name AS product_name, p.category
-     FROM order_items oi JOIN products p ON oi.product_id=p.id
+    "SELECT oi.*, p.name AS product_name, p.category, ab.username AS added_by_name
+     FROM order_items oi
+     LEFT JOIN products p ON oi.product_id=p.id
+     LEFT JOIN users ab   ON oi.added_by=ab.id
      WHERE oi.order_id=$order_id ORDER BY oi.id");
-while ($ei = mysqli_fetch_assoc($ei_res)) $existing_items[] = $ei;
+while ($ei = mysqli_fetch_assoc($ei_res)) {
+    if ($ei['product_name'] === null && $ei['custom_name']) $ei['product_name'] = $ei['custom_name'];
+    $existing_items[] = $ei;
+}
+
+// ── AJAX: edit an existing item's price / availability ──────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_item'])) {
+    header('Content-Type: application/json');
+    $item_id   = (int)($_POST['item_id'] ?? 0);
+    $price     = max(0, (float)($_POST['selling_price'] ?? 0));
+    $available = ($_POST['available'] ?? '1') === '1';
+
+    $item = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM order_items WHERE id=$item_id AND order_id=$order_id"));
+    if (!$item) { echo json_encode(['success'=>false,'message'=>'Item not found.']); exit; }
+
+    $qty        = (float)$item['quantity'];
+    $old_total  = (float)$item['item_total'];
+    $new_total  = round($qty * $price, 2);
+    $new_status = $available ? 'pending' : 'out_of_stock';
+    $delta      = round($new_total - $old_total, 2);
+
+    mysqli_query($conn, "UPDATE order_items SET selling_price=$price, item_total=$new_total, status='$new_status' WHERE id=$item_id");
+    mysqli_query($conn, "UPDATE `orders` SET total_amount = total_amount + ($delta), updated_at=NOW() WHERE id=$order_id");
+
+    logActivity($conn, $user_id, 'UPDATE',
+        "Order item #$item_id on order #$order_id: price set to $price, marked " . ($available ? 'available' : 'unavailable'),
+        'orders', $order_id, ['item_total'=>$old_total], ['item_total'=>$new_total]);
+
+    echo json_encode(['success'=>true,'message'=>'Item updated.',
+        'new_item_total'=>$new_total, 'new_order_total'=>round((float)$order['total_amount'] + $delta, 2)]);
+    exit;
+}
 
 // ── POST: add items ───────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_items'])) {
@@ -42,6 +75,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_items'])) {
     $added_total = 0.0;
     $added_names = [];
     foreach ($items as $it) {
+        if (!empty($it['custom'])) {
+            $cname = trim((string)($it['name'] ?? ''));
+            $qty   = (float)($it['quantity'] ?? 0);
+            if ($cname === '' || $qty <= 0) continue;
+            $ce = mysqli_real_escape_string($conn, $cname);
+            mysqli_query($conn, "INSERT INTO order_items
+                (order_id,product_id,custom_name,stock_source,quantity,level_divisor,selling_price,item_total,source,added_by)
+                VALUES($order_id,NULL,'$ce','custom',$qty,1,0,0,'staff',$user_id)");
+            $added_names[] = $cname . ' (custom)';
+            continue;
+        }
+
         $pid  = (int)$it['product_id'];
         $qty  = (float)$it['quantity'];
         $div  = max(1, (int)($it['level_divisor'] ?? 1));
@@ -55,8 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_items'])) {
         if (!$prow) continue;
 
         mysqli_query($conn, "INSERT INTO order_items
-            (order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total)
-            VALUES($order_id,$pid,'$src',$qty,$div,$prce,$itot)");
+            (order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total,source,added_by)
+            VALUES($order_id,$pid,'$src',$qty,$div,$prce,$itot,'staff',$user_id)");
 
         $added_total += $itot;
         $added_names[] = $prow['name'];
@@ -108,11 +153,23 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
 .order-card-total { font-size:18px; font-weight:800; color:var(--dark); white-space:nowrap; }
 /* Existing items as cart list */
 .ei-list { border:1px solid var(--gray-200); border-radius:var(--radius); overflow:hidden; }
-.ei-item { display:flex; align-items:center; padding:9px 14px; gap:10px; border-bottom:1px solid var(--gray-100); font-size:13px; }
+.ei-item { display:flex; align-items:center; padding:9px 14px; gap:10px; border-bottom:1px solid var(--gray-100); font-size:13px; flex-wrap:wrap; }
 .ei-item:last-child { border-bottom:none; }
-.ei-name  { flex:1; font-weight:600; min-width:0; }
+.ei-name  { flex:1; font-weight:600; min-width:160px; }
 .ei-meta  { font-size:12px; color:var(--secondary); white-space:nowrap; }
 .ei-amt   { font-weight:700; white-space:nowrap; min-width:90px; text-align:right; }
+
+.ei-edit-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+.ei-price-input { width:100px; padding:6px 8px; border:1px solid var(--gray-300); border-radius:var(--radius); font-size:13px; }
+.ei-price-input:focus { outline:none; border-color:var(--primary); }
+.ei-avail-toggle { display:flex; border:1px solid var(--gray-300); border-radius:var(--radius); overflow:hidden; }
+.ei-avail-btn { padding:6px 10px; font-size:12px; font-weight:600; border:none; background:var(--white); color:var(--secondary); cursor:pointer; }
+.ei-avail-btn.on-yes.active { background:#dcfce7; color:#166534; }
+.ei-avail-btn.on-no.active  { background:#fee2e2; color:#991b1b; }
+.ei-save-btn { padding:6px 12px; font-size:12px; font-weight:700; border:none; border-radius:var(--radius); background:var(--primary); color:#fff; cursor:pointer; }
+.ei-save-btn:hover { background:var(--primary-dark); }
+.ei-save-btn:disabled { opacity:.5; cursor:default; }
+.ei-item.unavailable { background:#fef2f2; }
 
 /* Product + cart split */
 .add-split { display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start; margin-bottom:24px; }
@@ -291,6 +348,21 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
             <button type="button" class="add-item-btn" onclick="addToCart()">
                 + Add to Cart
             </button>
+
+            <button type="button" class="new-owner-toggle" style="margin-top:12px;display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--primary);cursor:pointer;font-weight:600;background:none;border:none;padding:0;" onclick="toggleCustom()">
+                <span id="cp_icon">＋</span> Can't find it? Add it by name
+            </button>
+            <div class="new-owner-panel" id="custom_panel" style="display:none;margin-top:10px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px;">
+                <div class="form-group">
+                    <label>Product name</label>
+                    <input type="text" id="custom_name" placeholder="Describe the item">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>Quantity</label>
+                    <input type="number" id="custom_qty" min="0.001" step="any" placeholder="0">
+                </div>
+                <button type="button" class="add-item-btn" style="background:#8b5cf6;margin-top:10px;" onclick="addCustomToCart()">Add Custom Item</button>
+            </div>
         </div>
 
         <!-- Right: cart -->
@@ -336,12 +408,16 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
     </div>
     <div class="ei-list">
         <?php foreach ($existing_items as $ei):
-            $src_badge = ($ei['stock_source'] ?? 'wh') === 'rt'
+            $src = $ei['stock_source'] ?? 'wh';
+            $src_badge = $src === 'rt'
                 ? '<span style="font-size:10px;background:#fef3c7;color:#854d0e;border:1px solid #fde68a;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">RT</span>'
-                : '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">WH</span>';
-            $unit = ($ei['stock_source'] ?? 'wh') === 'rt' ? 'pcs' : 'pkg';
+                : ($src === 'custom'
+                    ? '<span style="font-size:10px;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">CUSTOM</span>'
+                    : '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">WH</span>');
+            $unit = $src === 'rt' ? 'pcs' : ($src === 'custom' ? '' : 'pkg');
+            $isAvailable = ($ei['status'] ?? 'pending') !== 'out_of_stock';
         ?>
-        <div class="ei-item">
+        <div class="ei-item<?php echo $isAvailable ? '' : ' unavailable'; ?>" id="ei_row_<?php echo $ei['id']; ?>">
             <div class="ei-name">
                 <?php if (!empty($ei['category'])): ?>
                 <span style="font-size:11px;color:var(--secondary);font-weight:400;"><?php echo htmlspecialchars($ei['category']); ?> &rsaquo;</span>
@@ -351,9 +427,24 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
             </div>
             <div class="ei-meta">
                 <?php echo number_format((float)$ei['quantity'],0); ?> <?php echo $unit; ?>
-                &times; RWF <?php echo number_format((float)$ei['selling_price'],0); ?>
+                <?php if (($ei['source'] ?? 'staff') === 'customer'): ?>
+                <span style="font-size:10px;background:#ede9fe;color:#5b21b6;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Customer</span>
+                <?php else: ?>
+                <span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Staff<?php echo !empty($ei['added_by_name']) ? ' &middot; '.htmlspecialchars($ei['added_by_name']) : ''; ?></span>
+                <?php endif; ?>
             </div>
-            <div class="ei-amt">RWF <?php echo number_format((float)$ei['item_total'],0); ?></div>
+            <div class="ei-edit-row">
+                <span>RWF</span>
+                <input type="number" class="ei-price-input" id="ei_price_<?php echo $ei['id']; ?>"
+                       value="<?php echo (float)$ei['selling_price']; ?>" min="0" step="any"
+                       onchange="markItemDirty(<?php echo $ei['id']; ?>)">
+                <div class="ei-avail-toggle">
+                    <button type="button" class="ei-avail-btn on-yes<?php echo $isAvailable ? ' active' : ''; ?>" id="ei_avail_yes_<?php echo $ei['id']; ?>" onclick="setItemAvailable(<?php echo $ei['id']; ?>, true)">Available</button>
+                    <button type="button" class="ei-avail-btn on-no<?php echo $isAvailable ? '' : ' active'; ?>" id="ei_avail_no_<?php echo $ei['id']; ?>" onclick="setItemAvailable(<?php echo $ei['id']; ?>, false)">Unavailable</button>
+                </div>
+                <button type="button" class="ei-save-btn" id="ei_save_<?php echo $ei['id']; ?>" disabled onclick="saveItem(<?php echo $ei['id']; ?>)">Save</button>
+            </div>
+            <div class="ei-amt" id="ei_amt_<?php echo $ei['id']; ?>">RWF <?php echo number_format((float)$ei['item_total'],0); ?></div>
         </div>
         <?php endforeach; ?>
         <div class="ei-item" style="background:var(--gray-50);font-weight:700;">
@@ -566,8 +657,31 @@ function addToCart() {
 }
 
 function removeFromCart(pid, type) {
-    _cart = _cart.filter(function(i){ return !(i.pid===pid && i.type===type); });
+    _cart = _cart.filter(function(i){ return !(!i.custom && i.pid===pid && i.type===type); });
     renderCart();
+}
+function removeCustomFromCart(idx) {
+    _cart = _cart.filter(function(i){ return !(i.custom && i._idx===idx); });
+    renderCart();
+}
+
+function toggleCustom() {
+    var panel = document.getElementById('custom_panel');
+    var open  = panel.style.display !== 'block';
+    panel.style.display = open ? 'block' : 'none';
+    document.getElementById('cp_icon').textContent = open ? '−' : '＋';
+}
+
+function addCustomToCart() {
+    var name = document.getElementById('custom_name').value.trim();
+    var qty  = parseFloat(document.getElementById('custom_qty').value) || 0;
+    if (!name) { showToast('Enter a product name.', false); return; }
+    if (qty <= 0) { showToast('Enter a valid quantity.', false); return; }
+    _cart.push({ custom:true, _idx:Date.now(), name:name, qty:qty, price:0, unit:'' });
+    renderCart();
+    document.getElementById('custom_name').value = '';
+    document.getElementById('custom_qty').value = '';
+    showToast('"'+name+'" added.', true);
 }
 
 function renderCart() {
@@ -585,6 +699,17 @@ function renderCart() {
         body.innerHTML = '<div class="cart-empty">No new items yet.<br>Search and add products from the left.</div>';
     } else {
         body.innerHTML = _cart.map(function(item){
+            if (item.custom) {
+                return '<div class="cart-item">'
+                    + '<div class="cart-item-info">'
+                    +   '<div class="cart-item-name">'+escH(item.name)+' <span style="font-size:10px;color:#8b5cf6;font-weight:600;">(custom)</span></div>'
+                    +   '<div class="cart-item-sub">'+item.qty.toLocaleString()+'</div>'
+                    + '</div>'
+                    + '<div class="cart-item-right">'
+                    +   '<button type="button" class="cart-rm" onclick="removeCustomFromCart('+item._idx+')" title="Remove">&times;</button>'
+                    + '</div>'
+                    + '</div>';
+            }
             var sub   = item.qty * item.price;
             var badge = item.type === 'rt'
                 ? '<span style="font-size:10px;background:#fef3c7;color:#854d0e;border:1px solid #fde68a;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">RT</span>'
@@ -604,16 +729,64 @@ function renderCart() {
 
     document.getElementById('order_items_json').value = JSON.stringify(
         _cart.map(function(i){
-            return {
-                product_id:    i.pid,
-                quantity:      i.qty,
-                level_divisor: i.type === 'rt' ? 1 : (i.ppp || 1),
-                stock_type:    i.type,
-                selling_price: i.price,
-                item_total:    i.qty * i.price,
-            };
+            return i.custom
+                ? { custom:true, name:i.name, quantity:i.qty }
+                : {
+                    product_id:    i.pid,
+                    quantity:      i.qty,
+                    level_divisor: i.type === 'rt' ? 1 : (i.ppp || 1),
+                    stock_type:    i.type,
+                    selling_price: i.price,
+                    item_total:    i.qty * i.price,
+                };
         })
     );
+}
+
+// ── Edit existing item price / availability ─────────────────────────────────────
+var _itemAvail = {};
+
+function markItemDirty(id) {
+    document.getElementById('ei_save_' + id).disabled = false;
+}
+
+function setItemAvailable(id, available) {
+    _itemAvail[id] = available;
+    document.getElementById('ei_avail_yes_' + id).classList.toggle('active', available);
+    document.getElementById('ei_avail_no_' + id).classList.toggle('active', !available);
+    markItemDirty(id);
+}
+
+function saveItem(id) {
+    var btn   = document.getElementById('ei_save_' + id);
+    var price = parseFloat(document.getElementById('ei_price_' + id).value) || 0;
+    var row   = document.getElementById('ei_row_' + id);
+    var available = _itemAvail.hasOwnProperty(id) ? _itemAvail[id] : !row.classList.contains('unavailable');
+
+    btn.disabled = true; btn.textContent = 'Saving…';
+    var fd = new FormData();
+    fd.append('update_item', '1');
+    fd.append('order_id', <?php echo (int)$order_id; ?>);
+    fd.append('item_id', id);
+    fd.append('selling_price', price);
+    fd.append('available', available ? '1' : '0');
+
+    fetch('order_add_products.php', {method:'POST', body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) {
+                document.getElementById('ei_amt_' + id).textContent = 'RWF ' + Math.round(res.new_item_total).toLocaleString();
+                row.classList.toggle('unavailable', !available);
+                _orderBasetotal = res.new_order_total;
+                document.querySelector('.order-card-total').textContent = 'RWF ' + Math.round(res.new_order_total).toLocaleString();
+                renderCart();
+                btn.textContent = 'Save'; btn.disabled = true;
+            } else {
+                btn.textContent = 'Save'; btn.disabled = false;
+            }
+        })
+        .catch(function(){ showToast('Network error.', false); btn.textContent = 'Save'; btn.disabled = false; });
 }
 </script>
 </body>

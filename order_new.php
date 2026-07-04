@@ -59,10 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
         $ins_ok = mysqli_query($conn, "INSERT INTO `orders`
             (company_id, order_owner_id, product_id, quantity, level_divisor, selling_price, total_amount,
              order_owner, phone, prepaid_cash, prepaid_momo, prepaid_loan, prepaid_bank,
-             total_prepaid, note, created_by)
+             total_prepaid, note, created_by, in_charge_id)
             VALUES (" . cidSql() . ", $owner_id, NULL, 0, 1, 0, $total_amount,
                     '$oe', '$phe', $prepaid_cash, $prepaid_momo, $prepaid_loan, $prepaid_bank,
-                    $total_prepaid, '$ne', $user_id)");
+                    $total_prepaid, '$ne', $user_id, $user_id)");
 
         if (!$ins_ok) {
             $error = 'Could not save order: ' . mysqli_error($conn);
@@ -83,8 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
             $src  = in_array($it['stock_type'] ?? 'wh', ['wh','rt']) ? $it['stock_type'] : 'wh';
             if ($pid > 0 && $qty > 0 && $prce > 0)
                 mysqli_query($conn,
-                    "INSERT INTO order_items(order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total)
-                     VALUES($order_id,$pid,'$src',$qty,$div,$prce,$itot)");
+                    "INSERT INTO order_items(order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total,source,added_by)
+                     VALUES($order_id,$pid,'$src',$qty,$div,$prce,$itot,'staff',$user_id)");
         }
             if ($total_prepaid > 0) {
                 mysqli_query($conn, "INSERT INTO order_payments
@@ -97,29 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
 }
 if (isset($_SESSION['flash_error'])) { $error = $_SESSION['flash_error']; unset($_SESSION['flash_error']); }
 
-// ── AJAX: product search ──────────────────────────────────────────────────────
-if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
-    header('Content-Type: application/json');
-    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
-    $res = mysqli_query($conn, "
-        SELECT p.id, p.name, p.category,
-               COALESCE(s.quantity,0)           AS stock_qty,
-               COALESCE(s.package_price,0)      AS default_price,
-               COALESCE(s.pieces_per_package,1) AS ppp,
-               COALESCE(rs.pieces_quantity,0)   AS rt_qty,
-               COALESCE(rs.retail_price,0)      AS rt_price
-        FROM products p
-        LEFT JOIN stock        s  ON s.product_id  = p.id
-        LEFT JOIN retail_stock rs ON rs.product_id = p.id
-        WHERE p.deleted = 0
-        AND $search_sql
-        HAVING stock_qty > 0 OR rt_qty > 0
-        ORDER BY p.category, p.name LIMIT 60");
-    $rows = [];
-    while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
-    echo json_encode($rows);
-    exit;
-}
+// Product search is loaded client-side from DataCache (js/data-cache.js).
 
 // ── Load data ─────────────────────────────────────────────────────────────────
 $owners_arr = [];
@@ -623,6 +601,8 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
 </div>
 
 <div id="onToast"></div>
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script src="script.js"></script>
 <script>
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -812,16 +792,21 @@ var _selectedProd = null;
     function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function doSearch(q) {
         showLoading();
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', '?action=search_products&q=' + encodeURIComponent(q));
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                try { renderOptions(JSON.parse(xhr.responseText)); }
-                catch(e) { drop.innerHTML = '<div class="sd-loading">Failed to load.</div>'; }
-            } else { drop.innerHTML = '<div class="sd-loading">Failed to load.</div>'; }
-        };
-        xhr.onerror = function(){ drop.innerHTML = '<div class="sd-loading">Failed to load.</div>'; };
-        xhr.send();
+        var term = q.toLowerCase();
+        DataCache.getProducts().then(function(list) {
+            var rows = list.filter(function(p) {
+                if (!((parseFloat(p.wh_qty) > 0) || (parseFloat(p.retail_qty) > 0))) return false;
+                if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                return true;
+            }).slice(0, 60).map(function(p) {
+                return { id: p.id, name: p.name, category: p.category,
+                         stock_qty: p.wh_qty, default_price: p.bulk_price, ppp: p.pieces_per_package,
+                         rt_qty: p.retail_qty, rt_price: p.retail_price };
+            });
+            renderOptions(rows);
+        }).catch(function() {
+            drop.innerHTML = '<div class="sd-loading">Failed to load.</div>';
+        });
     }
     function vis(){ return Array.from(drop.querySelectorAll('.ss-opt')); }
     function hl(v){
