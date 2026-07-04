@@ -163,4 +163,19 @@ function touchCacheStore(mysqli $conn, string $store): void {
         ON DUPLICATE KEY UPDATE updated_at = NOW()
     ");
 }
+function resolve_category(mysqli $conn, string $name): array {
+    $name = trim($name);
+    if ($name === '') return [null, ''];
+    $n = mysqli_real_escape_string($conn, $name);
+    mysqli_query($conn, "INSERT IGNORE INTO categories (name) VALUES ('$n')");
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, name FROM categories WHERE name='$n' LIMIT 1"));
+    return [$row['id'], $row['name']];
+}
+
+function get_categories(mysqli $conn): array {
+    $rows = [];
+    $r = mysqli_query($conn, "SELECT id, name FROM categories ORDER BY name ASC");
+    while ($row = mysqli_fetch_assoc($r)) $rows[] = $row;
+    return $rows;
+}
 ?>

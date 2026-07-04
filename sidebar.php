@@ -27,15 +27,16 @@ try {
 
             <a href="dashboard.php" class="tn-item<?= $current_page==='dashboard.php' ? ' active':'' ?>">&#9635; Dashboard</a>
 
-            <?php $ia = in_array($current_page,['products.php','stock.php','stock_adjust.php']);
+            <?php $ia = in_array($current_page,['products.php','categories.php','stock.php','stock_adjust.php']);
                   $has_inv = hasPermission('inventory'); $has_sa = hasPermission('stock_adjust'); ?>
             <?php if ($has_inv || $has_sa): ?>
             <div class="tn-dropdown<?= $ia?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#9643; Inventory <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <?php if ($has_inv): ?>
-                    <a href="products.php" class="tn-drop-item<?= $current_page==='products.php'?' active':'' ?>">View Product List</a>
-                    <a href="stock.php"    class="tn-drop-item<?= $current_page==='stock.php'   ?' active':'' ?>">View Stock</a>
+                    <a href="products.php"   class="tn-drop-item<?= $current_page==='products.php'  ?' active':'' ?>">View Product List</a>
+                    <a href="categories.php" class="tn-drop-item<?= $current_page==='categories.php'?' active':'' ?>">Manage Categories</a>
+                    <a href="stock.php"      class="tn-drop-item<?= $current_page==='stock.php'     ?' active':'' ?>">View Stock</a>
                     <?php endif; ?>
                     <?php if ($has_sa): ?>
                     <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>

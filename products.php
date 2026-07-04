@@ -129,12 +129,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
 
         if (product_exists($conn, $name, $cat)) { $duplicates++; continue; }
 
+        [$category_id, $category_name] = resolve_category($conn, $cat);
+        $category_id_v = $category_id !== null ? (int)$category_id : 'NULL';
+
         $n = mysqli_real_escape_string($conn, $name);
-        $c = mysqli_real_escape_string($conn, $cat);
+        $c = mysqli_real_escape_string($conn, $category_name);
         $u = mysqli_real_escape_string($conn, $unit_m);
 
-        if (mysqli_query($conn, "INSERT INTO products (name,category,reorder_level,unit_measure,unit_price)
-                                  VALUES ('$n','$c',$reorder,'$u',$price)")) {
+        if (mysqli_query($conn, "INSERT INTO products (name,category,category_id,reorder_level,unit_measure,unit_price)
+                                  VALUES ('$n','$c',$category_id_v,$reorder,'$u',$price)")) {
             $added++;
         } else {
             $skipped++;
@@ -149,15 +152,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
 // Handle Add Product
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
     $name          = mysqli_real_escape_string($conn, $_POST['name']);
-    $category      = mysqli_real_escape_string($conn, $_POST['category']);
+    [$category_id, $category_name] = resolve_category($conn, $_POST['category'] ?? '');
+    $category      = mysqli_real_escape_string($conn, $category_name);
+    $category_id_v = $category_id !== null ? (int)$category_id : 'NULL';
     $reorder_level = mysqli_real_escape_string($conn, $_POST['reorder_level']);
     $unit_measure  = mysqli_real_escape_string($conn, $_POST['unit_measure']);
     $unit_price    = mysqli_real_escape_string($conn, $_POST['unit_price']);
 
     if (product_exists($conn, $name, $category)) {
         $_SESSION['flash_error'] = "A product named \"$name\" already exists in the \"$category\" category.";
-    } elseif (mysqli_query($conn, "INSERT INTO products (name, category, reorder_level, unit_measure, unit_price)
-                              VALUES ('$name','$category','$reorder_level','$unit_measure','$unit_price')")) {
+    } elseif (mysqli_query($conn, "INSERT INTO products (name, category, category_id, reorder_level, unit_measure, unit_price)
+                              VALUES ('$name','$category',$category_id_v,'$reorder_level','$unit_measure','$unit_price')")) {
         touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Product added successfully";
     } else {
@@ -174,7 +179,9 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $id            = (int)$_POST['edit_id'];
     $name          = mysqli_real_escape_string($conn, $_POST['edit_name']);
-    $category      = mysqli_real_escape_string($conn, $_POST['edit_category']);
+    [$category_id, $category_name] = resolve_category($conn, $_POST['edit_category'] ?? '');
+    $category      = mysqli_real_escape_string($conn, $category_name);
+    $category_id_v = $category_id !== null ? (int)$category_id : 'NULL';
     $reorder_level = mysqli_real_escape_string($conn, $_POST['edit_reorder_level']);
     $unit_measure  = mysqli_real_escape_string($conn, $_POST['edit_unit_measure']);
     $unit_price    = mysqli_real_escape_string($conn, $_POST['edit_unit_price']);
@@ -183,7 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
 
     if (product_exists($conn, $name, $category, $id)) {
         $_SESSION['flash_error'] = "Another product named \"$name\" already exists in the \"$category\" category.";
-    } elseif (mysqli_query($conn, "UPDATE products SET name='$name', category='$category', reorder_level='$reorder_level',
+    } elseif (mysqli_query($conn, "UPDATE products SET name='$name', category='$category', category_id=$category_id_v, reorder_level='$reorder_level',
                               unit_measure='$unit_measure', unit_price='$unit_price' WHERE id=$id")) {
         touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Product updated successfully";
@@ -234,7 +241,6 @@ function build_rows($result, $offset) {
         $cat      = htmlspecialchars($row['category']);
         $um       = htmlspecialchars($row['unit_measure']);
         $js_name  = addslashes($name);
-        $js_cat   = addslashes($cat);
         $js_um    = addslashes($um);
         $html .= "<tr>
             <td>{$i}</td>
@@ -247,7 +253,7 @@ function build_rows($result, $offset) {
                 <div class='act-menu-wrap'>
                     <button class='act-btn' title='Actions' onclick='toggleActMenu(this)'>⋮</button>
                     <div class='act-menu'>
-                        <a class='act-item' href='#' onclick=\"editProduct({$row['id']},'$js_name','$js_cat',{$row['reorder_level']},'$js_um',{$row['unit_price']});closeActMenus()\"><i class='fas fa-pen'></i> Edit</a>
+                        <a class='act-item' href='#' onclick=\"editProduct({$row['id']},'$js_name'," . (int)($row['category_id'] ?? 0) . ",{$row['reorder_level']},'$js_um',{$row['unit_price']});closeActMenus()\"><i class='fas fa-pen'></i> Edit</a>
                         <div class='act-menu-sep'></div>
                         <a class='act-item danger' href='products.php?delete={$row['id']}' onclick=\"return confirm('Are you sure?')\"><i class='fas fa-trash'></i> Delete</a>
                     </div>
@@ -378,7 +384,19 @@ if (isset($_GET['ajax'])) {
         <h2>Add New Product</h2>
         <form method="POST">
             <div class="form-group"><label>Product Name*</label><input type="text" name="name" required></div>
-            <div class="form-group"><label>Category</label><input type="text" name="category"></div>
+            <div class="form-group">
+                <label>Category</label>
+                <select id="category_select" onchange="onCategorySelect(this,'category_hidden','category_new')">
+                    <option value="">— None —</option>
+                    <?php foreach (get_categories($conn) as $c): ?>
+                    <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
+                    <?php endforeach; ?>
+                    <option value="__new__">+ Add new category…</option>
+                </select>
+                <input type="text" id="category_new" placeholder="New category name" style="display:none;margin-top:6px;"
+                    oninput="document.getElementById('category_hidden').value=this.value">
+                <input type="hidden" name="category" id="category_hidden">
+            </div>
             <div class="form-group"><label>Reorder Level*</label><input type="number" name="reorder_level" value="2" required></div>
             <div class="form-group"><label>Unit Measure*</label><input type="text" name="unit_measure" value="Box" required></div>
             <div class="form-group"><label>Unit Price (RWF)*</label><input type="number" name="unit_price" step="0.01" required></div>
@@ -395,7 +413,19 @@ if (isset($_GET['ajax'])) {
         <form method="POST">
             <input type="hidden" id="edit_id" name="edit_id">
             <div class="form-group"><label>Product Name*</label><input type="text" id="edit_name" name="edit_name" required></div>
-            <div class="form-group"><label>Category</label><input type="text" id="edit_category" name="edit_category"></div>
+            <div class="form-group">
+                <label>Category</label>
+                <select id="edit_category_select" onchange="onCategorySelect(this,'edit_category_hidden','edit_category_new')">
+                    <option value="">— None —</option>
+                    <?php foreach (get_categories($conn) as $c): ?>
+                    <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
+                    <?php endforeach; ?>
+                    <option value="__new__">+ Add new category…</option>
+                </select>
+                <input type="text" id="edit_category_new" placeholder="New category name" style="display:none;margin-top:6px;"
+                    oninput="document.getElementById('edit_category_hidden').value=this.value">
+                <input type="hidden" name="edit_category" id="edit_category_hidden">
+            </div>
             <div class="form-group"><label>Reorder Level*</label><input type="number" id="edit_reorder_level" name="edit_reorder_level" required></div>
             <div class="form-group"><label>Unit Measure*</label><input type="text" id="edit_unit_measure" name="edit_unit_measure" required></div>
             <div class="form-group"><label>Unit Price (RWF)*</label><input type="number" id="edit_unit_price" name="edit_unit_price" step="0.01" required></div>
@@ -427,10 +457,30 @@ if (isset($_GET['ajax'])) {
 
 <script src="script.js"></script>
 <script>
-function editProduct(id, name, category, reorderLevel, unitMeasure, unitPrice) {
+// Keeps a <select> of category ids in sync with the hidden `category` field the
+// form actually submits (its value is always the category *name*, since the
+// server resolves categories by name — see resolve_category() in products.php).
+function onCategorySelect(select, hiddenId, newInputId) {
+    const hidden   = document.getElementById(hiddenId);
+    const newInput = document.getElementById(newInputId);
+    if (select.value === '__new__') {
+        newInput.style.display = 'block';
+        newInput.value = '';
+        hidden.value = '';
+        newInput.focus();
+    } else {
+        newInput.style.display = 'none';
+        newInput.value = '';
+        hidden.value = select.value ? select.options[select.selectedIndex].text : '';
+    }
+}
+
+function editProduct(id, name, categoryId, reorderLevel, unitMeasure, unitPrice) {
     document.getElementById('edit_id').value = id;
     document.getElementById('edit_name').value = name;
-    document.getElementById('edit_category').value = category;
+    const select = document.getElementById('edit_category_select');
+    select.value = categoryId && select.querySelector(`option[value="${categoryId}"]`) ? categoryId : '';
+    onCategorySelect(select, 'edit_category_hidden', 'edit_category_new');
     document.getElementById('edit_reorder_level').value = reorderLevel;
     document.getElementById('edit_unit_measure').value = unitMeasure;
     document.getElementById('edit_unit_price').value = unitPrice;

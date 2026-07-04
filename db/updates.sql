@@ -270,3 +270,30 @@ CREATE TABLE IF NOT EXISTS `cache_meta` (
     `updated_at`  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`store_name`, `company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- ── categories table: normalizes products.category from a free-text input into a
+-- managed list (picked from a dropdown in products.php instead of typed, so it can't
+-- drift into near-duplicate values like "Screen"/"screens"/"Screen "). products.category
+-- itself is kept as a denormalized text column so the existing FULLTEXT search_text
+-- column and every other page's `category` reads/filters keep working unchanged;
+-- products.php now writes category_id + category together on every insert/update.
+CREATE TABLE IF NOT EXISTS `categories` (
+    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+    `name`       VARCHAR(50) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_categories_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+ALTER TABLE `products` ADD COLUMN IF NOT EXISTS `category_id` INT NULL AFTER `category`;
+
+-- Backfill: one categories row per distinct existing category value, then point products at it.
+INSERT IGNORE INTO `categories` (`name`)
+SELECT DISTINCT `category` FROM `products` WHERE `category` IS NOT NULL AND `category` != '';
+
+UPDATE `products` p
+JOIN `categories` c ON c.name = p.category
+SET p.category_id = c.id
+WHERE p.category_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS `idx_products_category_id` ON `products` (`category_id`);

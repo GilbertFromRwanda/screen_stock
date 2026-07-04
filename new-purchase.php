@@ -51,7 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ── Create new product ────────────────────────────────────────────────────
     if (($_POST['action'] ?? '') === 'create_product') {
         $name         = trim($_POST['name']         ?? '');
-        $category     = trim($_POST['category']     ?? '');
+        [$category_id, $category] = resolve_category($conn, $_POST['category'] ?? '');
+        $category_id_v = $category_id !== null ? (int)$category_id : 'NULL';
         $unit_measure = trim($_POST['unit_measure'] ?? 'box') ?: 'box';
         if (!$name) { echo json_encode(['ok' => false, 'message' => 'Product name is required.']); exit; }
         $n = mysqli_real_escape_string($conn, $name);
@@ -59,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u = mysqli_real_escape_string($conn, $unit_measure);
         $dup = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM products WHERE name='$n' AND deleted=0 LIMIT 1"));
         if ($dup) { echo json_encode(['ok' => false, 'message' => 'A product with this name already exists.']); exit; }
-        mysqli_query($conn, "INSERT INTO products (name, category, unit_measure, reorder_level, unit_price) VALUES ('$n','$c','$u',10,0)");
+        mysqli_query($conn, "INSERT INTO products (name, category, category_id, unit_measure, reorder_level, unit_price) VALUES ('$n','$c',$category_id_v,'$u',10,0)");
         $new_id = (int)mysqli_insert_id($conn);
         if ($new_id) {
             // logActivity($conn, 'create', 'product', $new_id, "Created product: $name");
@@ -714,7 +715,16 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
         </div>
         <div class="form-group">
             <label>Category</label>
-            <input type="text" id="np_category" placeholder="e.g. TECNO &amp; INFINIX" autocomplete="off">
+            <select id="np_category_select" onchange="onCategorySelect(this,'np_category','np_category_new')">
+                <option value="">— None —</option>
+                <?php foreach (get_categories($conn) as $c): ?>
+                <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
+                <?php endforeach; ?>
+                <option value="__new__">+ Add new category…</option>
+            </select>
+            <input type="text" id="np_category_new" placeholder="New category name" style="display:none;margin-top:6px;"
+                oninput="document.getElementById('np_category').value=this.value">
+            <input type="hidden" id="np_category">
         </div>
         <div class="form-group">
             <label>Unit Measure</label>
@@ -1387,10 +1397,31 @@ function loadPreset(key, btn) {
     suggestPrices();
 }
 
+// Keeps a <select> of category ids in sync with the hidden field the form actually
+// submits (its value is always the category *name*, resolved server-side by name —
+// see resolve_category() in config.php).
+function onCategorySelect(select, hiddenId, newInputId) {
+    const hidden   = document.getElementById(hiddenId);
+    const newInput = document.getElementById(newInputId);
+    if (select.value === '__new__') {
+        newInput.style.display = 'block';
+        newInput.value = '';
+        hidden.value = '';
+        newInput.focus();
+    } else {
+        newInput.style.display = 'none';
+        newInput.value = '';
+        hidden.value = select.value ? select.options[select.selectedIndex].text : '';
+    }
+}
+
 // ── New Product modal ─────────────────────────────────────────────────────────
 function openNpModal(prefill) {
     document.getElementById('np_name').value     = prefill || '';
     document.getElementById('np_category').value = '';
+    document.getElementById('np_category_select').value = '';
+    document.getElementById('np_category_new').style.display = 'none';
+    document.getElementById('np_category_new').value = '';
     document.getElementById('np_unit').value     = 'box';
     document.getElementById('npModal').classList.add('open');
     document.getElementById('np_name').focus();
