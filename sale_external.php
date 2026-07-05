@@ -527,7 +527,7 @@ var extCart          = [];
 })();
 
 function loadExtCategories() {
-    DataCache.getCategories().then(function(cats) { extAllCategories = cats; });
+    DataCache.getCategoriesList().then(function(cats) { extAllCategories = cats.map(function(c) { return c.name; }); });
 }
 loadExtCategories();
 
@@ -576,7 +576,7 @@ loadExtCategories();
             .then(function(list) {
                 var data = list.filter(function(p) {
                     if (extSelectedCat && p.category !== extSelectedCat) return false;
-                    if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                    if (term && (p.search_text || '').toLowerCase().indexOf(term) === -1) return false;
                     return true;
                 }).slice(0, 60).map(function(p) {
                     return { id: p.id, name: p.name, category: p.category,

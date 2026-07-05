@@ -16,7 +16,7 @@ var DataCache = (function() {
     var DB_VERSION = 1;
     var META_CHECK_MIN_MS = 15 * 1000;
     var FALLBACK_TTL_MS = 30 * 60 * 1000;
-    var STORES = ['products', 'clients'];
+    var STORES = ['products', 'clients', 'categories'];
 
     var companyKey = (typeof window.APP_COMPANY_ID !== 'undefined' && window.APP_COMPANY_ID !== null)
         ? String(window.APP_COMPANY_ID) : 'all';
@@ -94,7 +94,7 @@ var DataCache = (function() {
     }
 
     function fetchFromServer(store) {
-        var action = store === 'products' ? 'products' : 'clients';
+        var action = (store === 'products' || store === 'categories') ? store : 'clients';
         return fetch('data_api.php?action=' + action, { method: 'GET' })
             .then(function(r) { return r.json(); })
             .then(function(res) { return (res && res.success) ? (res.data || []) : []; });
@@ -167,30 +167,14 @@ var DataCache = (function() {
     function getProducts(opts) { return get('products', opts); }
     function getClients(opts) { return get('clients', opts); }
 
-    // Distinct categories derived from the cached product list.
-    // opts.withStock: 'wh' -> only categories with warehouse (bulk) stock > 0
-    //                 'retail' -> only categories with retail stock > 0
-    //                 omitted -> all categories regardless of stock
-    function getCategories(opts) {
-        opts = opts || {};
-        return getProducts().then(function(list) {
-            var seen = {};
-            var out = [];
-            list.forEach(function(p) {
-                if (!p.category) return;
-                if (opts.withStock === 'wh' && !(parseFloat(p.wh_qty) > 0)) return;
-                if (opts.withStock === 'retail' && !(parseFloat(p.retail_qty) > 0)) return;
-                if (!seen[p.category]) { seen[p.category] = true; out.push(p.category); }
-            });
-            out.sort();
-            return out;
-        });
-    }
+    // The full managed category list (id + name) from the `categories` table,
+    // including brand-new categories with zero products yet.
+    function getCategoriesList(opts) { return get('categories', opts); }
 
     return {
         getProducts: getProducts,
         getClients: getClients,
-        getCategories: getCategories,
+        getCategoriesList: getCategoriesList,
         invalidate: invalidate
     };
 })();

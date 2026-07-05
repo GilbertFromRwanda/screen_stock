@@ -13,7 +13,7 @@ $action = $_GET['action'] ?? '';
 if ($action === 'products') {
     $rows = [];
     $q = mysqli_query($conn, "
-        SELECT p.id, p.name, p.category, p.unit_measure,
+        SELECT p.id, p.name, p.category, p.search_text, p.unit_measure,
                COALESCE(s.package_price, 0)       AS bulk_price,
                COALESCE(s.quantity, 0)             AS wh_qty,
                COALESCE(s.pieces_per_package, 1)   AS pieces_per_package,
@@ -27,6 +27,11 @@ if ($action === 'products') {
     ");
     while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
     echo json_encode(['success' => true, 'data' => $rows]);
+    exit;
+}
+
+if ($action === 'categories') {
+    echo json_encode(['success' => true, 'data' => get_categories($conn)]);
     exit;
 }
 
@@ -48,7 +53,7 @@ if ($action === 'clients') {
 // copy is stale, instead of refetching the full dataset on a fixed timer.
 if ($action === 'meta') {
     $company_id = cid() ?? 0;
-    $out = ['products' => 0, 'clients' => 0];
+    $out = ['products' => 0, 'clients' => 0, 'categories' => 0];
     $q = mysqli_query($conn, "
         SELECT store_name, UNIX_TIMESTAMP(updated_at) AS ts
         FROM cache_meta

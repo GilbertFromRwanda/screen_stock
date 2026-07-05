@@ -510,7 +510,7 @@ var bulkCart            = [];
 })();
 
 function loadBulkCategories() {
-    DataCache.getCategories({ withStock: 'wh' }).then(function(cats) { bulkAllCategories = cats; });
+    DataCache.getCategoriesList().then(function(cats) { bulkAllCategories = cats.map(function(c) { return c.name; }); });
 }
 loadBulkCategories();
 
@@ -560,7 +560,7 @@ loadBulkCategories();
                 var data = list.filter(function(p) {
                     if (!(parseFloat(p.wh_qty) > 0)) return false;
                     if (bulkSelectedCat && p.category !== bulkSelectedCat) return false;
-                    if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                    if (term && (p.search_text || '').toLowerCase().indexOf(term) === -1) return false;
                     return true;
                 }).slice(0, 60).map(function(p) {
                     return { id: p.id, name: p.name, category: p.category, unit_measure: p.unit_measure,

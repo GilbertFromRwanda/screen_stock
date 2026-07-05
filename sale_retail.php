@@ -509,7 +509,7 @@ var retailCart            = [];
 })();
 
 function loadRetailCategories() {
-    DataCache.getCategories({ withStock: 'retail' }).then(function(cats) { retailAllCategories = cats; });
+    DataCache.getCategoriesList().then(function(cats) { retailAllCategories = cats.map(function(c) { return c.name; }); });
 }
 loadRetailCategories();
 
@@ -559,7 +559,7 @@ loadRetailCategories();
                 var data = list.filter(function(p) {
                     if (!(parseFloat(p.retail_qty) > 0)) return false;
                     if (retailSelectedCat && p.category !== retailSelectedCat) return false;
-                    if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                    if (term && (p.search_text || '').toLowerCase().indexOf(term) === -1) return false;
                     return true;
                 }).slice(0, 60).map(function(p) {
                     return { id: p.id, name: p.name, category: p.category, unit_measure: p.unit_measure,

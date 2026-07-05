@@ -796,7 +796,7 @@ var _selectedProd = null;
         DataCache.getProducts().then(function(list) {
             var rows = list.filter(function(p) {
                 if (!((parseFloat(p.wh_qty) > 0) || (parseFloat(p.retail_qty) > 0))) return false;
-                if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                if (term && (p.search_text || '').toLowerCase().indexOf(term) === -1) return false;
                 return true;
             }).slice(0, 60).map(function(p) {
                 return { id: p.id, name: p.name, category: p.category,

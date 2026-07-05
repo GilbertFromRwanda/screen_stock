@@ -1,0 +1,36 @@
+# ── Compression: shrink HTML/CSS/JS/JSON responses before they leave the server ──
+# AddOutputFilterByType is disabled by default in Apache 2.4 builds (removed unless
+# compiled with a special flag) — SetOutputFilter scoped by file extension is the
+# directive that actually works on stock Apache 2.4.
+<IfModule mod_deflate.c>
+    <FilesMatch "\.(html|php|css|js|json|xml|svg)$">
+        SetOutputFilter DEFLATE
+    </FilesMatch>
+</IfModule>
+
+# ── Browser caching for static assets ─────────────────────────────────────────
+# CSS/JS here aren't served with a cache-busting query string (e.g. style.css?v=2),
+# so a long expiry would hide future edits from returning visitors until their
+# browser cache naturally clears. 1 week keeps repeat page loads fast within a
+# session/day without that staleness risk lasting too long after a deploy.
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css                "access plus 1 week"
+    ExpiresByType application/javascript  "access plus 1 week"
+    ExpiresByType text/javascript         "access plus 1 week"
+    ExpiresByType image/png               "access plus 1 month"
+    ExpiresByType image/jpeg              "access plus 1 month"
+    ExpiresByType image/svg+xml           "access plus 1 month"
+    ExpiresByType font/woff2              "access plus 1 month"
+    ExpiresByType application/json        "access plus 0 seconds"
+    ExpiresByType text/html               "access plus 0 seconds"
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|png|jpe?g|svg|woff2?)$">
+        Header set Cache-Control "public, max-age=604800"
+    </FilesMatch>
+    <FilesMatch "\.php$">
+        Header set Cache-Control "no-cache, private"
+    </FilesMatch>
+</IfModule>

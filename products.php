@@ -388,9 +388,6 @@ if (isset($_GET['ajax'])) {
                 <label>Category</label>
                 <select id="category_select" onchange="onCategorySelect(this,'category_hidden','category_new')">
                     <option value="">— None —</option>
-                    <?php foreach (get_categories($conn) as $c): ?>
-                    <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
-                    <?php endforeach; ?>
                     <option value="__new__">+ Add new category…</option>
                 </select>
                 <input type="text" id="category_new" placeholder="New category name" style="display:none;margin-top:6px;"
@@ -417,9 +414,6 @@ if (isset($_GET['ajax'])) {
                 <label>Category</label>
                 <select id="edit_category_select" onchange="onCategorySelect(this,'edit_category_hidden','edit_category_new')">
                     <option value="">— None —</option>
-                    <?php foreach (get_categories($conn) as $c): ?>
-                    <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
-                    <?php endforeach; ?>
                     <option value="__new__">+ Add new category…</option>
                 </select>
                 <input type="text" id="edit_category_new" placeholder="New category name" style="display:none;margin-top:6px;"
@@ -455,8 +449,34 @@ if (isset($_GET['ajax'])) {
     </div>
 </div>
 
+<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script src="js/data-cache.js"></script>
 <script src="script.js"></script>
 <script>
+// Populates both category <select>s from DataCache.getCategoriesList() (the full
+// managed list, not just categories already assigned to a product) instead of
+// rendering options once server-side, so a category created in another tab shows
+// up here without reloading this page.
+function populateCategorySelects(cats) {
+    ['category_select', 'edit_category_select'].forEach(function(id) {
+        var select = document.getElementById(id);
+        var current = select.value;
+        select.innerHTML = '<option value="">— None —</option>';
+        cats.forEach(function(c) {
+            var opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            select.appendChild(opt);
+        });
+        var newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = '+ Add new category…';
+        select.appendChild(newOpt);
+        if (current && select.querySelector('option[value="' + current + '"]')) select.value = current;
+    });
+}
+var categoriesReady = DataCache.getCategoriesList().then(populateCategorySelects);
+
 // Keeps a <select> of category ids in sync with the hidden `category` field the
 // form actually submits (its value is always the category *name*, since the
 // server resolves categories by name — see resolve_category() in products.php).
@@ -478,9 +498,11 @@ function onCategorySelect(select, hiddenId, newInputId) {
 function editProduct(id, name, categoryId, reorderLevel, unitMeasure, unitPrice) {
     document.getElementById('edit_id').value = id;
     document.getElementById('edit_name').value = name;
-    const select = document.getElementById('edit_category_select');
-    select.value = categoryId && select.querySelector(`option[value="${categoryId}"]`) ? categoryId : '';
-    onCategorySelect(select, 'edit_category_hidden', 'edit_category_new');
+    categoriesReady.then(function() {
+        const select = document.getElementById('edit_category_select');
+        select.value = categoryId && select.querySelector(`option[value="${categoryId}"]`) ? categoryId : '';
+        onCategorySelect(select, 'edit_category_hidden', 'edit_category_new');
+    });
     document.getElementById('edit_reorder_level').value = reorderLevel;
     document.getElementById('edit_unit_measure').value = unitMeasure;
     document.getElementById('edit_unit_price').value = unitPrice;

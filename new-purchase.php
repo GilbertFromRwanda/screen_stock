@@ -184,9 +184,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── Page render ───────────────────────────────────────────────────────────────
-$suppliers_r = mysqli_query($conn, "SELECT id, name FROM suppliers " . cidWhere() . " ORDER BY name");
+// $suppliers_r = mysqli_query($conn, "SELECT id, name FROM suppliers " . cidWhere() . " ORDER BY name");
 $suppliers   = [];
-while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
+// while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -717,9 +717,6 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
             <label>Category</label>
             <select id="np_category_select" onchange="onCategorySelect(this,'np_category','np_category_new')">
                 <option value="">— None —</option>
-                <?php foreach (get_categories($conn) as $c): ?>
-                <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
-                <?php endforeach; ?>
                 <option value="__new__">+ Add new category…</option>
             </select>
             <input type="text" id="np_category_new" placeholder="New category name" style="display:none;margin-top:6px;"
@@ -1075,7 +1072,7 @@ var allCategories = [];
 })();
 
 function loadCategories() {
-    DataCache.getCategories().then(function(cats) { allCategories = cats; });
+    DataCache.getCategoriesList().then(function(cats) { allCategories = cats.map(function(c) { return c.name; }); });
 }
 
 // ── Searchable product dropdown (AJAX) ───────────────────────────────────────
@@ -1125,7 +1122,7 @@ function loadCategories() {
             .then(function (list) {
                 var data = list.filter(function(p) {
                     if (selectedCat && p.category !== selectedCat) return false;
-                    if (term && ((p.category || '') + '-' + p.name).toLowerCase().indexOf(term) === -1) return false;
+                    if (term && (p.search_text || '').toLowerCase().indexOf(term) === -1) return false;
                     return true;
                 }).slice(0, 60).map(function(p) {
                     return { id: p.id, name: p.name, category: p.category };
@@ -1416,13 +1413,36 @@ function onCategorySelect(select, hiddenId, newInputId) {
 }
 
 // ── New Product modal ─────────────────────────────────────────────────────────
+// Category options come from DataCache.getCategoriesList() (the full managed list,
+// not just categories already in stock) so a category added anywhere else — another
+// tab, products.php, categories.php — shows up here without a page reload.
+function populateNpCategories() {
+    var select = document.getElementById('np_category_select');
+    var current = select.value;
+    select.innerHTML = '<option value="">Loading…</option>';
+    DataCache.getCategoriesList().then(function(cats) {
+        select.innerHTML = '<option value="">— None —</option>';
+        cats.forEach(function(c) {
+            var opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            select.appendChild(opt);
+        });
+        var newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = '+ Add new category…';
+        select.appendChild(newOpt);
+        select.value = current && select.querySelector('option[value="' + current + '"]') ? current : '';
+    });
+}
+
 function openNpModal(prefill) {
     document.getElementById('np_name').value     = prefill || '';
     document.getElementById('np_category').value = '';
-    document.getElementById('np_category_select').value = '';
     document.getElementById('np_category_new').style.display = 'none';
     document.getElementById('np_category_new').value = '';
     document.getElementById('np_unit').value     = 'box';
+    populateNpCategories();
     document.getElementById('npModal').classList.add('open');
     document.getElementById('np_name').focus();
 }
@@ -1452,7 +1472,9 @@ function submitNewProduct() {
         .then(function(d) {
             btn.disabled = false; btn.textContent = 'Create Product';
             if (d.ok) {
-                DataCache.invalidate('products'); // new product added to catalog
+                DataCache.invalidate('products');   // new product added to catalog
+                DataCache.invalidate('categories'); // may have created a brand-new category too
+                loadCategories(); // refresh the top "Category" filter's allCategories list too
                 document.getElementById('product_id').value    = d.id;
                 document.getElementById('product_search').value =
                     (d.category ? d.category + ' — ' : '') + d.name;

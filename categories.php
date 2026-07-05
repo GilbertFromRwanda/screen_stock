@@ -107,6 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['rename_category'])) {
     }
     sync_products_category_text($conn, $id, $new_name);
     touchCacheStore($conn, 'products');
+    touchCacheStore($conn, 'categories');
     logActivity($conn, (int)$_SESSION['user_id'], 'Rename Category', "Renamed category: {$old['name']} -> $new_name",
         'categories', $id, ['name' => $old['name']], ['name' => $new_name]);
     json_result(true, "Category renamed to \"$new_name\".");
@@ -129,6 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['merge_category'])) {
     mysqli_query($conn, "UPDATE products SET category_id=$target_id, category='$tn' WHERE category_id=$source_id");
     mysqli_query($conn, "DELETE FROM categories WHERE id=$source_id");
     touchCacheStore($conn, 'products');
+    touchCacheStore($conn, 'categories');
     logActivity($conn, (int)$_SESSION['user_id'], 'Merge Category', "Merged category \"{$source['name']}\" into \"{$target['name']}\"",
         'categories', $target_id, ['name' => $source['name']], ['merged_into' => $target['name']]);
     json_result(true, "Merged \"{$source['name']}\" into \"{$target['name']}\".");
@@ -149,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_category'])) {
     if (!mysqli_query($conn, "DELETE FROM categories WHERE id=$id")) {
         json_result(false, "Error deleting category: " . mysqli_error($conn));
     }
+    touchCacheStore($conn, 'categories');
     logActivity($conn, (int)$_SESSION['user_id'], 'Delete Category', "Deleted category: {$cat['name']}", 'categories', $id, $cat, []);
     json_result(true, "Category \"{$cat['name']}\" deleted.");
 }
