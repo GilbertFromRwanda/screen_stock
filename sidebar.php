@@ -40,7 +40,7 @@ try {
                     <?php endif; ?>
                     <?php if ($has_sa): ?>
                     <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
-                    <a href="zero_stock.php"   class="tn-drop-item<?= $current_page==='zero_stock.php'  ?' active':'' ?>">Zero Stock</a>
+                    <a href="zero_stock.php"   class="tn-drop-item<?= $current_page==='zero_stock.php'  ?' active':'' ?>">Restock</a>
                     <?php endif; ?>
                 </div>
             </div>
