@@ -27,7 +27,7 @@ try {
 
             <a href="dashboard.php" class="tn-item<?= $current_page==='dashboard.php' ? ' active':'' ?>">&#9635; Dashboard</a>
 
-            <?php $ia = in_array($current_page,['products.php','categories.php','stock.php','stock_adjust.php']);
+            <?php $ia = in_array($current_page,['products.php','categories.php','stock.php','stock_adjust.php','zero_stock.php']);
                   $has_inv = hasPermission('inventory'); $has_sa = hasPermission('stock_adjust'); ?>
             <?php if ($has_inv || $has_sa): ?>
             <div class="tn-dropdown<?= $ia?' active':'' ?>">
@@ -40,6 +40,7 @@ try {
                     <?php endif; ?>
                     <?php if ($has_sa): ?>
                     <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
+                    <a href="zero_stock.php"   class="tn-drop-item<?= $current_page==='zero_stock.php'  ?' active':'' ?>">Zero Stock</a>
                     <?php endif; ?>
                 </div>
             </div>
