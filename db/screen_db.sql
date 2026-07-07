@@ -183,6 +183,19 @@ CREATE TABLE `notes` (
   KEY `idx_notes_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE `notifications` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
+  `order_id` int(11) NOT NULL,
+  `order_number` varchar(20) DEFAULT NULL,
+  `message` varchar(255) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `delivered_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_notif_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 DROP TABLE IF EXISTS `order_items`;
 CREATE TABLE `order_items` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -234,8 +247,9 @@ CREATE TABLE `orders` (
   `prepaid_bank` decimal(12,2) NOT NULL DEFAULT 0.00,
   `total_prepaid` decimal(12,2) NOT NULL DEFAULT 0.00,
   `refund_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `status` enum('new','open','pending','approved','cancelled','closed') NOT NULL DEFAULT 'pending',
-  `delivery_status` enum('placed','packed','ready','delivered') NOT NULL DEFAULT 'placed',
+  `status` enum('new','open','pending','processing','completed','rejected','approved','cancelled','closed') NOT NULL DEFAULT 'pending',
+  `status_before_close` varchar(20) DEFAULT NULL,
+  `delivery_status` enum('placed','packed','ready','delivered','received') NOT NULL DEFAULT 'placed',
   `show_prices` tinyint(1) NOT NULL DEFAULT 1,
   `link_code` char(5) DEFAULT NULL,
   `link_expires_at` datetime DEFAULT NULL,
@@ -618,6 +632,8 @@ CREATE TABLE `sales_bulk` (
   `level_divisor` int(11) NOT NULL DEFAULT 1,
   `package_price` decimal(10,2) DEFAULT NULL,
   `total_amount` decimal(10,2) DEFAULT NULL,
+  `cost_total` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `purchase_id` int(11) DEFAULT NULL,
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
   `sold_by` int(11) DEFAULT NULL,
@@ -633,6 +649,7 @@ CREATE TABLE `sales_bulk` (
   KEY `product_id` (`product_id`),
   KEY `idx_sale_date` (`sale_date`),
   KEY `idx_created_at` (`created_at`),
+  KEY `idx_sb_purchase_id` (`purchase_id`),
   CONSTRAINT `sales_bulk_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -666,6 +683,8 @@ CREATE TABLE `sales_retail` (
   `pieces_sold` int(11) NOT NULL,
   `retail_price` decimal(10,2) DEFAULT NULL,
   `total_amount` decimal(10,2) DEFAULT NULL,
+  `cost_total` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `purchase_id` int(11) DEFAULT NULL,
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
   `sold_by` int(11) DEFAULT NULL,
@@ -681,6 +700,7 @@ CREATE TABLE `sales_retail` (
   KEY `product_id` (`product_id`),
   KEY `idx_sale_date` (`sale_date`),
   KEY `idx_created_at` (`created_at`),
+  KEY `idx_sr_purchase_id` (`purchase_id`),
   CONSTRAINT `sales_retail_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 

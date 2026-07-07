@@ -297,3 +297,109 @@ SET p.category_id = c.id
 WHERE p.category_id IS NULL;
 
 CREATE INDEX IF NOT EXISTS `idx_products_category_id` ON `products` (`category_id`);
+
+
+-- ── Order review workflow: pending → processing/rejected, processing → completed/closed ──
+-- 'approved' is kept in the enum for historical rows (nothing new writes it after this
+-- migration); 'processing'/'completed'/'rejected' are the new review-pipeline states.
+ALTER TABLE `orders` MODIFY COLUMN `status`
+  ENUM('new','open','pending','processing','completed','rejected','approved','cancelled','closed')
+  NOT NULL DEFAULT 'pending';
+
+-- Existing approved orders already have their sale/stock recorded — they're "completed" now.
+UPDATE `orders` SET `status` = 'completed' WHERE `status` = 'approved';
+
+-- Delivery pipeline gains a final "customer confirmed receipt" stage.
+ALTER TABLE `orders` MODIFY COLUMN `delivery_status`
+  ENUM('placed','packed','ready','delivered','received') NOT NULL DEFAULT 'placed';
+
+-- Remembers the status an order had right before it was closed, so reopen (admin/superadmin
+-- only) can restore it exactly instead of guessing.
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `status_before_close` VARCHAR(20) NULL AFTER `status`;
+
+
+-- ── notifications: one row per (order, recipient), deleted the moment that recipient's
+-- long-poll (notifications_poll.php) delivers it — keeps the table small automatically
+-- instead of needing a read/unread flag or a cleanup job.
+CREATE TABLE IF NOT EXISTS `notifications` (
+    `id`           INT           AUTO_INCREMENT PRIMARY KEY,
+    `user_id`      INT           NOT NULL,
+    `company_id`   INT           DEFAULT NULL,
+    `order_id`     INT           NOT NULL,
+    `order_number` VARCHAR(20)   DEFAULT NULL,
+    `message`      VARCHAR(255)  NOT NULL,
+    `created_at`   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    `delivered_at` DATETIME      DEFAULT NULL,
+    INDEX `idx_notif_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- A row is only handed to the long-poll once (delivered_at gets stamped) and
+-- is deleted only when the user explicitly marks it read — not immediately
+-- on delivery, so a missed/backgrounded-tab notification isn't lost.
+ALTER TABLE `notifications` ADD COLUMN IF NOT EXISTS `delivered_at` DATETIME NULL AFTER `created_at`;
+
+
+-- ── sales_bulk.cost_total / sales_retail.cost_total: precomputed COGS ─────────
+-- Previously every report (summary-revenue, revenue, ajax_dashboard) recomputed
+-- cost-of-goods-sold on the fly via a correlated subquery that looked up "the
+-- most recent purchase before this sale's date" each time it ran. That's slow
+-- and, worse, not actually historical: it read a product's *current* stock
+-- packaging ratio, so a sale's reported cost could silently change later if
+-- the product got repackaged. cost_total is now computed once at sale time
+-- (sales.php, orders.php) and frozen on the row, same idea as storing
+-- level_divisor/pieces_sold themselves.
+ALTER TABLE `sales_bulk`   ADD COLUMN IF NOT EXISTS `cost_total` DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `total_amount`;
+ALTER TABLE `sales_retail` ADD COLUMN IF NOT EXISTS `cost_total` DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `total_amount`;
+
+-- Backfill existing rows using the same "last purchase before sale_date" lookup
+-- the reports used to do inline, so historical figures don't shift under the swap.
+UPDATE `sales_bulk` sb
+SET sb.cost_total = (
+    COALESCE(
+        (SELECT pu.cost_price FROM `purchases` pu
+         WHERE pu.product_id = sb.product_id AND pu.company_id <=> sb.company_id
+           AND pu.purchase_date <= sb.sale_date
+         ORDER BY pu.purchase_date DESC LIMIT 1), 0
+    ) * sb.quantity / COALESCE(NULLIF(sb.level_divisor, 0), 1)
+)
+WHERE sb.cost_total = 0;
+
+UPDATE `sales_retail` sr
+SET sr.cost_total = (
+    SELECT pu.cost_price / NULLIF(pu.pieces_per_qty, 0) * sr.pieces_sold
+    FROM `purchases` pu
+    WHERE pu.product_id = sr.product_id AND pu.company_id <=> sr.company_id
+      AND pu.purchase_date <= sr.sale_date
+    ORDER BY pu.purchase_date DESC LIMIT 1
+)
+WHERE sr.cost_total = 0;
+UPDATE `sales_retail` SET cost_total = 0 WHERE cost_total IS NULL;
+
+
+-- ── sales_bulk.purchase_id / sales_retail.purchase_id: which purchase a sale's
+-- cost_total was snapshotted from. Lets purchases.php's "Edit Purchase" find and
+-- re-sync exactly the sales that were costed against a purchase when its
+-- cost_price/pieces_per_qty gets corrected, instead of leaving them stale forever.
+ALTER TABLE `sales_bulk`   ADD COLUMN IF NOT EXISTS `purchase_id` INT NULL AFTER `cost_total`;
+ALTER TABLE `sales_retail` ADD COLUMN IF NOT EXISTS `purchase_id` INT NULL AFTER `cost_total`;
+CREATE INDEX IF NOT EXISTS `idx_sb_purchase_id` ON `sales_bulk`   (`purchase_id`);
+CREATE INDEX IF NOT EXISTS `idx_sr_purchase_id` ON `sales_retail` (`purchase_id`);
+
+-- Backfill: same "last purchase before sale_date" lookup used for the cost_total backfill.
+UPDATE `sales_bulk` sb
+SET sb.purchase_id = (
+    SELECT pu.id FROM `purchases` pu
+    WHERE pu.product_id = sb.product_id AND pu.company_id <=> sb.company_id
+      AND pu.purchase_date <= sb.sale_date
+    ORDER BY pu.purchase_date DESC LIMIT 1
+)
+WHERE sb.purchase_id IS NULL;
+
+UPDATE `sales_retail` sr
+SET sr.purchase_id = (
+    SELECT pu.id FROM `purchases` pu
+    WHERE pu.product_id = sr.product_id AND pu.company_id <=> sr.company_id
+      AND pu.purchase_date <= sr.sale_date
+    ORDER BY pu.purchase_date DESC LIMIT 1
+)
+WHERE sr.purchase_id IS NULL;

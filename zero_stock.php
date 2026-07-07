@@ -74,11 +74,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restock'])) {
     // quantity added here instead of silently drifting out of sync.
     $rt_pkg_equiv  = $rt_add > 0 ? max(1, (int)ceil($rt_add / $wh_ppp)) : 0;
     $total_pkg_qty = $wh_add + $rt_pkg_equiv;
+    $pur_pkg_price = $wh_add > 0 ? $wh_pkg_price : $wh_retail_price;
+    $pur_rt_price  = $rt_add > 0 ? $rt_price : $wh_retail_price;
     mysqli_query($conn, "
         INSERT INTO purchases (company_id, product_id, supplier_id, quantity, pieces_per_qty,
             cost_price, package_price, retail_price, purchase_date)
         VALUES ($cid_sql, $pid, NULL, $total_pkg_qty, $wh_ppp,
-            $cost_price, $wh_pkg_price, $rt_price, CURDATE())
+            $cost_price, $pur_pkg_price, $pur_rt_price, CURDATE())
     ");
 
     recalcStockValue($conn, cid(), $pid);

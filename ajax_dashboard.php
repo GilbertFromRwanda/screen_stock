@@ -82,31 +82,16 @@ $today_momo = (float)$pay['momo'];
 $today_loan = (float)$pay['loan'];
 
 // ── Profit ────────────────────────────────────────────────────────────────────
-// Cost computed with COALESCE(0) so sales without a purchase record contribute
-// 0 cost rather than being dropped by an INNER JOIN (matches chart calculation).
-// Stock join also company-filtered to avoid row duplication in multi-company setup.
+// cost_total is a snapshot taken at sale time (see bulkSaleCost()/retailSaleCost()
+// in functions.php) — no correlated purchase lookup needed here anymore.
 $today_bulk_cost = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE(SUM(
-        COALESCE(
-            (SELECT cost_price FROM purchases pu2
-             WHERE pu2.product_id = sb.product_id AND pu2.purchase_date <= sb.sale_date
-             " . cidAndFor('pu2') . " ORDER BY purchase_date DESC LIMIT 1), 0
-        ) * sb.quantity / COALESCE(NULLIF(sb.level_divisor,0),1)
-    ),0) v
+    SELECT COALESCE(SUM(sb.cost_total),0) v
     FROM sales_bulk sb
     WHERE sb.sale_date='$today' AND sb.refunded=0 AND sb.has_loan=0 " . cidAndFor('sb') . "
 "))['v'] ?? 0);
 
 $today_retail_cost = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT COALESCE(SUM(
-        COALESCE(
-            (SELECT pu.cost_price / NULLIF(s.pieces_per_package,0)
-             FROM purchases pu
-             JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
-             WHERE pu.product_id = sr.product_id AND pu.purchase_date <= sr.sale_date
-             " . cidAndFor('pu') . " ORDER BY pu.purchase_date DESC LIMIT 1), 0
-        ) * sr.pieces_sold
-    ),0) v
+    SELECT COALESCE(SUM(sr.cost_total),0) v
     FROM sales_retail sr
     WHERE sr.sale_date='$today' AND sr.refunded=0 AND sr.has_loan=0 " . cidAndFor('sr') . "
 "))['v'] ?? 0);
@@ -155,47 +140,24 @@ $chart_query = "
         ) x
     ) dates
     LEFT JOIN (
-        SELECT 
+        SELECT
             sale_date,
             SUM(total_amount) AS revenue,
-            SUM(
-                COALESCE(
-                    (SELECT cost_price 
-                     FROM purchases pu2
-                     WHERE pu2.product_id = sb.product_id 
-                       AND pu2.purchase_date <= sb.sale_date 
-                       " . cidAndFor('pu2') . "
-                     ORDER BY purchase_date DESC 
-                     LIMIT 1), 
-                    0
-                ) * sb.quantity / COALESCE(NULLIF(sb.level_divisor, 0), 1)
-            ) AS cost
+            SUM(cost_total) AS cost
         FROM sales_bulk sb
-        WHERE sb.refunded = 0 
-          AND sb.has_loan = 0 
+        WHERE sb.refunded = 0
+          AND sb.has_loan = 0
           " . cidAndFor('sb') . "
         GROUP BY sale_date
     ) AS bulk ON bulk.sale_date = dates.date
     LEFT JOIN (
-        SELECT 
+        SELECT
             sale_date,
             SUM(total_amount) AS revenue,
-            SUM(
-                COALESCE(
-                    (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0)
-                     FROM purchases pu
-                     JOIN stock s ON s.product_id = pu.product_id " . cidAndFor('s') . "
-                     WHERE pu.product_id = sr.product_id 
-                       AND pu.purchase_date <= sr.sale_date 
-                       " . cidAndFor('pu') . "
-                     ORDER BY pu.purchase_date DESC 
-                     LIMIT 1), 
-                    0
-                ) * sr.pieces_sold
-            ) AS cost
+            SUM(cost_total) AS cost
         FROM sales_retail sr
-        WHERE sr.refunded = 0 
-          AND sr.has_loan = 0 
+        WHERE sr.refunded = 0
+          AND sr.has_loan = 0
           " . cidAndFor('sr') . "
         GROUP BY sale_date
     ) AS retail ON retail.sale_date = dates.date

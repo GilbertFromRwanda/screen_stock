@@ -44,15 +44,12 @@ $to   = isset($_GET['to'])   && $_GET['to']   ? mysqli_real_escape_string($conn,
 $cid_and = cidAnd();
 
 // ── Bulk sales total ───────────────────────────────────────────────────────────
+// cost is a snapshot taken at sale time (see bulkSaleCost() in functions.php) —
+// no correlated purchase lookup needed here anymore.
 $bulk = mysqli_fetch_assoc(mysqli_query($conn, "
     SELECT
         COALESCE(SUM(sb.total_amount), 0) AS revenue,
-        COALESCE(SUM(
-            (SELECT pu.cost_price FROM purchases pu
-             WHERE pu.product_id = sb.product_id $cid_and
-               AND pu.purchase_date <= sb.sale_date
-             ORDER BY pu.purchase_date DESC LIMIT 1) * sb.quantity / COALESCE(NULLIF(sb.level_divisor, 0), 1)
-        ), 0) AS cost
+        COALESCE(SUM(sb.cost_total), 0) AS cost
     FROM sales_bulk sb
     WHERE sb.sale_date BETWEEN '$from' AND '$to' AND sb.refunded = 0 AND sb.has_loan = 0 $cid_and
 "));
@@ -61,13 +58,7 @@ $bulk = mysqli_fetch_assoc(mysqli_query($conn, "
 $retail = mysqli_fetch_assoc(mysqli_query($conn, "
     SELECT
         COALESCE(SUM(sr.total_amount), 0) AS revenue,
-        COALESCE(SUM(
-            (SELECT pu.cost_price / NULLIF(s.pieces_per_package, 0)
-             FROM purchases pu JOIN stock s ON s.product_id = pu.product_id AND s.company_id = pu.company_id
-             WHERE pu.product_id = sr.product_id " . cidAndFor('pu') . "
-               AND pu.purchase_date <= sr.sale_date
-             ORDER BY pu.purchase_date DESC LIMIT 1) * sr.pieces_sold
-        ), 0) AS cost
+        COALESCE(SUM(sr.cost_total), 0) AS cost
     FROM sales_retail sr
     WHERE sr.sale_date BETWEEN '$from' AND '$to' AND sr.refunded = 0 AND sr.has_loan = 0 $cid_and
 "));

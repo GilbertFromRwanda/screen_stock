@@ -51,6 +51,48 @@ function productSearchSql($conn, string $raw): string {
     return "MATCH(search_text) AGAINST ('$match_sql' IN BOOLEAN MODE)";
 }
 
+// Returns ['purchase_id' => ?int, 'cost_price' => float, 'pieces_per_qty' => int] from
+// the most recent purchase of $product_id on/before $date (scoped to the current
+// company), or null/zeros/1 if the product has never been purchased. Used to snapshot
+// COGS onto a sale row at the moment it's recorded (sales.php, orders.php) instead of
+// re-deriving it later from whatever the product's packaging looks like today.
+// purchase_id is stored alongside the snapshot so that if that purchase is later
+// edited (purchases.php), the sales costed against it can be found and re-synced.
+function lastPurchaseCost(mysqli $conn, int $product_id, string $date): array {
+    $date_esc = mysqli_real_escape_string($conn, $date);
+    $r = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT id, cost_price, pieces_per_qty FROM purchases pu
+        WHERE pu.product_id = $product_id AND pu.purchase_date <= '$date_esc' " . cidAndFor('pu') . "
+        ORDER BY pu.purchase_date DESC LIMIT 1
+    "));
+    return [
+        'purchase_id'    => $r ? (int)$r['id'] : null,
+        'cost_price'     => $r ? (float)$r['cost_price'] : 0.0,
+        'pieces_per_qty' => $r ? max(1, (int)$r['pieces_per_qty']) : 1,
+    ];
+}
+
+// COGS for a bulk sale of $quantity units at a level that's $level_divisor pieces
+// per top-level purchase unit (e.g. selling individual pieces out of a box).
+// Returns ['cost_total' => float, 'purchase_id' => ?int].
+function bulkSaleCost(mysqli $conn, int $product_id, string $date, float $quantity, int $level_divisor): array {
+    $lp = lastPurchaseCost($conn, $product_id, $date);
+    return [
+        'cost_total'  => round($lp['cost_price'] * $quantity / max(1, $level_divisor), 2),
+        'purchase_id' => $lp['purchase_id'],
+    ];
+}
+
+// COGS for a retail sale of $pieces_sold individual pieces.
+// Returns ['cost_total' => float, 'purchase_id' => ?int].
+function retailSaleCost(mysqli $conn, int $product_id, string $date, int $pieces_sold): array {
+    $lp = lastPurchaseCost($conn, $product_id, $date);
+    return [
+        'cost_total'  => round($lp['cost_price'] / $lp['pieces_per_qty'] * $pieces_sold, 2),
+        'purchase_id' => $lp['purchase_id'],
+    ];
+}
+
 // Function to redirect
 function redirect($url) {
     header("Location: $url");
@@ -103,6 +145,23 @@ function generateOrderLinkCode(mysqli $conn): string {
     return (string)random_int(10000, 99999);
 }
 
+// Generates a customer-facing order number like ORD-20260705-7F3K: the date
+// prefix is just for readability/sorting, the 4-char suffix is random so
+// order numbers can't be enumerated or used to infer how many orders exist
+// (unlike the old zero-padded-primary-key scheme, ORD-00001, ORD-00002...).
+// Excludes visually-confusable characters (0/O, 1/I).
+function generateOrderNumber(mysqli $conn): string {
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    for ($i = 0; $i < 20; $i++) {
+        $suffix = '';
+        for ($j = 0; $j < 4; $j++) $suffix .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+        $number = 'ORD-' . date('Ymd') . '-' . $suffix;
+        $r = mysqli_query($conn, "SELECT id FROM orders WHERE order_number='$number' LIMIT 1");
+        if ($r && mysqli_num_rows($r) === 0) return $number;
+    }
+    return 'ORD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
+}
+
 // Category lookup: find-or-create by name, returns [id, name]. Keeps `categories` as
 // the single managed list while products.category stays a denormalized copy (used by
 // search_text's FULLTEXT index and every other page that reads/filters it as plain text).
@@ -139,6 +198,64 @@ function touchCacheStore(mysqli $conn, string $store): void {
         VALUES ('$store_esc', $cid, NOW())
         ON DUPLICATE KEY UPDATE updated_at = NOW()
     ");
+}
+
+// Shapes an order + its items into the record js/order-history.js stores in the
+// customer's browser IndexedDB, so a customer can revisit order_track.php on the
+// same device without re-typing their order number and phone.
+function orderHistoryPayload(array $order, array $items): array {
+    return [
+        'order_number' => $order['order_number'],
+        'phone'        => $order['phone'],
+        'order_owner'  => $order['order_owner'],
+        'status'       => $order['status'],
+        'show_prices'  => (bool)$order['show_prices'],
+        'total_amount' => (float)$order['total_amount'],
+        'items'        => array_map(function ($it) {
+            return [
+                'name'       => $it['product_name'] ?? $it['custom_name'] ?? 'Item',
+                'qty'        => (float)$it['quantity'],
+                'unit'       => ($it['stock_source'] ?? '') === 'rt' ? 'pcs' : (($it['stock_source'] ?? '') === 'custom' ? '' : 'pkg'),
+                'item_total' => (float)$it['item_total'],
+            ];
+        }, $items),
+    ];
+}
+
+// Fans out one notifications row per staff member who can view Orders, so
+// notifications_poll.php's long-poll (per user_id) picks it up on their next
+// check — used right when a customer order lands in 'pending'. Recipients:
+// superadmin/admin (always allowed, per hasPermission()) plus anyone with an
+// explicit orders.can_view permission row, scoped to the order's own company
+// (superadmins see every company's orders, so they're notified regardless).
+function notifyOrderSubmitted(mysqli $conn, int $order_id): void {
+    $order = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT company_id, order_number, order_owner FROM orders WHERE id=$order_id"));
+    if (!$order) return;
+
+    $company_filter = $order['company_id'] !== null
+        ? "(u.company_id = " . (int)$order['company_id'] . " OR u.role = 'superadmin')"
+        : "u.role = 'superadmin'";
+
+    $recipients = mysqli_query($conn, "
+        SELECT DISTINCT u.id FROM users u
+        LEFT JOIN user_permissions up ON up.user_id = u.id AND up.module = 'orders'
+        WHERE u.status = 'active' AND $company_filter
+        AND (u.role IN ('superadmin','admin') OR up.can_view = 1)
+    ");
+    if (!$recipients) return;
+
+    $company_sql = $order['company_id'] !== null ? (int)$order['company_id'] : 'NULL';
+    $order_num   = $order['order_number'] ?: "#$order_id";
+    $msg         = mysqli_real_escape_string($conn, "New order $order_num submitted by " . ($order['order_owner'] ?: 'a customer'));
+    $order_num_sql = "'" . mysqli_real_escape_string($conn, $order_num) . "'";
+
+    while ($r = mysqli_fetch_assoc($recipients)) {
+        mysqli_query($conn, "
+            INSERT INTO notifications (user_id, company_id, order_id, order_number, message)
+            VALUES ({$r['id']}, $company_sql, $order_id, $order_num_sql, '$msg')
+        ");
+    }
 }
 
 function logActivity(

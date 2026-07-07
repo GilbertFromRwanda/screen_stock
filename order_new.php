@@ -6,6 +6,33 @@ global $conn;
 
 $user_id = (int)$_SESSION['user_id'];
 
+// ── AJAX: product search (used by this page's own picker, order_add_products.php,
+// and orders.php's "Add Product" modal) ──────────────────────────────────────────
+if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
+    header('Content-Type: application/json');
+    $company_filter    = cid() !== null ? "AND s.company_id=" . cid() : '';
+    $company_filter_rs = cid() !== null ? "AND rs.company_id=" . cid() : '';
+    $search_sql = productSearchSql($conn, $_GET['q'] ?? '');
+    $res = mysqli_query($conn, "
+        SELECT p.id, p.name, p.category,
+               COALESCE(s.quantity,0)           AS stock_qty,
+               COALESCE(s.package_price,0)      AS default_price,
+               COALESCE(s.pieces_per_package,1) AS ppp,
+               COALESCE(rs.pieces_quantity,0)   AS rt_qty,
+               COALESCE(rs.retail_price,0)      AS rt_price
+        FROM products p
+        LEFT JOIN stock        s  ON s.product_id  = p.id $company_filter
+        LEFT JOIN retail_stock rs ON rs.product_id = p.id $company_filter_rs
+        WHERE p.deleted = 0
+        AND $search_sql
+        HAVING stock_qty > 0 OR rt_qty > 0
+        ORDER BY p.category, p.name LIMIT 60");
+    $rows = [];
+    while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
+    echo json_encode($rows);
+    exit;
+}
+
 // ── AJAX: create owner ────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_owner'])) {
     header('Content-Type: application/json');
@@ -56,23 +83,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
         $phe = mysqli_real_escape_string($conn, $owner['phone']);
         $ne  = mysqli_real_escape_string($conn, $note);
 
+        $order_number = generateOrderNumber($conn);
         $ins_ok = mysqli_query($conn, "INSERT INTO `orders`
             (company_id, order_owner_id, product_id, quantity, level_divisor, selling_price, total_amount,
              order_owner, phone, prepaid_cash, prepaid_momo, prepaid_loan, prepaid_bank,
-             total_prepaid, note, created_by, in_charge_id)
+             total_prepaid, note, created_by, in_charge_id, order_number)
             VALUES (" . cidSql() . ", $owner_id, NULL, 0, 1, 0, $total_amount,
                     '$oe', '$phe', $prepaid_cash, $prepaid_momo, $prepaid_loan, $prepaid_bank,
-                    $total_prepaid, '$ne', $user_id, $user_id)");
+                    $total_prepaid, '$ne', $user_id, $user_id, '$order_number')");
 
         if (!$ins_ok) {
             $error = 'Could not save order: ' . mysqli_error($conn);
         } else {
-        $order_id     = (int)mysqli_insert_id($conn);
-        $order_number = 'ORD-' . str_pad($order_id, 5, '0', STR_PAD_LEFT);
-        $upd_ok = mysqli_query($conn, "UPDATE `orders` SET order_number='$order_number' WHERE id=$order_id");
-        if (!$upd_ok || mysqli_affected_rows($conn) === 0) {
-            error_log("orders.php: failed to set order_number for id=$order_id — " . mysqli_error($conn));
-        }
+        $order_id = (int)mysqli_insert_id($conn);
 
         foreach ($items as $it) {
             $pid  = (int)$it['product_id'];

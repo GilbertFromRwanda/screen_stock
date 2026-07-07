@@ -140,6 +140,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
                 recalcStockValue($conn, cid(), (int)$product_id);
             }
             touchCacheStore($conn, 'products');
+
+            // Re-sync cost_total on every sale that was costed against this purchase
+            // (sales_bulk.purchase_id / sales_retail.purchase_id — set when the sale was
+            // recorded, see bulkSaleCost()/retailSaleCost() in functions.php) so a
+            // corrected cost_price/pieces_per_qty here doesn't leave past sales stale.
+            mysqli_query($conn, "
+                UPDATE sales_bulk
+                SET cost_total = ROUND($cost_price * quantity / NULLIF(level_divisor, 0), 2)
+                WHERE purchase_id = $purchase_id
+            ");
+            mysqli_query($conn, "
+                UPDATE sales_retail
+                SET cost_total = ROUND($cost_price / NULLIF($pieces_per_qty, 0) * pieces_sold, 2)
+                WHERE purchase_id = $purchase_id
+            ");
+
             $_SESSION['flash_success'] = "Purchase updated successfully and stock adjusted";
             logActivity($conn, (int)$_SESSION['user_id'], 'Edit Purchase', "Edited purchase #{$purchase_id}",
                 'purchases', $purchase_id,

@@ -84,7 +84,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
         if ($qty_diff !== 0) {
             mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
-        mysqli_query($conn, "UPDATE sales_bulk SET quantity=$new_qty, package_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
+        // Keep the per-unit cost frozen from sale time; just scale it to the new quantity.
+        $old_unit_cost = $old['quantity'] > 0 ? $old['cost_total'] / $old['quantity'] : 0;
+        $new_cost_total = round($old_unit_cost * $new_qty, 2);
+        mysqli_query($conn, "UPDATE sales_bulk SET quantity=$new_qty, package_price=$new_price, total_amount=$total_amount, cost_total=$new_cost_total, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         // require_once 'stock_value.php';
         // recalcStockValue($conn, cid(), (int)$old['product_id']);
         touchCacheStore($conn, 'products');
@@ -175,7 +178,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
         if ($qty_diff !== 0) {
             mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
-        mysqli_query($conn, "UPDATE sales_retail SET pieces_sold=$new_qty, retail_price=$new_price, total_amount=$total_amount, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
+        // Keep the per-piece cost frozen from sale time; just scale it to the new quantity.
+        $old_unit_cost = $old['pieces_sold'] > 0 ? $old['cost_total'] / $old['pieces_sold'] : 0;
+        $new_cost_total = round($old_unit_cost * $new_qty, 2);
+        mysqli_query($conn, "UPDATE sales_retail SET pieces_sold=$new_qty, retail_price=$new_price, total_amount=$total_amount, cost_total=$new_cost_total, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         // require_once 'stock_value.php';
         // recalcStockValue($conn, cid(), (int)$old['product_id']);
         touchCacheStore($conn, 'products');
@@ -491,13 +497,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $selling_price = $it['selling_price'];
         $level_divisor = $it['level_divisor'];
         $item_total    = round($quantity * $selling_price, 2);
+        $cost          = bulkSaleCost($conn, $product_id, $loan_date, $quantity, $level_divisor);
+        $cost_total    = $cost['cost_total'];
+        $purchase_id_sql = $cost['purchase_id'] !== null ? $cost['purchase_id'] : 'NULL';
         $packages_to_deduct = (int)ceil($quantity / $level_divisor);
         $row_cash = $i === 0 ? $cash_amount : 0;
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
 
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
         if (!$ok) break;
         $bulk_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;
@@ -635,13 +644,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $level_multiplier = $it['level_multiplier'];
         $pieces_to_deduct = $qty_sold * $level_multiplier;   // actual pieces removed from retail_stock
         $item_total       = round($qty_sold * $selling_price, 2);
+        $cost             = retailSaleCost($conn, $product_id, $loan_date, $pieces_to_deduct);
+        $cost_total       = $cost['cost_total'];
+        $purchase_id_sql  = $cost['purchase_id'] !== null ? $cost['purchase_id'] : 'NULL';
         $row_cash = $i === 0 ? $cash_amount : 0;
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
 
         // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
+                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
         if (!$ok) break;
         $retail_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;

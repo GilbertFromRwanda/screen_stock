@@ -872,7 +872,7 @@ function renderRetailCart() {
                 '</div>' +
                 '<div class="cart-item-right">' +
                     '<span class="cart-item-total">RWF ' + Math.round(sub).toLocaleString() + '</span>' +
-                    '<button type="button" class="cart-rm" onclick="removeRetailCartItem(' + JSON.stringify(item.pid) + ',' + item.multiplier + ')" title="Remove">&times;</button>' +
+                    '<button type="button" class="cart-rm" onclick="removeRetailCartItem(\'' + item.pid + '\',' + item.multiplier + ')" title="Remove">&times;</button>' +
                 '</div>' +
             '</div>';
         }).join('');

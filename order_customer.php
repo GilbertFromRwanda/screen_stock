@@ -33,6 +33,8 @@ $STRINGS = [
         'invalid_sub'      => "Iri huza ry'itumiza ntiribaho. Reba neza kode cyangwa usabe indi.",
         'cancelled_title'  => 'Itumiza Ryahagaritswe',
         'cancelled_sub'    => 'Iri tumiza ryahagaritswe kandi ntiryakira ibicuruzwa bishya.',
+        'rejected_title'   => 'Itumiza Ryanzwe',
+        'rejected_sub'     => "Twihanganyeho, iri tumiza ryanzwe n'itsinda ryacu.",
         'submitted_title'  => 'Itumiza Ryoherejwe',
         'submitted_sub'    => 'Murakoze%s! Itumiza ryawe ritegereje kwemezwa n\'itsinda ryacu.',
         'submitted_banner' => 'Itumiza ryawe ryoherejwe neza! Urashobora gutumiza indi nk\'uko ukeneye.',
@@ -91,6 +93,8 @@ $STRINGS = [
         'invalid_sub'      => "This order link doesn't exist. Please check the link or code and try again.",
         'cancelled_title'  => 'Order Cancelled',
         'cancelled_sub'    => 'This order was cancelled and is no longer accepting items.',
+        'rejected_title'   => 'Order Rejected',
+        'rejected_sub'     => 'Sorry, this order was declined by our team.',
         'submitted_title'  => 'Order Submitted',
         'submitted_sub'    => 'Thanks%s! Your order is awaiting confirmation from our team.',
         'submitted_banner' => 'Your order was submitted! Feel free to place another one whenever you need.',
@@ -213,24 +217,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_order'])) {
             $ne = mysqli_real_escape_string($conn, $name);
             $pe = mysqli_real_escape_string($conn, $phone);
             $reusable = !empty($order['is_reusable']);
+            $merged   = false;
 
-            // A reusable link never gets consumed: each submission spawns its own fresh
-            // order, and the link's own row stays 'open' so it can be used again.
+            // A reusable link never gets consumed — the link's own row stays 'open' so
+            // it can be used again. Submissions through it merge into whichever child
+            // order this link last spawned, as long as that child is still 'pending'
+            // (untouched by staff). Only once staff has moved that child past pending
+            // (processing/completed/rejected/closed) does the next submission spawn a
+            // fresh child order instead of trying to append to one already in review.
             if ($reusable) {
-                $comp_sql       = $order['company_id']    !== null ? (int)$order['company_id']    : 'NULL';
-                $owner_id_sql   = $order['order_owner_id'] ? (int)$order['order_owner_id'] : 'NULL';
-                $created_by_sql = $order['created_by']     ? (int)$order['created_by']     : 'NULL';
-                // Inherit whoever is currently in charge of the link, so reassigning the link
-                // going forward routes future orders to the new person too.
-                $in_charge_sql  = $order['in_charge_id'] ? (int)$order['in_charge_id'] : $created_by_sql;
-                mysqli_query($conn, "INSERT INTO `orders`
-                    (company_id, order_owner_id, product_id, quantity, level_divisor, selling_price, total_amount,
-                     order_owner, phone, status, show_prices, source_order_id, created_by, in_charge_id)
-                    VALUES ($comp_sql, $owner_id_sql, NULL, 0, 1, 0, 0,
-                            '$ne', '$pe', 'pending', {$order['show_prices']}, {$order['id']}, $created_by_sql, $in_charge_sql)");
-                $target_id = (int)mysqli_insert_id($conn);
-                $target_num = 'ORD-' . str_pad($target_id, 5, '0', STR_PAD_LEFT);
-                mysqli_query($conn, "UPDATE `orders` SET order_number='$target_num' WHERE id=$target_id");
+                $existing = mysqli_fetch_assoc(mysqli_query($conn, "
+                    SELECT id, order_number FROM `orders`
+                    WHERE source_order_id={$order['id']} AND status='pending'
+                    ORDER BY id DESC LIMIT 1"));
+
+                if ($existing) {
+                    $target_id  = (int)$existing['id'];
+                    $target_num = $existing['order_number'];
+                    $merged     = true;
+                    mysqli_query($conn, "UPDATE `orders` SET order_owner='$ne', phone='$pe', updated_at=NOW() WHERE id=$target_id");
+                } else {
+                    $comp_sql       = $order['company_id']    !== null ? (int)$order['company_id']    : 'NULL';
+                    $owner_id_sql   = $order['order_owner_id'] ? (int)$order['order_owner_id'] : 'NULL';
+                    $created_by_sql = $order['created_by']     ? (int)$order['created_by']     : 'NULL';
+                    // Inherit whoever is currently in charge of the link, so reassigning the link
+                    // going forward routes future orders to the new person too.
+                    $in_charge_sql  = $order['in_charge_id'] ? (int)$order['in_charge_id'] : $created_by_sql;
+                    $target_num = generateOrderNumber($conn);
+                    mysqli_query($conn, "INSERT INTO `orders`
+                        (company_id, order_owner_id, product_id, quantity, level_divisor, selling_price, total_amount,
+                         order_owner, phone, status, show_prices, source_order_id, created_by, in_charge_id, order_number)
+                        VALUES ($comp_sql, $owner_id_sql, NULL, 0, 1, 0, 0,
+                                '$ne', '$pe', 'pending', {$order['show_prices']}, {$order['id']}, $created_by_sql, $in_charge_sql, '$target_num')");
+                    $target_id = (int)mysqli_insert_id($conn);
+                }
             } else {
                 $target_id = (int)$order['id'];
             }
@@ -274,10 +294,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_order'])) {
             }
 
             if ($reusable) {
-                mysqli_query($conn, "UPDATE `orders` SET total_amount=$added_total, updated_at=NOW() WHERE id=$target_id");
-                logActivity($conn, (int)$order['created_by'], 'CUSTOMER_SUBMIT',
-                    "Customer placed order $target_num via reusable link (code {$order['link_code']}, source order #{$order['id']})",
+                mysqli_query($conn, "UPDATE `orders` SET total_amount=total_amount+$added_total, updated_at=NOW() WHERE id=$target_id");
+                $desc = $merged
+                    ? "Customer added items to order $target_num via reusable link (code {$order['link_code']}, source order #{$order['id']})"
+                    : "Customer placed order $target_num via reusable link (code {$order['link_code']}, source order #{$order['id']})";
+                logActivity($conn, (int)$order['created_by'], 'CUSTOMER_SUBMIT', $desc,
                     'orders', $target_id, [], ['status'=>'pending']);
+                notifyOrderSubmitted($conn, $target_id);
                 header('Location: order_customer.php?code=' . urlencode($code) . '&lang=' . urlencode($lang) . '&submitted=1&order_num=' . urlencode($target_num) . '&order_phone=' . urlencode($phone));
             } else {
                 mysqli_query($conn, "UPDATE `orders` SET
@@ -288,6 +311,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_order'])) {
                 logActivity($conn, (int)$order['created_by'], 'CUSTOMER_SUBMIT',
                     "Customer submitted order via link (code {$order['link_code']})",
                     'orders', $target_id, ['status'=>'open'], ['status'=>'pending']);
+                notifyOrderSubmitted($conn, $target_id);
                 header('Location: order_customer.php?code=' . urlencode($code) . '&lang=' . urlencode($lang));
             }
             exit;
@@ -302,6 +326,24 @@ if ($order && $order['status'] !== 'open') {
         FROM order_items oi LEFT JOIN products p ON oi.product_id=p.id
         WHERE oi.order_id={$order['id']} ORDER BY oi.id");
     while ($r = mysqli_fetch_assoc($res)) $submitted_items[] = $r;
+}
+
+// A reusable link stays 'open' after each submission (a fresh order is spawned
+// per submit — see the POST handler above), so the redirect target here can't
+// rely on $order/$submitted_items to know what was just placed. Look the
+// just-submitted order up by its own number instead, purely to save it into
+// the customer's browser-side order history (js/order-history.js).
+$justSubmittedOrder = null;
+$justSubmittedItems = [];
+if (($_GET['submitted'] ?? '') === '1' && !empty($_GET['order_num'])) {
+    $one = mysqli_real_escape_string($conn, $_GET['order_num']);
+    $justSubmittedOrder = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM `orders` WHERE order_number='$one' LIMIT 1"));
+    if ($justSubmittedOrder) {
+        $res = mysqli_query($conn, "SELECT oi.*, p.name AS product_name, p.category
+            FROM order_items oi LEFT JOIN products p ON oi.product_id=p.id
+            WHERE oi.order_id={$justSubmittedOrder['id']} ORDER BY oi.id");
+        while ($r = mysqli_fetch_assoc($res)) $justSubmittedItems[] = $r;
+    }
 }
 
 $otherLang = $lang === 'rw' ? 'en' : 'rw';
@@ -432,6 +474,16 @@ h1 { font-size:19px; margin:0 0 4px; }
         <div class="msg-icon">&#128683;</div>
         <div class="msg-title"><?php echo htmlspecialchars($t['cancelled_title']); ?></div>
         <div class="msg-sub"><?php echo htmlspecialchars($t['cancelled_sub']); ?></div>
+    </div>
+
+<?php elseif ($order['status'] === 'rejected'): ?>
+    <div class="card msg-card">
+        <div class="msg-icon">&#128683;</div>
+        <div class="msg-title"><?php echo htmlspecialchars($t['rejected_title']); ?></div>
+        <div class="msg-sub"><?php echo htmlspecialchars($t['rejected_sub']); ?></div>
+        <?php if (!empty($order['cancel_reason'])): ?>
+        <div class="order-num-note" style="margin-top:10px;"><?php echo htmlspecialchars($order['cancel_reason']); ?></div>
+        <?php endif; ?>
     </div>
 
 <?php elseif ($order['status'] !== 'open'): ?>
@@ -574,6 +626,17 @@ h1 { font-size:19px; margin:0 0 4px; }
 </div>
 
 <div id="toast"></div>
+<script src="js/order-history.js"></script>
+<?php if ($justSubmittedOrder): ?>
+<script>
+OrderHistory.saveOrder(<?php echo json_encode(orderHistoryPayload($justSubmittedOrder, $justSubmittedItems), JSON_UNESCAPED_UNICODE); ?>);
+</script>
+<?php endif; ?>
+<?php if ($order && $order['status'] !== 'open'): ?>
+<script>
+OrderHistory.saveOrder(<?php echo json_encode(orderHistoryPayload($order, $submitted_items), JSON_UNESCAPED_UNICODE); ?>);
+</script>
+<?php endif; ?>
 <?php if ($order && $order['status'] === 'open'): ?>
 <script>
 var SHOW_PRICES = <?php echo $order['show_prices'] ? 'true' : 'false'; ?>;

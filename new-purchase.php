@@ -121,6 +121,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // Ensure no level sells below its per-unit cost
+    $divisor = 1;
+    foreach ($levels as $i => $lvl) {
+        if ($i > 0) $divisor *= $lvl['qty_per_parent'];
+        $unit_cost = $cost_price / $divisor;
+        if ($lvl['price'] > 0 && $lvl['price'] < $unit_cost) {
+            echo json_encode(['ok' => false, 'message' => $lvl['name'] . ' price (' . round($lvl['price']) . ') is below its cost (' . round($unit_cost) . ').']);
+            exit;
+        }
+    }
+
     // pieces_per_qty = product of all sub-level multipliers (levels 2, 3, …)
     $pieces_per_qty = 1;
     for ($i = 1; $i < count($levels); $i++) {
@@ -953,6 +964,22 @@ function submitPurchase() {
         if (!r.querySelector('input[name="level_name[]"]').value.trim()) hasBlankLevel = true;
     });
     if (hasBlankLevel) { showToast('All level names are required.', 'error'); return; }
+
+    var divisor = 1, priceBelowCost = null;
+    for (var i = 0; i < rows.length; i++) {
+        if (i > 0) {
+            var q = parseInt(rows[i].querySelector('input[name="level_qty[]"]').value) || 1;
+            divisor *= q;
+        }
+        var unitCost   = costPrice / divisor;
+        var levelPrice = parseNum(rows[i].querySelector('input[name="level_price[]"]').value);
+        if (levelPrice > 0 && levelPrice < unitCost) {
+            var lvlName = rows[i].querySelector('input[name="level_name[]"]').value.trim() || ('Level ' + (i + 1));
+            priceBelowCost = lvlName + ' price (' + fmtNum(Math.round(levelPrice)) + ') is below its cost (' + fmtNum(Math.round(unitCost)) + ')';
+            break;
+        }
+    }
+    if (priceBelowCost) { showToast(priceBelowCost + '.', 'error'); return; }
 
     var btn = document.getElementById('saveBtn');
     btn.disabled = true;

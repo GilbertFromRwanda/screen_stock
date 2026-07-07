@@ -58,18 +58,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_link'])) {
     $owner_id_sql = $owner ? $owner_id : 'NULL';
     $status = $activate ? 'open' : 'new';
 
+    $order_number = generateOrderNumber($conn);
     $ins_ok = mysqli_query($conn, "INSERT INTO `orders`
         (company_id, order_owner_id, product_id, quantity, level_divisor, selling_price, total_amount,
-         order_owner, phone, status, show_prices, is_reusable, created_by, in_charge_id)
+         order_owner, phone, status, show_prices, is_reusable, created_by, in_charge_id, order_number)
         VALUES (" . cidSql() . ", $owner_id_sql, NULL, 0, 1, 0, 0,
-                '$owner_name', '$owner_phone', '$status', $show_prices, $is_reusable, $user_id, $user_id)");
+                '$owner_name', '$owner_phone', '$status', $show_prices, $is_reusable, $user_id, $user_id, '$order_number')");
 
     if (!$ins_ok) {
         $error = 'Could not create link: ' . mysqli_error($conn);
     } else {
-        $order_id     = (int)mysqli_insert_id($conn);
-        $order_number = 'ORD-' . str_pad($order_id, 5, '0', STR_PAD_LEFT);
-        mysqli_query($conn, "UPDATE `orders` SET order_number='$order_number' WHERE id=$order_id");
+        $order_id = (int)mysqli_insert_id($conn);
 
         $link_code = null;
         $expires_at = null;

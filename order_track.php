@@ -24,18 +24,26 @@ $STRINGS = [
         'stage_packed'    => 'Ryapakiwe',
         'stage_ready'     => 'Riteguye Koherezwa',
         'stage_delivered' => 'Ryageze',
+        'stage_received'  => 'Ryakiriwe',
         'order_status'    => [
-            'new'       => 'Ritarangira',
-            'open'      => 'Ritarangira',
-            'pending'   => 'Ritegereje Kwemezwa',
-            'approved'  => 'Ryemejwe',
-            'cancelled' => 'Ryahagaritswe',
-            'closed'    => 'Ryarangiye',
+            'new'        => 'Ritarangira',
+            'open'       => 'Ritarangira',
+            'pending'    => 'Ritegereje Kwemezwa',
+            'processing' => 'Ritegurwa',
+            'completed'  => 'Ryarangiye Neza',
+            'rejected'   => 'Ryanze',
+            'approved'   => 'Ryemejwe',
+            'cancelled'  => 'Ryahagaritswe',
+            'closed'     => 'Ryarangiye',
         ],
         'items_ordered'   => 'Ibicuruzwa Byatumijwe',
         'total'           => 'Igiteranyo',
         'cancel_reason_lbl' => 'Impamvu',
+        'rejected_title'  => 'Itumiza Ryanzwe',
         'track_another'   => 'Reba irindi itumiza',
+        'recent_orders'   => 'Amatumiza Yawe Aheruka',
+        'no_recent'       => "Nta itumiza rirabikwa kuri iyi terefone/mudasobwa.",
+        'remove_saved'    => 'Kuraho',
     ],
     'en' => [
         'page_title'      => 'Track Order',
@@ -53,18 +61,26 @@ $STRINGS = [
         'stage_packed'    => 'Packed',
         'stage_ready'     => 'Ready to Deliver',
         'stage_delivered' => 'Delivered',
+        'stage_received'  => 'Received',
         'order_status'    => [
-            'new'       => 'Not Yet Submitted',
-            'open'      => 'Not Yet Submitted',
-            'pending'   => 'Awaiting Confirmation',
-            'approved'  => 'Confirmed',
-            'cancelled' => 'Cancelled',
-            'closed'    => 'Closed',
+            'new'        => 'Not Yet Submitted',
+            'open'       => 'Not Yet Submitted',
+            'pending'    => 'Awaiting Confirmation',
+            'processing' => 'Being Prepared',
+            'completed'  => 'Completed',
+            'rejected'   => 'Rejected',
+            'approved'   => 'Confirmed',
+            'cancelled'  => 'Cancelled',
+            'closed'     => 'Closed',
         ],
         'items_ordered'   => 'Items Ordered',
         'total'           => 'Total',
         'cancel_reason_lbl' => 'Reason',
+        'rejected_title'  => 'Order Rejected',
         'track_another'   => 'Track another order',
+        'recent_orders'   => 'Your Recent Orders',
+        'no_recent'       => "No orders saved on this device yet.",
+        'remove_saved'    => 'Remove',
     ],
 ];
 $t = $STRINGS[$lang];
@@ -95,7 +111,7 @@ if ($searched) {
 $otherLang = $lang === 'rw' ? 'en' : 'rw';
 $langUrl   = '?lang=' . $otherLang . ($searched ? '&order_number=' . urlencode($order_number) . '&phone=' . urlencode($phone_input) : '');
 
-$DELIVERY_STAGES = ['placed', 'packed', 'ready', 'delivered'];
+$DELIVERY_STAGES = ['placed', 'packed', 'ready', 'delivered', 'received'];
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo $lang; ?>">
@@ -132,10 +148,13 @@ h1 { font-size:19px; margin:0 0 4px; }
 .order-hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
 .order-hdr-num { font-size:17px; font-weight:800; color:var(--primary-dark); }
 .status-badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700; }
-.sb-pending  { background:#fef9c3; color:#854d0e; }
-.sb-approved { background:#dcfce7; color:#166534; }
-.sb-cancelled{ background:#fee2e2; color:#991b1b; }
-.sb-closed   { background:#f1f5f9; color:#475569; }
+.sb-pending    { background:#fef9c3; color:#854d0e; }
+.sb-processing { background:#fef3c7; color:#92400e; }
+.sb-approved   { background:#dcfce7; color:#166534; }
+.sb-completed  { background:#dcfce7; color:#166534; }
+.sb-rejected   { background:#fee2e2; color:#991b1b; }
+.sb-cancelled  { background:#fee2e2; color:#991b1b; }
+.sb-closed     { background:#f1f5f9; color:#475569; }
 
 .stepper { display:flex; align-items:center; margin:18px 0 6px; }
 .step { display:flex; flex-direction:column; align-items:center; flex:1; gap:6px; }
@@ -159,6 +178,16 @@ h1 { font-size:19px; margin:0 0 4px; }
 
 .track-another { display:block; text-align:center; font-size:13px; color:var(--primary); text-decoration:none; font-weight:600; margin-top:4px; }
 .track-another:hover { text-decoration:underline; }
+
+.recent-lbl { font-size:12px; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; }
+.recent-empty { font-size:13px; color:var(--secondary); padding:6px 0; }
+.recent-item { display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--gray-100); }
+.recent-item:last-child { border-bottom:none; }
+.recent-item-btn { flex:1; min-width:0; display:block; text-align:left; background:none; border:none; padding:0; cursor:pointer; }
+.recent-item-num { font-size:13px; font-weight:700; color:var(--primary-dark); }
+.recent-item-sub { font-size:12px; color:var(--secondary); margin-top:2px; }
+.recent-item-rm { background:none; border:none; color:#cbd5e1; cursor:pointer; font-size:16px; padding:0; flex-shrink:0; }
+.recent-item-rm:hover { color:#ef4444; }
 </style>
 </head>
 <body>
@@ -178,7 +207,7 @@ h1 { font-size:19px; margin:0 0 4px; }
             <span class="status-badge sb-<?php echo $order['status']; ?>"><?php echo htmlspecialchars($t['order_status'][$order['status']] ?? ucfirst($order['status'])); ?></span>
         </div>
 
-        <?php if (in_array($order['status'], ['pending','approved'])):
+        <?php if (in_array($order['status'], ['pending','processing','completed','approved'])):
             $stageIdx = array_search($order['delivery_status'], $DELIVERY_STAGES);
             if ($stageIdx === false) $stageIdx = 0;
         ?>
@@ -198,7 +227,7 @@ h1 { font-size:19px; margin:0 0 4px; }
         </div>
         <?php endif; ?>
 
-        <?php if ($order['status'] === 'cancelled' && !empty($order['cancel_reason'])): ?>
+        <?php if (in_array($order['status'], ['cancelled','rejected']) && !empty($order['cancel_reason'])): ?>
         <div class="cancel-note"><strong><?php echo htmlspecialchars($t['cancel_reason_lbl']); ?>:</strong> <?php echo htmlspecialchars($order['cancel_reason']); ?></div>
         <?php endif; ?>
     </div>
@@ -247,8 +276,58 @@ h1 { font-size:19px; margin:0 0 4px; }
         </form>
     </div>
 
+    <div class="card" id="recent_card" style="display:none;">
+        <div class="recent-lbl"><?php echo htmlspecialchars($t['recent_orders']); ?></div>
+        <div id="recent_body"></div>
+    </div>
+
 <?php endif; ?>
 
 </div>
+<script src="js/order-history.js"></script>
+<?php if ($order): ?>
+<script>
+OrderHistory.saveOrder(<?php echo json_encode(orderHistoryPayload($order, $order_items), JSON_UNESCAPED_UNICODE); ?>);
+</script>
+<?php else: ?>
+<script>
+(function() {
+    var T_NO_RECENT = <?php echo json_encode($t['no_recent'], JSON_UNESCAPED_UNICODE); ?>;
+    var T_REMOVE     = <?php echo json_encode($t['remove_saved'], JSON_UNESCAPED_UNICODE); ?>;
+    var LANG         = <?php echo json_encode($lang); ?>;
+    function escH(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    OrderHistory.getOrders().then(function(orders) {
+        var card = document.getElementById('recent_card');
+        var body = document.getElementById('recent_body');
+        if (!orders.length) return; // Keep the card hidden entirely when there's nothing saved yet.
+        card.style.display = 'block';
+        body.innerHTML = orders.map(function(o) {
+            var url = 'order_track.php?lang=' + encodeURIComponent(LANG)
+                + '&order_number=' + encodeURIComponent(o.order_number)
+                + '&phone=' + encodeURIComponent(o.phone || '');
+            return '<div class="recent-item" data-num="' + escH(o.order_number) + '">'
+                + '<a class="recent-item-btn" href="' + url + '">'
+                +   '<div class="recent-item-num">' + escH(o.order_number) + '</div>'
+                +   '<div class="recent-item-sub">' + escH(o.order_owner || '') + '</div>'
+                + '</a>'
+                + '<button type="button" class="recent-item-rm" title="' + escH(T_REMOVE) + '">&times;</button>'
+                + '</div>';
+        }).join('') || '<div class="recent-empty">' + escH(T_NO_RECENT) + '</div>';
+
+        body.querySelectorAll('.recent-item-rm').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var item = btn.closest('.recent-item');
+                OrderHistory.removeOrder(item.dataset.num).then(function() {
+                    item.remove();
+                    if (!body.querySelector('.recent-item')) card.style.display = 'none';
+                });
+            });
+        });
+    });
+})();
+</script>
+<?php endif; ?>
 </body>
 </html>

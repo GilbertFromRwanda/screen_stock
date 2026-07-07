@@ -14,7 +14,7 @@ $order = mysqli_fetch_assoc(mysqli_query($conn,
     "SELECT o.*, oo.location AS owner_location
      FROM `orders` o
      LEFT JOIN order_owners oo ON o.order_owner_id = oo.id
-     WHERE o.id=$order_id AND o.status IN ('pending','open')" . cidAndFor('o')));
+     WHERE o.id=$order_id AND o.status IN ('pending','open','processing')" . cidAndFor('o')));
 
 if (!$order) {
     $_SESSION['flash_error'] = 'Order not found or not editable.';
@@ -34,7 +34,7 @@ while ($ei = mysqli_fetch_assoc($ei_res)) {
     $existing_items[] = $ei;
 }
 
-// ── AJAX: edit an existing item's price / availability ──────────────────────────
+// ── AJAX: edit an existing item's price / quantity / availability ───────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_item'])) {
     header('Content-Type: application/json');
     $item_id   = (int)($_POST['item_id'] ?? 0);
@@ -44,21 +44,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_item'])) {
     $item = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM order_items WHERE id=$item_id AND order_id=$order_id"));
     if (!$item) { echo json_encode(['success'=>false,'message'=>'Item not found.']); exit; }
 
-    $qty        = (float)$item['quantity'];
+    $qty        = isset($_POST['quantity']) ? max(0.001, (float)$_POST['quantity']) : (float)$item['quantity'];
     $old_total  = (float)$item['item_total'];
     $new_total  = round($qty * $price, 2);
     $new_status = $available ? 'pending' : 'out_of_stock';
     $delta      = round($new_total - $old_total, 2);
 
-    mysqli_query($conn, "UPDATE order_items SET selling_price=$price, item_total=$new_total, status='$new_status' WHERE id=$item_id");
-    mysqli_query($conn, "UPDATE `orders` SET total_amount = total_amount + ($delta), updated_at=NOW() WHERE id=$order_id");
+    mysqli_begin_transaction($conn);
+    $ok = (bool)mysqli_query($conn, "UPDATE order_items SET quantity=$qty, selling_price=$price, item_total=$new_total, status='$new_status' WHERE id=$item_id");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE `orders` SET total_amount = total_amount + ($delta), updated_at=NOW() WHERE id=$order_id");
 
-    logActivity($conn, $user_id, 'UPDATE',
-        "Order item #$item_id on order #$order_id: price set to $price, marked " . ($available ? 'available' : 'unavailable'),
-        'orders', $order_id, ['item_total'=>$old_total], ['item_total'=>$new_total]);
+    if ($ok) {
+        mysqli_commit($conn);
+        logActivity($conn, $user_id, 'UPDATE',
+            "Order item #$item_id on order #$order_id: qty set to $qty, price set to $price, marked " . ($available ? 'available' : 'unavailable'),
+            'orders', $order_id, ['item_total'=>$old_total], ['item_total'=>$new_total]);
+        echo json_encode(['success'=>true,'message'=>'Item updated.',
+            'new_item_total'=>$new_total, 'new_order_total'=>round((float)$order['total_amount'] + $delta, 2)]);
+    } else {
+        mysqli_rollback($conn);
+        echo json_encode(['success'=>false,'message'=>'Update failed: '.mysqli_error($conn)]);
+    }
+    exit;
+}
 
-    echo json_encode(['success'=>true,'message'=>'Item updated.',
-        'new_item_total'=>$new_total, 'new_order_total'=>round((float)$order['total_amount'] + $delta, 2)]);
+// ── AJAX: remove an item from the order entirely ────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
+    header('Content-Type: application/json');
+    $item_id = (int)($_POST['item_id'] ?? 0);
+
+    $item = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM order_items WHERE id=$item_id AND order_id=$order_id"));
+    if (!$item) { echo json_encode(['success'=>false,'message'=>'Item not found.']); exit; }
+
+    $old_total = (float)$item['item_total'];
+
+    mysqli_begin_transaction($conn);
+    $ok = (bool)mysqli_query($conn, "DELETE FROM order_items WHERE id=$item_id");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE `orders` SET total_amount = total_amount - $old_total, updated_at=NOW() WHERE id=$order_id");
+
+    if ($ok) {
+        mysqli_commit($conn);
+        logActivity($conn, $user_id, 'UPDATE',
+            "Order item #$item_id removed from order #$order_id",
+            'orders', $order_id, ['item_total'=>$old_total], ['item_total'=>0]);
+        echo json_encode(['success'=>true,'message'=>'Item removed.',
+            'new_order_total'=>round((float)$order['total_amount'] - $old_total, 2)]);
+    } else {
+        mysqli_rollback($conn);
+        echo json_encode(['success'=>false,'message'=>'Remove failed: '.mysqli_error($conn)]);
+    }
     exit;
 }
 
@@ -74,16 +108,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_items'])) {
 
     $added_total = 0.0;
     $added_names = [];
+
+    mysqli_begin_transaction($conn);
+    $ok = true;
     foreach ($items as $it) {
+        if (!$ok) break;
+
         if (!empty($it['custom'])) {
             $cname = trim((string)($it['name'] ?? ''));
             $qty   = (float)($it['quantity'] ?? 0);
             if ($cname === '' || $qty <= 0) continue;
             $ce = mysqli_real_escape_string($conn, $cname);
-            mysqli_query($conn, "INSERT INTO order_items
+            $ok = (bool)mysqli_query($conn, "INSERT INTO order_items
                 (order_id,product_id,custom_name,stock_source,quantity,level_divisor,selling_price,item_total,source,added_by)
                 VALUES($order_id,NULL,'$ce','custom',$qty,1,0,0,'staff',$user_id)");
-            $added_names[] = $cname . ' (custom)';
+            if ($ok) $added_names[] = $cname . ' (custom)';
             continue;
         }
 
@@ -99,16 +138,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_items'])) {
         $prow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM products WHERE id=$pid AND deleted=0"));
         if (!$prow) continue;
 
-        mysqli_query($conn, "INSERT INTO order_items
+        $ok = (bool)mysqli_query($conn, "INSERT INTO order_items
             (order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total,source,added_by)
             VALUES($order_id,$pid,'$src',$qty,$div,$prce,$itot,'staff',$user_id)");
 
-        $added_total += $itot;
-        $added_names[] = $prow['name'];
+        if ($ok) {
+            $added_total += $itot;
+            $added_names[] = $prow['name'];
+        }
     }
 
+    if ($ok && $added_total > 0) {
+        $ok = (bool)mysqli_query($conn, "UPDATE `orders` SET total_amount=total_amount+$added_total, updated_at=NOW() WHERE id=$order_id");
+    }
+
+    if (!$ok) {
+        mysqli_rollback($conn);
+        $_SESSION['flash_error'] = 'Failed to add products: ' . mysqli_error($conn);
+        redirect("order_add_products.php?order_id=$order_id");
+    }
+
+    mysqli_commit($conn);
     if ($added_total > 0) {
-        mysqli_query($conn, "UPDATE `orders` SET total_amount=total_amount+$added_total, updated_at=NOW() WHERE id=$order_id");
         logActivity($conn, $user_id, 'UPDATE', 'orders',
             count($added_names).' product(s) added to order #'.$order_id.': '.implode(', ',$added_names),
             $order_id,
@@ -426,7 +477,7 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
                 <?php echo $src_badge; ?>
             </div>
             <div class="ei-meta">
-                <?php echo number_format((float)$ei['quantity'],0); ?> <?php echo $unit; ?>
+                <span id="ei_qtydisp_<?php echo $ei['id']; ?>"><?php echo number_format((float)$ei['quantity'],0); ?></span> <?php echo $unit; ?>
                 <?php if (($ei['source'] ?? 'staff') === 'customer'): ?>
                 <span style="font-size:10px;background:#ede9fe;color:#5b21b6;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Customer</span>
                 <?php else: ?>
@@ -434,6 +485,10 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
                 <?php endif; ?>
             </div>
             <div class="ei-edit-row">
+                <span>Qty</span>
+                <input type="number" class="ei-price-input" id="ei_qty_<?php echo $ei['id']; ?>"
+                       value="<?php echo (float)$ei['quantity']; ?>" min="0.001" step="any" style="width:70px;"
+                       onchange="markItemDirty(<?php echo $ei['id']; ?>)">
                 <span>RWF</span>
                 <input type="number" class="ei-price-input" id="ei_price_<?php echo $ei['id']; ?>"
                        value="<?php echo (float)$ei['selling_price']; ?>" min="0" step="any"
@@ -443,6 +498,7 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
                     <button type="button" class="ei-avail-btn on-no<?php echo $isAvailable ? '' : ' active'; ?>" id="ei_avail_no_<?php echo $ei['id']; ?>" onclick="setItemAvailable(<?php echo $ei['id']; ?>, false)">Unavailable</button>
                 </div>
                 <button type="button" class="ei-save-btn" id="ei_save_<?php echo $ei['id']; ?>" disabled onclick="saveItem(<?php echo $ei['id']; ?>)">Save</button>
+                <button type="button" class="ei-save-btn" style="background:#dc2626;" onclick="deleteItem(<?php echo $ei['id']; ?>, <?php echo json_encode($ei['product_name']); ?>)">Remove</button>
             </div>
             <div class="ei-amt" id="ei_amt_<?php echo $ei['id']; ?>">RWF <?php echo number_format((float)$ei['item_total'],0); ?></div>
         </div>
@@ -759,15 +815,19 @@ function setItemAvailable(id, available) {
 
 function saveItem(id) {
     var btn   = document.getElementById('ei_save_' + id);
+    var qty   = parseFloat(document.getElementById('ei_qty_' + id).value) || 0;
     var price = parseFloat(document.getElementById('ei_price_' + id).value) || 0;
     var row   = document.getElementById('ei_row_' + id);
     var available = _itemAvail.hasOwnProperty(id) ? _itemAvail[id] : !row.classList.contains('unavailable');
+
+    if (qty <= 0) { showToast('Enter a valid quantity.', false); return; }
 
     btn.disabled = true; btn.textContent = 'Saving…';
     var fd = new FormData();
     fd.append('update_item', '1');
     fd.append('order_id', <?php echo (int)$order_id; ?>);
     fd.append('item_id', id);
+    fd.append('quantity', qty);
     fd.append('selling_price', price);
     fd.append('available', available ? '1' : '0');
 
@@ -777,6 +837,7 @@ function saveItem(id) {
             showToast(res.message, res.success);
             if (res.success) {
                 document.getElementById('ei_amt_' + id).textContent = 'RWF ' + Math.round(res.new_item_total).toLocaleString();
+                document.getElementById('ei_qtydisp_' + id).textContent = qty.toLocaleString();
                 row.classList.toggle('unavailable', !available);
                 _orderBasetotal = res.new_order_total;
                 document.querySelector('.order-card-total').textContent = 'RWF ' + Math.round(res.new_order_total).toLocaleString();
@@ -787,6 +848,28 @@ function saveItem(id) {
             }
         })
         .catch(function(){ showToast('Network error.', false); btn.textContent = 'Save'; btn.disabled = false; });
+}
+
+function deleteItem(id, name) {
+    if (!confirm('Remove "' + name + '" from this order?')) return;
+    var row = document.getElementById('ei_row_' + id);
+    var fd = new FormData();
+    fd.append('delete_item', '1');
+    fd.append('order_id', <?php echo (int)$order_id; ?>);
+    fd.append('item_id', id);
+
+    fetch('order_add_products.php', {method:'POST', body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) {
+                row.remove();
+                _orderBasetotal = res.new_order_total;
+                document.querySelector('.order-card-total').textContent = 'RWF ' + Math.round(res.new_order_total).toLocaleString();
+                renderCart();
+            }
+        })
+        .catch(function(){ showToast('Network error.', false); });
 }
 </script>
 </body>

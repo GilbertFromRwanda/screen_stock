@@ -103,13 +103,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_link'])) {
     exit;
 }
 
+// ── AJAX: Start processing (staff has reviewed a pending order and accepted it) ─
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['start_processing'])) {
+    header('Content-Type: application/json');
+    $id  = (int)$_POST['order_id'];
+    $row = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT * FROM `orders` WHERE id=$id AND status='pending' " . cidAnd()));
+    if (!$row) {
+        echo json_encode(['success'=>false,'message'=>'Order not found or not pending.']); exit;
+    }
+    mysqli_query($conn, "UPDATE `orders` SET status='processing', updated_at=NOW() WHERE id=$id");
+    logActivity($conn, $user_id, 'START_PROCESSING', "Order #$id accepted for processing after review", 'orders', $id, ['status'=>'pending'], ['status'=>'processing']);
+    $order_num = $row['order_number'] ?: "#$id";
+    echo json_encode(['success'=>true,'message'=>"Order $order_num is now processing."]);
+    exit;
+}
+
+// ── AJAX: Reject (staff declines a pending order after reviewing its items) ──────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reject_order'])) {
+    header('Content-Type: application/json');
+    $id     = (int)$_POST['order_id'];
+    $reason = mysqli_real_escape_string($conn, trim($_POST['reject_reason'] ?? ''));
+    $row    = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT * FROM `orders` WHERE id=$id AND status='pending' " . cidAnd()));
+    if (!$row) {
+        echo json_encode(['success'=>false,'message'=>'Order not found or already processed.']);
+        exit;
+    }
+    $reason_sql = $reason !== '' ? "'$reason'" : 'NULL';
+    mysqli_query($conn,
+        "UPDATE `orders` SET status='rejected', cancel_reason=$reason_sql, cancelled_by=$user_id, updated_at=NOW() WHERE id=$id");
+    logActivity($conn, $user_id, 'REJECT', "Order #$id rejected after review", 'orders', $id,
+        ['status'=>'pending'], ['status'=>'rejected','reason'=>$reason]);
+    echo json_encode(['success'=>true,'message'=>"Order #$id rejected.",'reason'=>$reason]);
+    exit;
+}
+
 // ── AJAX: Reassign who's in charge of an order ──────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reassign_order'])) {
     header('Content-Type: application/json');
     $id        = (int)$_POST['order_id'];
     $new_user  = (int)($_POST['in_charge_id'] ?? 0);
-    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM `orders` WHERE id=$id " . cidAnd()));
-    if (!$row) { echo json_encode(['success'=>false,'message'=>'Order not found.']); exit; }
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM `orders` WHERE id=$id AND status != 'closed' " . cidAnd()));
+    if (!$row) { echo json_encode(['success'=>false,'message'=>'Order not found or closed.']); exit; }
     $u = $new_user > 0 ? mysqli_fetch_assoc(mysqli_query($conn, "SELECT username FROM users WHERE id=$new_user")) : null;
     if ($new_user > 0 && !$u) { echo json_encode(['success'=>false,'message'=>'User not found.']); exit; }
     $in_charge_sql = $new_user > 0 ? $new_user : 'NULL';
@@ -124,27 +160,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_delivery_statu
     header('Content-Type: application/json');
     $id        = (int)$_POST['order_id'];
     $new_stage = $_POST['delivery_status'] ?? '';
-    if (!in_array($new_stage, ['placed','packed','ready','delivered'], true)) {
+    if (!in_array($new_stage, ['placed','packed','ready','delivered','received'], true)) {
         echo json_encode(['success'=>false,'message'=>'Invalid delivery stage.']); exit;
     }
-    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM `orders` WHERE id=$id " . cidAnd()));
-    if (!$row) { echo json_encode(['success'=>false,'message'=>'Order not found.']); exit; }
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM `orders` WHERE id=$id AND status != 'closed' " . cidAnd()));
+    if (!$row) { echo json_encode(['success'=>false,'message'=>'Order not found or closed.']); exit; }
     mysqli_query($conn, "UPDATE `orders` SET delivery_status='$new_stage', updated_at=NOW() WHERE id=$id");
     logActivity($conn, $user_id, 'DELIVERY_STATUS', "Order #$id delivery status set to $new_stage", 'orders', $id, ['delivery_status'=>$row['delivery_status']], ['delivery_status'=>$new_stage]);
     echo json_encode(['success'=>true,'message'=>'Delivery status updated.']);
     exit;
 }
 
-// ── AJAX: Approve ─────────────────────────────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
+// ── AJAX: Complete (processing → completed: stock deducted, sale rows created) ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_order'])) {
     header('Content-Type: application/json');
 
     $order_id = (int)$_POST['order_id'];
 
     $order = mysqli_fetch_assoc(mysqli_query($conn,
-        "SELECT * FROM `orders` WHERE id=$order_id AND status='pending'"));
+        "SELECT * FROM `orders` WHERE id=$order_id AND status='processing'"));
     if (!$order) {
-        echo json_encode(['success'=>false,'message'=>'Order not found or already processed.']);
+        echo json_encode(['success'=>false,'message'=>'Order not found or not being processed.']);
         exit;
     }
 
@@ -153,8 +189,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
     $phone         = mysqli_real_escape_string($conn, $order['phone']);
     $cash_amount   = (float)$order['prepaid_cash'];
     $momo_amount   = (float)$order['prepaid_momo'] + (float)$order['prepaid_bank'];
-    $loan_amount   = (float)$order['prepaid_loan'];
-    $total_pay     = $cash_amount + $momo_amount + $loan_amount;
 
     // Fetch order items (fall back to single-product for old orders)
     // LEFT JOIN so custom (non-catalog) items — product_id IS NULL — aren't dropped
@@ -237,6 +271,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
     $n_items         = count($fulfillable);
     $fulfilled_total = (float)array_sum(array_column($fulfillable, 'item_total'));
 
+    // Loan is no longer a manually-chosen payment method — it's automatically
+    // whatever part of the fulfilled total isn't covered by actual cash/momo/bank
+    // money, whether that shortfall exists because staff never collected it or
+    // because it was earmarked as a loan back when the order was created.
+    $loan_amount = max(0, round($fulfilled_total - $cash_amount - $momo_amount, 2));
+
     mysqli_begin_transaction($conn);
     $ok = true;
     $first_bulk_id      = 0;
@@ -292,18 +332,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
                             : (($i_momo>0 && $i_cash==0 && $i_loan==0) ? 'Momo'
                             : (($i_loan>0 && $i_cash==0 && $i_momo==0) ? 'Loan'
                             : 'Mixed'));
+                $i_cost = retailSaleCost($conn, $pid, $loan_date, $pcs);
+                $i_pid_sql = $i_cost['purchase_id'] !== null ? $i_cost['purchase_id'] : 'NULL';
                 $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail
-                    (company_id,product_id,pieces_sold,retail_price,total_amount,sale_date,
+                    (company_id,product_id,pieces_sold,retail_price,total_amount,cost_total,purchase_id,sale_date,
                      customer_name,sold_by,payment_method,cash_amount,momo_amount,loan_amount,has_loan,amount)
-                    VALUES (" . cidSql() . ",$pid,$pcs,$prce,$itot,CURDATE(),
+                    VALUES (" . cidSql() . ",$pid,$pcs,$prce,$itot,{$i_cost['cost_total']},$i_pid_sql,CURDATE(),
                             '$customer_name',$user_id,'$pay_method',$i_cash,$i_momo,$i_loan,$i_has_loan,$i_loan)");
             }
         } else {
             // ── Warehouse item ────────────────────────────────────────────────
+            $i_cost = bulkSaleCost($conn, $pid, $loan_date, $qty, $div);
+            $i_pid_sql = $i_cost['purchase_id'] !== null ? $i_cost['purchase_id'] : 'NULL';
             $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk
-                (company_id,product_id,quantity,level_divisor,package_price,total_amount,sale_date,
+                (company_id,product_id,quantity,level_divisor,package_price,total_amount,cost_total,purchase_id,sale_date,
                  customer_name,cash_amount,momo_amount,loan_amount,has_loan,amount,sold_by)
-                VALUES (" . cidSql() . ",$pid,$qty,$div,$prce,$itot,CURDATE(),
+                VALUES (" . cidSql() . ",$pid,$qty,$div,$prce,$itot,{$i_cost['cost_total']},$i_pid_sql,CURDATE(),
                         '$customer_name',$i_cash,$i_momo,$i_loan,$i_has_loan,$i_loan,$user_id)");
             if (!$ok) break;
 
@@ -366,7 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
 
     $refund_amt = round($total_amount - $fulfilled_total, 2);
     if ($ok) $ok = (bool)mysqli_query($conn,
-        "UPDATE `orders` SET status='approved',approved_by=$user_id,sale_id=$first_bulk_id,
+        "UPDATE `orders` SET status='completed',approved_by=$user_id,sale_id=$first_bulk_id,
          refund_amount=$refund_amt,updated_at=NOW()
          WHERE id=$order_id");
 
@@ -385,7 +429,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
             $sales_str = "$n_sales Bulk Sales" . ($n_rt > 0 ? " + $n_rt Retail" : '');
         }
         $order_num = $order['order_number'] ?: "#$order_id";
-        $msg       = "Order $order_num approved — $sales_str created.";
+        $msg       = "Order $order_num completed — $sales_str created.";
+        if ($loan_amount > 0) {
+            $msg .= ' RWF ' . number_format($loan_amount, 0) . ' left unpaid — recorded as a loan.';
+        }
         if (!empty($oos_names)) {
             $msg .= ' Out of stock (skipped): ' . implode(', ', $oos_names) . '.';
         }
@@ -397,7 +444,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_order'])) {
             'oos_items' => $oos_names]);
     } else {
         mysqli_rollback($conn);
-        echo json_encode(['success'=>false,'message'=>'Approval failed: '.mysqli_error($conn)]);
+        echo json_encode(['success'=>false,'message'=>'Completion failed: '.mysqli_error($conn)]);
     }
     exit;
 }
@@ -416,9 +463,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_payment'])) {
         echo json_encode(['success'=>false,'message'=>'Enter at least one payment amount.']); exit;
     }
     $order = mysqli_fetch_assoc(mysqli_query($conn,
-        "SELECT * FROM `orders` WHERE id=$order_id AND status='pending' " . cidAnd()));
+        "SELECT * FROM `orders` WHERE id=$order_id AND status='processing' " . cidAnd()));
     if (!$order) {
-        echo json_encode(['success'=>false,'message'=>'Order not found or not pending.']); exit;
+        echo json_encode(['success'=>false,'message'=>'Order not found or not being processed.']); exit;
     }
     $new_prepaid = round((float)$order['total_prepaid'] + $total_add, 2);
     if ($new_prepaid > (float)$order['total_amount'] + 1) {
@@ -458,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product_to_order'
         echo json_encode(['success'=>false,'message'=>'Invalid product, quantity, or price.']); exit;
     }
     $order = mysqli_fetch_assoc(mysqli_query($conn,
-        "SELECT * FROM `orders` WHERE id=$order_id AND status IN ('pending','open') " . cidAnd()));
+        "SELECT * FROM `orders` WHERE id=$order_id AND status IN ('pending','open','processing') " . cidAnd()));
     if (!$order) {
         echo json_encode(['success'=>false,'message'=>'Order not found or not editable.']); exit;
     }
@@ -487,21 +534,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product_to_order'
     exit;
 }
 
-// ── AJAX: Close Order ─────────────────────────────────────────────────────────
+// ── AJAX: Close Order (final manual lock — reachable from processing/completed) ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['close_order'])) {
     header('Content-Type: application/json');
     $order_id = (int)$_POST['order_id'];
     $order = mysqli_fetch_assoc(mysqli_query($conn,
-        "SELECT * FROM `orders` WHERE id=$order_id AND status='pending' " . cidAnd()));
+        "SELECT * FROM `orders` WHERE id=$order_id AND status IN ('processing','completed') " . cidAnd()));
     if (!$order) {
-        echo json_encode(['success'=>false,'message'=>'Order not found or not pending.']); exit;
+        echo json_encode(['success'=>false,'message'=>'Order not found or not processing/completed.']); exit;
     }
-    mysqli_query($conn, "UPDATE `orders` SET status='closed', updated_at=NOW() WHERE id=$order_id");
-    logActivity($conn, $_SESSION['user_id'], 'CLOSE', 'orders',
-        "Order #{$order_id} closed (locked from further editing)",
-        $order_id, ['status'=>'pending'], ['status'=>'closed']);
+    $prev_status = mysqli_real_escape_string($conn, $order['status']);
+    mysqli_query($conn, "UPDATE `orders` SET status='closed', status_before_close='$prev_status', updated_at=NOW() WHERE id=$order_id");
+    logActivity($conn, $_SESSION['user_id'], 'CLOSE',
+        "Order #{$order_id} closed (locked from further editing)", 'orders',
+        $order_id, ['status'=>$order['status']], ['status'=>'closed']);
     $order_num = $order['order_number'] ?: "#$order_id";
     echo json_encode(['success'=>true,'message'=>"Order $order_num has been closed."]);
+    exit;
+}
+
+// ── AJAX: Reopen Order (admin/superadmin only — restores the pre-close status) ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reopen_order'])) {
+    header('Content-Type: application/json');
+    if (!in_array($role, ['superadmin','admin'])) {
+        echo json_encode(['success'=>false,'message'=>'Only an admin can reopen a closed order.']); exit;
+    }
+    $order_id = (int)$_POST['order_id'];
+    $order = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT * FROM `orders` WHERE id=$order_id AND status='closed' " . cidAnd()));
+    if (!$order) {
+        echo json_encode(['success'=>false,'message'=>'Order not found or not closed.']); exit;
+    }
+    $restore_status = in_array($order['status_before_close'], ['processing','completed']) ? $order['status_before_close'] : 'processing';
+    mysqli_query($conn, "UPDATE `orders` SET status='$restore_status', status_before_close=NULL, updated_at=NOW() WHERE id=$order_id");
+    logActivity($conn, $_SESSION['user_id'], 'REOPEN',
+        "Order #{$order_id} reopened, restored to $restore_status", 'orders',
+        $order_id, ['status'=>'closed'], ['status'=>$restore_status]);
+    $order_num = $order['order_number'] ?: "#$order_id";
+    echo json_encode(['success'=>true,'message'=>"Order $order_num reopened.",'status'=>$restore_status]);
     exit;
 }
 
@@ -532,15 +602,33 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 // Lazy expiry sweep: any 'open' link past its expiry hands off to the normal pending/approve flow.
 mysqli_query($conn, "UPDATE `orders` SET status='pending', updated_at=NOW() WHERE status='open' AND link_expires_at < NOW()");
 
-$status_filter = in_array($_GET['status'] ?? '', ['new','open','pending','approved','cancelled','closed'])
+$status_filter = in_array($_GET['status'] ?? '', ['new','open','pending','processing','completed','rejected','approved','cancelled','closed'])
     ? $_GET['status'] : '';
 $date_from = isset($_GET['date_from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_from'])
     ? $_GET['date_from'] : date('Y-m-d');
 $date_to = isset($_GET['date_to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_to'])
     ? $_GET['date_to'] : date('Y-m-d');
+$search = trim($_GET['search'] ?? '');
+$page   = max(1, (int)($_GET['page'] ?? 1));
+$per_page = 50;
 
-$where = "WHERE DATE(o.created_at) BETWEEN '$date_from' AND '$date_to'";
-if ($status_filter) $where .= " AND o.status='$status_filter'";
+// Sargable range on created_at (avoids wrapping the indexed column in DATE(),
+// which would force a full scan instead of using idx_orders_status_date).
+$date_to_excl = date('Y-m-d', strtotime($date_to) + 86400);
+$where = "WHERE o.created_at >= '$date_from' AND o.created_at < '$date_to_excl'";
+if ($status_filter) {
+    $where .= " AND o.status='$status_filter'";
+} else {
+    // A link's own shell order ('new'/'open') isn't a real customer order yet —
+    // just a code waiting to be used — so it would clutter the default view with
+    // rows that have no items/total. Hide them unless staff explicitly filters
+    // for "New (draft)" or "Open (link active)".
+    $where .= " AND o.status NOT IN ('new','open')";
+}
+if ($search !== '') {
+    $se = mysqli_real_escape_string($conn, $search);
+    $where .= " AND (o.order_number LIKE '%$se%' OR o.order_owner LIKE '%$se%' OR o.phone LIKE '%$se%')";
+}
 $where .= ' ' . cidAndFor('o');
 
 // Staff list for the "in charge" reassignment dropdown
@@ -548,63 +636,360 @@ $staff_users = [];
 $su_res = mysqli_query($conn, "SELECT id, username FROM users WHERE status='active' " . cidAnd() . " ORDER BY username");
 while ($su = mysqli_fetch_assoc($su_res)) $staff_users[] = $su;
 
-$orders_res = mysqli_query($conn, "
-    SELECT o.*, p.name AS product_name, p.category,
-           u.username   AS created_by_name,
-           ua.username  AS approved_by_name,
-           uc.username  AS cancelled_by_name,
-           ic.username  AS in_charge_name,
-           oo.location  AS owner_location,
-           src.order_number AS source_order_number,
-           (SELECT COUNT(*) FROM `orders` c WHERE c.source_order_id = o.id) AS reuse_count
-    FROM `orders` o
-    LEFT JOIN products p       ON o.product_id     = p.id
-    LEFT JOIN users u          ON o.created_by     = u.id
-    LEFT JOIN users ua         ON o.approved_by    = ua.id
-    LEFT JOIN users uc         ON o.cancelled_by   = uc.id
-    LEFT JOIN users ic         ON o.in_charge_id   = ic.id
-    LEFT JOIN order_owners oo  ON o.order_owner_id = oo.id
-    LEFT JOIN `orders` src     ON o.source_order_id = src.id
-    $where
-    ORDER BY FIELD(o.status,'open','new','pending','closed','approved','cancelled'), o.created_at DESC
-");
+// Runs the filtered/paginated orders query plus its order_items, returning
+// [rows, item_data keyed by order_id, total row count for pagination]. Shared
+// by the initial page render and the list_orders AJAX endpoint below so the
+// two never drift out of sync.
+function fetchOrdersPage(mysqli $conn, string $where, int $page, int $per_page): array {
+    $total_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) AS c FROM `orders` o $where"));
+    $total     = (int)($total_row['c'] ?? 0);
+    $offset    = ($page - 1) * $per_page;
 
-// Fetch all orders
-$all_orders = [];
-$order_ids  = [];
-while ($o = mysqli_fetch_assoc($orders_res)) {
-    $all_orders[] = $o;
-    $order_ids[]  = (int)$o['id'];
-}
+    $orders_res = mysqli_query($conn, "
+        SELECT o.*, p.name AS product_name, p.category,
+               u.username   AS created_by_name,
+               ua.username  AS approved_by_name,
+               uc.username  AS cancelled_by_name,
+               ic.username  AS in_charge_name,
+               oo.location  AS owner_location,
+               src.order_number AS source_order_number,
+               (SELECT COUNT(*) FROM `orders` c WHERE c.source_order_id = o.id) AS reuse_count
+        FROM `orders` o
+        LEFT JOIN products p       ON o.product_id     = p.id
+        LEFT JOIN users u          ON o.created_by     = u.id
+        LEFT JOIN users ua         ON o.approved_by    = ua.id
+        LEFT JOIN users uc         ON o.cancelled_by   = uc.id
+        LEFT JOIN users ic         ON o.in_charge_id   = ic.id
+        LEFT JOIN order_owners oo  ON o.order_owner_id = oo.id
+        LEFT JOIN `orders` src     ON o.source_order_id = src.id
+        $where
+        ORDER BY FIELD(o.status,'open','new','pending','processing','completed','closed','rejected','cancelled','approved'), o.created_at DESC
+        LIMIT $per_page OFFSET $offset
+    ");
 
-// Fetch all order_items in one query
-$item_data = [];
-if (!empty($order_ids)) {
-    $ids_str = implode(',', $order_ids);
-    $ir = mysqli_query($conn,
-        "SELECT oi.*, p.name AS product_name, p.category, ab.username AS added_by_name
-         FROM order_items oi
-         LEFT JOIN products p ON oi.product_id = p.id
-         LEFT JOIN users ab   ON oi.added_by   = ab.id
-         WHERE oi.order_id IN ($ids_str)
-         ORDER BY oi.order_id, oi.id");
-    while ($it = mysqli_fetch_assoc($ir)) {
-        if ($it['product_name'] === null && $it['custom_name']) $it['product_name'] = $it['custom_name'].' (custom)';
-        $item_data[(int)$it['order_id']][] = $it;
+    $all_orders = [];
+    $order_ids  = [];
+    while ($o = mysqli_fetch_assoc($orders_res)) {
+        $all_orders[] = $o;
+        $order_ids[]  = (int)$o['id'];
     }
+
+    $item_data = [];
+    if (!empty($order_ids)) {
+        $ids_str = implode(',', $order_ids);
+        $ir = mysqli_query($conn,
+            "SELECT oi.*, p.name AS product_name, p.category, ab.username AS added_by_name
+             FROM order_items oi
+             LEFT JOIN products p ON oi.product_id = p.id
+             LEFT JOIN users ab   ON oi.added_by   = ab.id
+             WHERE oi.order_id IN ($ids_str)
+             ORDER BY oi.order_id, oi.id");
+        while ($it = mysqli_fetch_assoc($ir)) {
+            if ($it['product_name'] === null && $it['custom_name']) $it['product_name'] = $it['custom_name'].' (custom)';
+            $item_data[(int)$it['order_id']][] = $it;
+        }
+    }
+
+    return [$all_orders, $item_data, $total];
 }
 
-$stats = mysqli_fetch_assoc(mysqli_query($conn, "
-    SELECT
-        SUM(status='pending')   AS cnt_pending,
-        SUM(status='approved')  AS cnt_approved,
-        SUM(status='cancelled') AS cnt_cancelled,
-        SUM(status='open')      AS cnt_open,
-        COALESCE(SUM(CASE WHEN status='pending' THEN total_amount  ELSE 0 END),0) AS val_pending,
-        COALESCE(SUM(CASE WHEN status='pending' THEN total_prepaid ELSE 0 END),0) AS val_prepaid
-    FROM `orders`
-    " . cidWhere() . "
-"));
+function fetchOrderStats(mysqli $conn): array {
+    return mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT
+            SUM(status='pending')                    AS cnt_pending,
+            SUM(status='processing')                 AS cnt_processing,
+            SUM(status IN ('approved','completed'))  AS cnt_completed,
+            SUM(status='cancelled')                  AS cnt_cancelled,
+            SUM(status='open')                       AS cnt_open,
+            COALESCE(SUM(CASE WHEN status='pending' THEN total_amount  ELSE 0 END),0) AS val_pending,
+            COALESCE(SUM(CASE WHEN status='pending' THEN total_prepaid ELSE 0 END),0) AS val_prepaid
+        FROM `orders`
+        " . cidWhere() . "
+    "));
+}
+
+// Renders one <tr> for the orders table. Shared by the initial page render and
+// the list_orders AJAX endpoint so both always produce identical markup.
+function renderOrderRow(array $o, array $o_items, array $staff_users, string $role): string {
+    ob_start();
+    $remaining = $o['status'] === 'processing'
+        ? max(0, (float)$o['total_amount'] - (float)$o['total_prepaid'])
+        : 0;
+    $oos_total   = (float)$o['refund_amount'];
+    $isPending   = $o['status'] === 'pending';
+    $isOpen      = $o['status'] === 'open';
+    $isNew       = $o['status'] === 'new';
+    $isProcessing = $o['status'] === 'processing';
+    $isCompleted  = $o['status'] === 'completed' || $o['status'] === 'approved';
+    $isClosed     = $o['status'] === 'closed';
+    $order_num = $o['order_number'] ?: '#'.$o['id'];
+    $scheme    = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $link_url  = $o['link_code'] ? $scheme.'://'.$_SERVER['HTTP_HOST'].dirname($_SERVER['SCRIPT_NAME']).'/order_customer.php?code='.$o['link_code'] : '';
+
+    // Build items for modal (new orders: from order_items; old orders: from order row)
+    $modal_items = [];
+    if (!empty($o_items)) {
+        foreach ($o_items as $it) {
+            $modal_items[] = [
+                'product'       => ($it['category']??'').'-'.($it['product_name']??''),
+                'quantity'      => (float)$it['quantity'],
+                'selling_price' => (float)$it['selling_price'],
+                'item_total'    => (float)$it['item_total'],
+                'status'        => $it['status'] ?? 'pending',
+                'source'        => $it['source'] ?? 'staff',
+                'added_by_name' => $it['added_by_name'] ?? null,
+            ];
+        }
+    } elseif ($o['product_name']) {
+        $modal_items[] = [
+            'product'       => ($o['category']??'').'-'.($o['product_name']??''),
+            'quantity'      => (float)$o['quantity'],
+            'selling_price' => (float)$o['selling_price'],
+            'item_total'    => (float)$o['total_amount'],
+            'status'        => '',
+            'source'        => 'staff',
+            'added_by_name' => $o['created_by_name'] ?? null,
+        ];
+    }
+
+    $data = json_encode([
+        'id'            => (int)$o['id'],
+        'order_num'     => $order_num,
+        'items'         => $modal_items,
+        'total_amount'  => (float)$o['total_amount'],
+        'order_owner'   => $o['order_owner'],
+        'phone'         => $o['phone'],
+        'prepaid_cash'  => (float)$o['prepaid_cash'],
+        'prepaid_momo'  => (float)$o['prepaid_momo'],
+        'prepaid_loan'  => (float)$o['prepaid_loan'],
+        'prepaid_bank'  => (float)$o['prepaid_bank'],
+        'total_prepaid' => (float)$o['total_prepaid'],
+    ], JSON_HEX_QUOT|JSON_HEX_APOS);
+    $prod_data = json_encode([
+        'order_num' => $order_num,
+        'owner'     => $o['order_owner'],
+        'items'     => $modal_items,
+        'total'     => (float)$o['total_amount'],
+    ], JSON_HEX_QUOT|JSON_HEX_APOS);
+    $print_data = json_encode([
+        'order_num'     => $order_num,
+        'created_at'    => date('d M Y', strtotime($o['created_at'])),
+        'order_owner'   => $o['order_owner'],
+        'phone'         => $o['phone'],
+        'location'      => $o['owner_location'] ?? '',
+        'items'         => $modal_items,
+        'total_amount'  => (float)$o['total_amount'],
+        'prepaid_cash'  => (float)$o['prepaid_cash'],
+        'prepaid_momo'  => (float)$o['prepaid_momo'],
+        'prepaid_bank'  => (float)$o['prepaid_bank'],
+        'prepaid_loan'  => (float)$o['prepaid_loan'],
+        'total_prepaid' => (float)$o['total_prepaid'],
+        'status'        => $o['status'],
+    ], JSON_HEX_QUOT|JSON_HEX_APOS);
+?>
+<tr id="order_row_<?php echo $o['id']; ?>">
+     <td class="actions_cell_<?php echo $o['id']; ?>">
+        <div class="act-menu-wrap">
+            <button class="act-btn" onclick="toggleActMenu(this)" title="Actions">&#8942;</button>
+            <div class="act-menu">
+                <button class="act-item" onclick='openProductsModal(<?php echo $prod_data; ?>);closeActMenus()'><i class="fas fa-box-open"></i> Products</button>
+                <button class="act-item" onclick='printReceipt(<?php echo $print_data; ?>);closeActMenus()'><i class="fas fa-print"></i> Print</button>
+                <button class="act-item" onclick='openPaymentsModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo $isProcessing ? "true" : "false"; ?>);closeActMenus()'><i class="fas fa-coins"></i> Payments</button>
+                <?php if ($isNew): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" style="color:#1d4ed8;" onclick='activateLink(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-link"></i> Activate Link</button>
+                <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
+                <?php endif; ?>
+                <?php if ($isOpen): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" style="color:#1d4ed8;" onclick='copyOrderLink(<?php echo json_encode($link_url); ?>)'><i class="fas fa-copy"></i> Copy Link</button>
+                <?php if (!$o['is_reusable']): ?>
+                <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Add Product</a>
+                <button class="act-item" style="color:#d97706;" onclick='finalizeOrdering(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-flag-checkered"></i> Close Ordering</button>
+                <?php endif; ?>
+                <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
+                <?php echo $o['is_reusable'] ? '<div style="font-size:11px;color:var(--secondary);padding:6px 14px;">Cancel deactivates this reusable link.</div>' : ''; ?>
+                <?php endif; ?>
+                <?php if ($isPending): ?>
+                <div class="act-menu-sep"></div>
+                <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Review / Edit Items</a>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" style="color:#16a34a;" onclick='startProcessing(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-play"></i> Start Processing</button>
+                <button class="act-item danger" onclick='rejectOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-ban"></i> Reject</button>
+                <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
+                <?php endif; ?>
+                <?php if ($isProcessing): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" onclick='openAddPaymentModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo (float)$o["total_amount"]; ?>,<?php echo (float)$o["total_prepaid"]; ?>);closeActMenus()'><i class="fas fa-money-bill-wave"></i> Add Payment</button>
+                <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Add Product</a>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" style="color:#16a34a;" onclick='openApproveModal(<?php echo $data; ?>);closeActMenus()'><i class="fas fa-check"></i> Complete Order</button>
+                <button class="act-item" style="color:#d97706;" onclick='openCloseOrderModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-lock"></i> Close Order</button>
+                <?php endif; ?>
+                <?php if ($isCompleted): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" style="color:#d97706;" onclick='openCloseOrderModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-lock"></i> Close Order</button>
+                <?php endif; ?>
+                <?php if ($isClosed && in_array($role, ['admin','superadmin'])): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item" style="color:#1d4ed8;" onclick='reopenOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-unlock"></i> Reopen</button>
+                <?php endif; ?>
+                <?php if (($isPending || $isNew || $isOpen) && in_array($role, ['admin','manager','superadmin'])): ?>
+                <div class="act-menu-sep"></div>
+                <button class="act-item danger" onclick='openDeleteOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-trash"></i> Delete</button>
+                <?php endif; ?>
+            </div>
+        </div>
+    </td>
+    <td>
+        <span class="tbl-num"><?php echo htmlspecialchars($order_num); ?></span>
+        <?php if ($o['order_number']): ?>
+        <br><span class="col-sub">#<?php echo $o['id']; ?></span>
+        <?php endif; ?>
+        <?php if (!empty($o['source_order_number'])): ?>
+        <br><span class="col-sub" title="Placed through a reusable customer link">&#128279; via <?php echo htmlspecialchars($o['source_order_number']); ?></span>
+        <?php endif; ?>
+        <?php if ($isOpen && !empty($o['is_reusable']) && (int)$o['reuse_count'] > 0): ?>
+        <br><span class="col-sub">Used <?php echo (int)$o['reuse_count']; ?>&times;</span>
+        <?php endif; ?>
+    </td>
+    <td>
+        <?php if (!empty($o_items)): ?>
+            <?php foreach ($o_items as $it): ?>
+            <div style="font-size:13px;line-height:1.6;">
+                <strong><?php echo htmlspecialchars($it['product_name']); ?></strong>
+                <span class="col-sub">&nbsp;&times;<?php echo number_format((float)$it['quantity'],0); ?></span>
+            </div>
+            <?php endforeach; ?>
+        <?php elseif ($o['product_name']): ?>
+            <strong><?php echo htmlspecialchars($o['product_name']); ?></strong>
+            <br><span class="col-sub"><?php echo htmlspecialchars($o['category']??''); ?></span>
+        <?php else: ?>
+            <span class="col-sub">—</span>
+        <?php endif; ?>
+    </td>
+    <td><strong>RWF <?php echo number_format((float)$o['total_amount'],0); ?></strong></td>
+    <td>
+        RWF <?php echo number_format((float)$o['total_prepaid'],0); ?>
+        <?php if ((float)$o['total_prepaid'] > 0): ?>
+        <div style="font-size:11px;color:var(--secondary);margin-top:2px;line-height:1.7;">
+            <?php if ((float)$o['prepaid_cash']>0): ?>Cash: <?php echo number_format((float)$o['prepaid_cash'],0); ?><br><?php endif; ?>
+            <?php if ((float)$o['prepaid_momo']>0): ?>Momo: <?php echo number_format((float)$o['prepaid_momo'],0); ?><br><?php endif; ?>
+            <?php if ((float)$o['prepaid_bank']>0): ?>Bank: <?php echo number_format((float)$o['prepaid_bank'],0); ?><br><?php endif; ?>
+            <?php if ((float)$o['prepaid_loan']>0): ?>Loan: <?php echo number_format((float)$o['prepaid_loan'],0); ?><?php endif; ?>
+        </div>
+        <?php endif; ?>
+    </td>
+    <td>
+        <span id="rem_cell_<?php echo $o['id']; ?>" class="remaining-pill <?php echo $remaining<=0 ? 'rp-zero' : 'rp-part'; ?>">
+            RWF <?php echo number_format(max(0,$remaining),0); ?>
+        </span>
+        <?php if ($oos_total > 0): ?>
+        <br><span class="remaining-pill" style="background:#fee2e2;color:#991b1b;margin-top:3px;cursor:default;" title="Refund owed for out-of-stock items">
+            &#8617; Refund RWF <?php echo number_format($oos_total,0); ?>
+        </span>
+        <?php endif; ?>
+    </td>
+    <td>
+        <?php echo htmlspecialchars($o['order_owner']); ?>
+        <?php if ($o['phone']): ?><br><span class="col-sub"><?php echo htmlspecialchars($o['phone']); ?></span><?php endif; ?>
+        <?php if (!empty($o['owner_location'])): ?><br><span class="col-sub">📍 <?php echo htmlspecialchars($o['owner_location']); ?></span><?php endif; ?>
+    </td>
+    <td class="status_cell_<?php echo $o['id']; ?>">
+        <span class="badge badge-<?php echo $o['status']; ?>"><?php echo ucfirst($o['status']); ?></span>
+        <?php if (in_array($o['status'], ['pending','processing','completed','approved'])): ?>
+        <div style="margin-top:4px;">
+            <select class="delivery-select" onchange="updateDeliveryStatus(<?php echo $o['id']; ?>, this.value)" title="Delivery stage">
+                <?php foreach (['placed'=>'Placed','packed'=>'Packed','ready'=>'Ready to Deliver','delivered'=>'Delivered','received'=>'Received'] as $dv => $dl): ?>
+                <option value="<?php echo $dv; ?>" <?php echo $o['delivery_status']===$dv?'selected':''; ?>><?php echo $dl; ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php endif; ?>
+        <?php if ($isOpen && $o['link_code']): ?>
+        <div class="link-info">
+            Code <span class="link-code-pill"><?php echo htmlspecialchars($o['link_code']); ?></span>
+            <?php if ($o['is_reusable']): ?><span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:10px;padding:1px 6px;margin-left:3px;">Reusable</span><?php endif; ?>
+            <br><?php echo $o['link_expires_at'] ? 'Expires ' . date('d M, H:i', strtotime($o['link_expires_at'])) : 'Never expires'; ?>
+            <?php echo $o['show_prices'] ? '' : '<br>Prices hidden'; ?>
+        </div>
+        <?php endif; ?>
+        <?php if (in_array($o['status'], ['approved','completed']) && $o['sale_id']): ?>
+        <br><span class="col-sub">Sale #<?php echo $o['sale_id']; ?></span>
+        <?php endif; ?>
+        <?php if ($o['status']==='cancelled' && !empty($o['cancel_reason'])): ?>
+        <br><span class="col-sub" style="cursor:help;" title="<?php echo htmlspecialchars($o['cancel_reason']); ?>">
+            ✕ <?php echo htmlspecialchars(mb_strimwidth($o['cancel_reason'],0,35,'…')); ?>
+        </span>
+        <?php endif; ?>
+        <?php if ($o['note']): ?>
+        <br><span class="col-sub" title="<?php echo htmlspecialchars($o['note']); ?>">📝 Note</span>
+        <?php endif; ?>
+    </td>
+    <td>
+        <?php
+        if (in_array($o['status'], ['approved','completed'])) {
+            echo htmlspecialchars($o['approved_by_name'] ?? '—');
+        } elseif (in_array($o['status'], ['cancelled','rejected'])) {
+            echo htmlspecialchars($o['cancelled_by_name'] ?? '—');
+        } else {
+            echo htmlspecialchars($o['created_by_name'] ?? '—');
+        }
+        ?>
+        <?php if (!in_array($o['status'], ['cancelled','closed'])): ?>
+        <div style="margin-top:4px;">
+            <div class="col-sub" style="margin-bottom:2px;">In charge</div>
+            <select class="incharge-select" onchange="reassignOrder(<?php echo $o['id']; ?>, this.value)" title="In charge of this order">
+                <option value="">— Unassigned —</option>
+                <?php foreach ($staff_users as $su): ?>
+                <option value="<?php echo $su['id']; ?>" <?php echo (int)$o['in_charge_id']===(int)$su['id']?'selected':''; ?>><?php echo htmlspecialchars($su['username']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php endif; ?>
+    </td>
+    <td>
+        <?php echo date('d M Y', strtotime($o['created_at'])); ?>
+        <br><span class="col-sub"><?php echo htmlspecialchars($o['created_by_name'] ?? '—'); ?></span>
+    </td>
+</tr>
+<?php
+    return ob_get_clean();
+}
+
+// ── AJAX: paginated/filtered order list + stats, for the AJAX-driven table ──────
+if (isset($_GET['action']) && $_GET['action'] === 'list_orders') {
+    header('Content-Type: application/json');
+    [$page_orders, $page_items, $total] = fetchOrdersPage($conn, $where, $page, $per_page);
+    $rows_html = '';
+    foreach ($page_orders as $o) {
+        $rows_html .= renderOrderRow($o, $page_items[(int)$o['id']] ?? [], $staff_users, $role);
+    }
+    $stats = fetchOrderStats($conn);
+    echo json_encode([
+        'success'     => true,
+        'rows_html'   => $rows_html,
+        'is_empty'    => empty($page_orders),
+        'page'        => $page,
+        'per_page'    => $per_page,
+        'total'       => $total,
+        'total_pages' => max(1, (int)ceil($total / $per_page)),
+        'stats'       => [
+            'open'        => (int)$stats['cnt_open'],
+            'pending'     => (int)$stats['cnt_pending'],
+            'processing'  => (int)$stats['cnt_processing'],
+            'completed'   => (int)$stats['cnt_completed'],
+            'cancelled'   => (int)$stats['cnt_cancelled'],
+            'val_pending' => (float)$stats['val_pending'],
+            'val_prepaid' => (float)$stats['val_prepaid'],
+        ],
+    ]);
+    exit;
+}
+
+[$all_orders, $item_data, $total_orders] = fetchOrdersPage($conn, $where, $page, $per_page);
+$total_pages = max(1, (int)ceil($total_orders / $per_page));
+$stats = fetchOrderStats($conn);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -616,12 +1001,15 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
 <link rel="stylesheet" href="css/all.min.css">
 <style>
 .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:700; }
-.badge-pending   { background:#fef9c3; color:#854d0e; }
-.badge-approved  { background:#dcfce7; color:#166534; }
-.badge-cancelled { background:#fee2e2; color:#991b1b; }
-.badge-closed    { background:#f1f5f9; color:#475569; }
-.badge-new       { background:#e0e7ff; color:#3730a3; }
-.badge-open      { background:#dbeafe; color:#1e40af; }
+.badge-pending    { background:#fef9c3; color:#854d0e; }
+.badge-processing { background:#fef3c7; color:#92400e; }
+.badge-approved   { background:#dcfce7; color:#166534; }
+.badge-completed  { background:#dcfce7; color:#166534; }
+.badge-rejected   { background:#fee2e2; color:#991b1b; }
+.badge-cancelled  { background:#fee2e2; color:#991b1b; }
+.badge-closed     { background:#f1f5f9; color:#475569; }
+.badge-new        { background:#e0e7ff; color:#3730a3; }
+.badge-open       { background:#dbeafe; color:#1e40af; }
 
 .link-info { margin-top:5px; font-size:11px; color:var(--secondary); }
 .link-code-pill { display:inline-block; font-family:monospace; font-weight:700; letter-spacing:1px;
@@ -748,8 +1136,12 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
         <div class="ostat-lbl">Prepaid Collected</div>
     </div>
     <div class="ostat">
-        <div class="ostat-val" id="stat_approved"><?php echo (int)$stats['cnt_approved']; ?></div>
-        <div class="ostat-lbl">Approved</div>
+        <div class="ostat-val" id="stat_processing"><?php echo (int)$stats['cnt_processing']; ?></div>
+        <div class="ostat-lbl">Processing</div>
+    </div>
+    <div class="ostat">
+        <div class="ostat-val" id="stat_approved"><?php echo (int)$stats['cnt_completed']; ?></div>
+        <div class="ostat-lbl">Completed</div>
     </div>
     <div class="ostat">
         <div class="ostat-val" id="stat_cancelled"><?php echo (int)$stats['cnt_cancelled']; ?></div>
@@ -759,24 +1151,26 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
 
 <!-- Filter -->
 <div class="filter-bar" style="flex-wrap:wrap;">
-    <form method="GET" id="filterForm" style="display:contents;">
-        <input type="text" id="order_search" placeholder="Search orders…"
+    <form method="GET" id="filterForm" style="display:contents;" onsubmit="event.preventDefault(); loadOrders(1);">
+        <input type="text" id="order_search" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="Search order #, owner, phone…"
                style="padding:7px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;min-width:180px;"
-               oninput="filterOrders()">
-        <select name="status" onchange="this.form.submit()">
-            <option value="">All statuses</option>
+               oninput="debouncedSearch()">
+        <select name="status" id="f_status" onchange="loadOrders(1)">
+            <option value="">All submitted orders</option>
             <option value="new"       <?php if($status_filter==='new')       echo 'selected'; ?>>New (draft)</option>
             <option value="open"      <?php if($status_filter==='open')      echo 'selected'; ?>>Open (link active)</option>
-            <option value="pending"   <?php if($status_filter==='pending')   echo 'selected'; ?>>Pending</option>
-            <option value="approved"  <?php if($status_filter==='approved')  echo 'selected'; ?>>Approved</option>
-            <option value="cancelled" <?php if($status_filter==='cancelled') echo 'selected'; ?>>Cancelled</option>
+            <option value="pending"    <?php if($status_filter==='pending')    echo 'selected'; ?>>Pending</option>
+            <option value="processing" <?php if($status_filter==='processing') echo 'selected'; ?>>Processing</option>
+            <option value="completed"  <?php if($status_filter==='completed')  echo 'selected'; ?>>Completed</option>
+            <option value="rejected"   <?php if($status_filter==='rejected')   echo 'selected'; ?>>Rejected</option>
+            <option value="cancelled"  <?php if($status_filter==='cancelled')  echo 'selected'; ?>>Cancelled</option>
             <option value="closed"    <?php if($status_filter==='closed')    echo 'selected'; ?>>Closed</option>
         </select>
         <label style="font-size:13px;color:var(--secondary);margin:0;">From</label>
-        <input type="date" name="date_from" value="<?php echo $date_from; ?>" onchange="this.form.submit()"
+        <input type="date" name="date_from" id="f_date_from" value="<?php echo $date_from; ?>" onchange="loadOrders(1)"
                style="padding:7px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;">
         <label style="font-size:13px;color:var(--secondary);margin:0;">To</label>
-        <input type="date" name="date_to" value="<?php echo $date_to; ?>" onchange="this.form.submit()"
+        <input type="date" name="date_to" id="f_date_to" value="<?php echo $date_to; ?>" onchange="loadOrders(1)"
                style="padding:7px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;">
         <a href="orders.php" style="font-size:13px;color:var(--secondary);text-decoration:none;padding:7px 4px;" title="Reset filters">&#x21BA; Reset</a>
     </form>
@@ -804,235 +1198,15 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
 <?php if (empty($all_orders)): ?>
 <tr><td colspan="9" style="text-align:center;color:var(--secondary);padding:32px;">No orders found for this period.</td></tr>
 <?php endif; ?>
-<?php foreach ($all_orders as $o):
-    $o_items   = $item_data[(int)$o['id']] ?? [];
-    $remaining = $o['status'] === 'pending'
-        ? max(0, (float)$o['total_amount'] - (float)$o['total_prepaid'])
-        : 0;
-    $oos_total = (float)$o['refund_amount'];
-    $isPending = $o['status'] === 'pending';
-    $isOpen    = $o['status'] === 'open';
-    $isNew     = $o['status'] === 'new';
-    $order_num = $o['order_number'] ?: '#'.$o['id'];
-    $scheme    = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $link_url  = $o['link_code'] ? $scheme.'://'.$_SERVER['HTTP_HOST'].dirname($_SERVER['SCRIPT_NAME']).'/order_customer.php?code='.$o['link_code'] : '';
-
-    // Build items for modal (new orders: from order_items; old orders: from order row)
-    $modal_items = [];
-    if (!empty($o_items)) {
-        foreach ($o_items as $it) {
-            $modal_items[] = [
-                'product'       => ($it['category']??'').'-'.($it['product_name']??''),
-                'quantity'      => (float)$it['quantity'],
-                'selling_price' => (float)$it['selling_price'],
-                'item_total'    => (float)$it['item_total'],
-                'status'        => $it['status'] ?? 'pending',
-                'source'        => $it['source'] ?? 'staff',
-                'added_by_name' => $it['added_by_name'] ?? null,
-            ];
-        }
-    } elseif ($o['product_name']) {
-        $modal_items[] = [
-            'product'       => ($o['category']??'').'-'.($o['product_name']??''),
-            'quantity'      => (float)$o['quantity'],
-            'selling_price' => (float)$o['selling_price'],
-            'item_total'    => (float)$o['total_amount'],
-            'status'        => '',
-            'source'        => 'staff',
-            'added_by_name' => $o['created_by_name'] ?? null,
-        ];
-    }
-
-    $data = json_encode([
-        'id'            => (int)$o['id'],
-        'order_num'     => $order_num,
-        'items'         => $modal_items,
-        'total_amount'  => (float)$o['total_amount'],
-        'order_owner'   => $o['order_owner'],
-        'phone'         => $o['phone'],
-        'prepaid_cash'  => (float)$o['prepaid_cash'],
-        'prepaid_momo'  => (float)$o['prepaid_momo'],
-        'prepaid_loan'  => (float)$o['prepaid_loan'],
-        'prepaid_bank'  => (float)$o['prepaid_bank'],
-        'total_prepaid' => (float)$o['total_prepaid'],
-    ], JSON_HEX_QUOT|JSON_HEX_APOS);
-    $prod_data = json_encode([
-        'order_num' => $order_num,
-        'owner'     => $o['order_owner'],
-        'items'     => $modal_items,
-        'total'     => (float)$o['total_amount'],
-    ], JSON_HEX_QUOT|JSON_HEX_APOS);
-    $print_data = json_encode([
-        'order_num'     => $order_num,
-        'created_at'    => date('d M Y', strtotime($o['created_at'])),
-        'order_owner'   => $o['order_owner'],
-        'phone'         => $o['phone'],
-        'location'      => $o['owner_location'] ?? '',
-        'items'         => $modal_items,
-        'total_amount'  => (float)$o['total_amount'],
-        'prepaid_cash'  => (float)$o['prepaid_cash'],
-        'prepaid_momo'  => (float)$o['prepaid_momo'],
-        'prepaid_bank'  => (float)$o['prepaid_bank'],
-        'prepaid_loan'  => (float)$o['prepaid_loan'],
-        'total_prepaid' => (float)$o['total_prepaid'],
-        'status'        => $o['status'],
-    ], JSON_HEX_QUOT|JSON_HEX_APOS);
-?>
-<tr id="order_row_<?php echo $o['id']; ?>">
-     <td class="actions_cell_<?php echo $o['id']; ?>">
-        <div class="act-menu-wrap">
-            <button class="act-btn" onclick="toggleActMenu(this)" title="Actions">&#8942;</button>
-            <div class="act-menu">
-                <button class="act-item" onclick='openProductsModal(<?php echo $prod_data; ?>);closeActMenus()'><i class="fas fa-box-open"></i> Products</button>
-                <button class="act-item" onclick='printReceipt(<?php echo $print_data; ?>);closeActMenus()'><i class="fas fa-print"></i> Print</button>
-                <button class="act-item" onclick='openPaymentsModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo $isPending ? "true" : "false"; ?>);closeActMenus()'><i class="fas fa-coins"></i> Payments</button>
-                <?php if ($isNew): ?>
-                <div class="act-menu-sep"></div>
-                <button class="act-item" style="color:#1d4ed8;" onclick='activateLink(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-link"></i> Activate Link</button>
-                <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
-                <?php endif; ?>
-                <?php if ($isOpen): ?>
-                <div class="act-menu-sep"></div>
-                <button class="act-item" style="color:#1d4ed8;" onclick='copyOrderLink(<?php echo json_encode($link_url); ?>)'><i class="fas fa-copy"></i> Copy Link</button>
-                <?php if (!$o['is_reusable']): ?>
-                <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Add Product</a>
-                <button class="act-item" style="color:#d97706;" onclick='finalizeOrdering(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-flag-checkered"></i> Close Ordering</button>
-                <?php endif; ?>
-                <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
-                <?php echo $o['is_reusable'] ? '<div style="font-size:11px;color:var(--secondary);padding:6px 14px;">Cancel deactivates this reusable link.</div>' : ''; ?>
-                <?php endif; ?>
-                <?php if ($isPending): ?>
-                <div class="act-menu-sep"></div>
-                <button class="act-item" onclick='openAddPaymentModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo (float)$o["total_amount"]; ?>,<?php echo (float)$o["total_prepaid"]; ?>);closeActMenus()'><i class="fas fa-money-bill-wave"></i> Add Payment</button>
-                <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Add Product</a>
-                <div class="act-menu-sep"></div>
-                <button class="act-item" style="color:#16a34a;" onclick='openApproveModal(<?php echo $data; ?>);closeActMenus()'><i class="fas fa-check"></i> Approve</button>
-                <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
-                <button class="act-item" style="color:#d97706;" onclick='openCloseOrderModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-lock"></i> Close Order</button>
-                <?php endif; ?>
-                <?php if (($isPending || $isNew || $isOpen) && in_array($role, ['admin','manager','superadmin'])): ?>
-                <div class="act-menu-sep"></div>
-                <button class="act-item danger" onclick='openDeleteOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-trash"></i> Delete</button>
-                <?php endif; ?>
-            </div>
-        </div>
-    </td>
-    <td>
-        <span class="tbl-num"><?php echo htmlspecialchars($order_num); ?></span>
-        <?php if ($o['order_number']): ?>
-        <br><span class="col-sub">#<?php echo $o['id']; ?></span>
-        <?php endif; ?>
-        <?php if (!empty($o['source_order_number'])): ?>
-        <br><span class="col-sub" title="Placed through a reusable customer link">&#128279; via <?php echo htmlspecialchars($o['source_order_number']); ?></span>
-        <?php endif; ?>
-        <?php if ($isOpen && !empty($o['is_reusable']) && (int)$o['reuse_count'] > 0): ?>
-        <br><span class="col-sub">Used <?php echo (int)$o['reuse_count']; ?>&times;</span>
-        <?php endif; ?>
-    </td>
-    <td>
-        <?php if (!empty($o_items)): ?>
-            <?php foreach ($o_items as $it): ?>
-            <div style="font-size:13px;line-height:1.6;">
-                <strong><?php echo htmlspecialchars($it['product_name']); ?></strong>
-                <span class="col-sub">&nbsp;&times;<?php echo number_format((float)$it['quantity'],0); ?></span>
-            </div>
-            <?php endforeach; ?>
-        <?php elseif ($o['product_name']): ?>
-            <strong><?php echo htmlspecialchars($o['product_name']); ?></strong>
-            <br><span class="col-sub"><?php echo htmlspecialchars($o['category']??''); ?></span>
-        <?php else: ?>
-            <span class="col-sub">—</span>
-        <?php endif; ?>
-    </td>
-    <td><strong>RWF <?php echo number_format((float)$o['total_amount'],0); ?></strong></td>
-    <td>
-        RWF <?php echo number_format((float)$o['total_prepaid'],0); ?>
-        <?php if ((float)$o['total_prepaid'] > 0): ?>
-        <div style="font-size:11px;color:var(--secondary);margin-top:2px;line-height:1.7;">
-            <?php if ((float)$o['prepaid_cash']>0): ?>Cash: <?php echo number_format((float)$o['prepaid_cash'],0); ?><br><?php endif; ?>
-            <?php if ((float)$o['prepaid_momo']>0): ?>Momo: <?php echo number_format((float)$o['prepaid_momo'],0); ?><br><?php endif; ?>
-            <?php if ((float)$o['prepaid_bank']>0): ?>Bank: <?php echo number_format((float)$o['prepaid_bank'],0); ?><br><?php endif; ?>
-            <?php if ((float)$o['prepaid_loan']>0): ?>Loan: <?php echo number_format((float)$o['prepaid_loan'],0); ?><?php endif; ?>
-        </div>
-        <?php endif; ?>
-    </td>
-    <td>
-        <span id="rem_cell_<?php echo $o['id']; ?>" class="remaining-pill <?php echo $remaining<=0 ? 'rp-zero' : 'rp-part'; ?>">
-            RWF <?php echo number_format(max(0,$remaining),0); ?>
-        </span>
-        <?php if ($oos_total > 0): ?>
-        <br><span class="remaining-pill" style="background:#fee2e2;color:#991b1b;margin-top:3px;cursor:default;" title="Refund owed for out-of-stock items">
-            &#8617; Refund RWF <?php echo number_format($oos_total,0); ?>
-        </span>
-        <?php endif; ?>
-    </td>
-    <td>
-        <?php echo htmlspecialchars($o['order_owner']); ?>
-        <?php if ($o['phone']): ?><br><span class="col-sub"><?php echo htmlspecialchars($o['phone']); ?></span><?php endif; ?>
-        <?php if (!empty($o['owner_location'])): ?><br><span class="col-sub">📍 <?php echo htmlspecialchars($o['owner_location']); ?></span><?php endif; ?>
-    </td>
-    <td class="status_cell_<?php echo $o['id']; ?>">
-        <span class="badge badge-<?php echo $o['status']; ?>"><?php echo ucfirst($o['status']); ?></span>
-        <?php if (in_array($o['status'], ['pending','approved'])): ?>
-        <div style="margin-top:4px;">
-            <select class="delivery-select" onchange="updateDeliveryStatus(<?php echo $o['id']; ?>, this.value)" title="Delivery stage">
-                <?php foreach (['placed'=>'Placed','packed'=>'Packed','ready'=>'Ready to Deliver','delivered'=>'Delivered'] as $dv => $dl): ?>
-                <option value="<?php echo $dv; ?>" <?php echo $o['delivery_status']===$dv?'selected':''; ?>><?php echo $dl; ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <?php endif; ?>
-        <?php if ($isOpen && $o['link_code']): ?>
-        <div class="link-info">
-            Code <span class="link-code-pill"><?php echo htmlspecialchars($o['link_code']); ?></span>
-            <?php if ($o['is_reusable']): ?><span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:10px;padding:1px 6px;margin-left:3px;">Reusable</span><?php endif; ?>
-            <br><?php echo $o['link_expires_at'] ? 'Expires ' . date('d M, H:i', strtotime($o['link_expires_at'])) : 'Never expires'; ?>
-            <?php echo $o['show_prices'] ? '' : '<br>Prices hidden'; ?>
-        </div>
-        <?php endif; ?>
-        <?php if ($o['status']==='approved' && $o['sale_id']): ?>
-        <br><span class="col-sub">Sale #<?php echo $o['sale_id']; ?></span>
-        <?php endif; ?>
-        <?php if ($o['status']==='cancelled' && !empty($o['cancel_reason'])): ?>
-        <br><span class="col-sub" style="cursor:help;" title="<?php echo htmlspecialchars($o['cancel_reason']); ?>">
-            ✕ <?php echo htmlspecialchars(mb_strimwidth($o['cancel_reason'],0,35,'…')); ?>
-        </span>
-        <?php endif; ?>
-        <?php if ($o['note']): ?>
-        <br><span class="col-sub" title="<?php echo htmlspecialchars($o['note']); ?>">📝 Note</span>
-        <?php endif; ?>
-    </td>
-    <td>
-        <?php
-        if ($o['status'] === 'approved') {
-            echo htmlspecialchars($o['approved_by_name'] ?? '—');
-        } elseif ($o['status'] === 'cancelled') {
-            echo htmlspecialchars($o['cancelled_by_name'] ?? '—');
-        } else {
-            echo htmlspecialchars($o['created_by_name'] ?? '—');
-        }
-        ?>
-        <?php if (!in_array($o['status'], ['cancelled'])): ?>
-        <div style="margin-top:4px;">
-            <div class="col-sub" style="margin-bottom:2px;">In charge</div>
-            <select class="incharge-select" onchange="reassignOrder(<?php echo $o['id']; ?>, this.value)" title="In charge of this order">
-                <option value="">— Unassigned —</option>
-                <?php foreach ($staff_users as $su): ?>
-                <option value="<?php echo $su['id']; ?>" <?php echo (int)$o['in_charge_id']===(int)$su['id']?'selected':''; ?>><?php echo htmlspecialchars($su['username']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <?php endif; ?>
-    </td>
-    <td>
-        <?php echo date('d M Y', strtotime($o['created_at'])); ?>
-        <br><span class="col-sub"><?php echo htmlspecialchars($o['created_by_name'] ?? '—'); ?></span>
-    </td>
-   
-</tr>
-<?php endforeach; ?>
+<?php foreach ($all_orders as $o): echo renderOrderRow($o, $item_data[(int)$o['id']] ?? [], $staff_users, $role); endforeach; ?>
 </tbody>
 </table>
+</div>
+
+<div id="orders_pagination" style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;font-size:13px;color:var(--secondary);">
+    <button type="button" class="btn" id="pg_prev" onclick="loadOrders(currentPage-1)" <?php echo $page<=1?'disabled':''; ?>>&larr; Prev</button>
+    <span id="pg_info">Page <?php echo $page; ?> of <?php echo $total_pages; ?> (<?php echo $total_orders; ?> orders)</span>
+    <button type="button" class="btn" id="pg_next" onclick="loadOrders(currentPage+1)" <?php echo $page>=$total_pages?'disabled':''; ?>>Next &rarr;</button>
 </div>
 
 </div><!-- /main-content -->
@@ -1056,6 +1230,26 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
     <div style="display:flex;gap:10px;">
         <button class="btn" style="flex:1;" onclick="closeModal('cancelModal')">Back</button>
         <button class="btn btn-danger" style="flex:1;" id="cancel_submit_btn" onclick="submitCancel()">Confirm Cancel</button>
+    </div>
+</div>
+</div>
+
+<!-- Reject modal -->
+<div id="rejectModal" class="modal">
+<div class="modal-box" style="max-width:420px;">
+    <button class="modal-close" onclick="closeModal('rejectModal')">&times;</button>
+    <div class="modal-title">Reject Order <span id="reject_order_num" style="color:var(--primary);"></span></div>
+    <div style="padding:8px 0 16px;">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">
+            Reason <span style="font-weight:400;color:var(--secondary);">(optional)</span>
+        </label>
+        <textarea id="reject_reason_input" rows="3"
+            placeholder="e.g. items no longer available, customer unreachable…"
+            style="width:100%;padding:9px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;resize:vertical;box-sizing:border-box;"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;">
+        <button class="btn" style="flex:1;" onclick="closeModal('rejectModal')">Back</button>
+        <button class="btn btn-danger" style="flex:1;" id="reject_submit_btn" onclick="submitReject()">Confirm Reject</button>
     </div>
 </div>
 </div>
@@ -1088,7 +1282,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
 <div id="approveModal" class="modal">
 <div class="modal-box">
     <button class="modal-close" onclick="closeModal('approveModal')">&times;</button>
-    <div class="modal-title">Approve Order <span id="appr_order_num" style="color:var(--primary);"></span></div>
+    <div class="modal-title">Complete Order <span id="appr_order_num" style="color:var(--primary);"></span></div>
 
     <div class="order-detail-box">
         <div class="dr" id="appr_items_row">
@@ -1107,7 +1301,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
             </div>
         </div>
         <div class="dr">
-            <span>Remaining Balance</span>
+            <span>Remaining (becomes a loan)</span>
             <strong id="appr_remaining" style="font-size:15px;"></strong>
         </div>
     </div>
@@ -1115,7 +1309,7 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
     <button id="appr_submit" class="btn btn-success"
             style="width:100%;padding:11px;margin-top:16px;"
             onclick="submitApprove()">
-        Approve Order
+        Complete Order
     </button>
 </div>
 </div>
@@ -1169,11 +1363,24 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
     <!-- Inline Add Payment (pending orders only) -->
     <div id="pm_add_section" style="display:none;margin-top:20px;border-top:1px solid var(--gray-200);padding-top:16px;">
         <div class="section-lbl">Add Payment</div>
+        <div class="pay-shortcuts">
+            <label class="pay-shortcut-lbl">
+                <input type="checkbox" id="pm_is_cash" onchange="toggleOrderPayShortcut('pm','cash')">
+                <span><span class="pay-shortcut-name">Is Cash?</span> <span class="pay-shortcut-desc">Full amount goes to cash</span></span>
+            </label>
+            <label class="pay-shortcut-lbl">
+                <input type="checkbox" id="pm_is_momo" onchange="toggleOrderPayShortcut('pm','momo')">
+                <span><span class="pay-shortcut-name">Is Momo?</span> <span class="pay-shortcut-desc">Full amount goes to momo</span></span>
+            </label>
+            <label class="pay-shortcut-lbl">
+                <input type="checkbox" id="pm_is_bank" onchange="toggleOrderPayShortcut('pm','bank')">
+                <span><span class="pay-shortcut-name">Is Bank?</span> <span class="pay-shortcut-desc">Full amount goes to bank</span></span>
+            </label>
+        </div>
         <div class="pay-box">
             <div class="pay-row"><span class="pay-lbl">Cash</span><input type="number" id="pm_cash" min="0" step="any" value="0" oninput="pmCalc()"></div>
             <div class="pay-row"><span class="pay-lbl">Momo</span><input type="number" id="pm_momo" min="0" step="any" value="0" oninput="pmCalc()"></div>
             <div class="pay-row"><span class="pay-lbl">Bank</span><input type="number" id="pm_bank" min="0" step="any" value="0" oninput="pmCalc()"></div>
-            <div class="pay-row"><span class="pay-lbl">Loan</span><input type="number" id="pm_loan" min="0" step="any" value="0" oninput="pmCalc()"></div>
             <div class="pay-remaining" id="pm_rem_row">
                 <span>New Balance After</span>
                 <span id="pm_rem_val">—</span>
@@ -1197,11 +1404,24 @@ $stats = mysqli_fetch_assoc(mysqli_query($conn, "
         <div class="dr"><span>Remaining</span><strong id="apm_remaining" style="color:var(--primary);"></strong></div>
     </div>
     <div class="section-lbl">Additional Payment</div>
+    <div class="pay-shortcuts">
+        <label class="pay-shortcut-lbl">
+            <input type="checkbox" id="apm_is_cash" onchange="toggleOrderPayShortcut('apm','cash')">
+            <span><span class="pay-shortcut-name">Is Cash?</span> <span class="pay-shortcut-desc">Full amount goes to cash</span></span>
+        </label>
+        <label class="pay-shortcut-lbl">
+            <input type="checkbox" id="apm_is_momo" onchange="toggleOrderPayShortcut('apm','momo')">
+            <span><span class="pay-shortcut-name">Is Momo?</span> <span class="pay-shortcut-desc">Full amount goes to momo</span></span>
+        </label>
+        <label class="pay-shortcut-lbl">
+            <input type="checkbox" id="apm_is_bank" onchange="toggleOrderPayShortcut('apm','bank')">
+            <span><span class="pay-shortcut-name">Is Bank?</span> <span class="pay-shortcut-desc">Full amount goes to bank</span></span>
+        </label>
+    </div>
     <div class="pay-box">
         <div class="pay-row"><span class="pay-lbl">Cash</span><input type="number" id="apm_cash" min="0" step="any" value="0" oninput="apmCalc()"></div>
         <div class="pay-row"><span class="pay-lbl">Momo</span><input type="number" id="apm_momo" min="0" step="any" value="0" oninput="apmCalc()"></div>
         <div class="pay-row"><span class="pay-lbl">Bank</span><input type="number" id="apm_bank" min="0" step="any" value="0" oninput="apmCalc()"></div>
-        <div class="pay-row"><span class="pay-lbl">Loan</span><input type="number" id="apm_loan" min="0" step="any" value="0" oninput="apmCalc()"></div>
         <div class="pay-remaining" id="apm_rem_row">
             <span>New Balance After</span>
             <span id="apm_rem_val">—</span>
@@ -1313,27 +1533,67 @@ function submitCancel() {
         .then(function(r){ return r.json(); })
         .then(function(res){
             showToast(res.message, res.success);
-            if (res.success) {
-                closeModal('cancelModal');
-                var sc = document.querySelector('.status_cell_'  + _cancelId);
-                var ac = document.querySelector('.actions_cell_' + _cancelId);
-                var reasonHtml = res.reason
-                    ? '<br><span class="col-sub" style="cursor:help;" title="' + escH(res.reason) + '">&#10005; ' +
-                      escH(res.reason.length > 35 ? res.reason.slice(0,35) + '…' : res.reason) + '</span>'
-                    : '';
-                if (sc) sc.innerHTML = '<span class="badge badge-cancelled">Cancelled</span>' + reasonHtml;
-                if (ac) ac.querySelectorAll('.act-menu-sep, .act-item[onclick*="openApproveModal"], .act-item.danger')
-                           .forEach(function(el){ el.remove(); });
-                adjustStat('pending',   -1);
-                adjustStat('cancelled', +1);
-            } else {
-                btn.disabled = false; btn.textContent = 'Confirm Cancel';
-            }
+            if (res.success) { closeModal('cancelModal'); loadOrders(currentPage); }
+            else { btn.disabled = false; btn.textContent = 'Confirm Cancel'; }
         })
         .catch(function(){
             showToast('Network error.', false);
             btn.disabled = false; btn.textContent = 'Confirm Cancel';
         });
+}
+
+// ── Reject (staff decline after review) ─────────────────────────────────────────
+var _rejectId = 0;
+function rejectOrder(id, orderNum) {
+    _rejectId = id;
+    document.getElementById('reject_order_num').textContent = orderNum || ('#' + id);
+    document.getElementById('reject_reason_input').value    = '';
+    var btn = document.getElementById('reject_submit_btn');
+    btn.disabled = false; btn.textContent = 'Confirm Reject';
+    openModal('rejectModal');
+}
+function submitReject() {
+    var btn    = document.getElementById('reject_submit_btn');
+    var reason = document.getElementById('reject_reason_input').value.trim();
+    btn.disabled = true; btn.textContent = 'Processing…';
+    var fd = new FormData();
+    fd.append('reject_order',  '1');
+    fd.append('order_id',      _rejectId);
+    fd.append('reject_reason', reason);
+    fetch('orders.php', {method:'POST', body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            showToast(res.message, res.success);
+            if (res.success) { closeModal('rejectModal'); loadOrders(currentPage); }
+            else { btn.disabled = false; btn.textContent = 'Confirm Reject'; }
+        })
+        .catch(function(){
+            showToast('Network error.', false);
+            btn.disabled = false; btn.textContent = 'Confirm Reject';
+        });
+}
+
+// ── Start processing / Reopen (simple confirm + reload) ──────────────────────────
+function startProcessing(id, orderNum) {
+    if (!confirm('Start processing ' + orderNum + '? You can then take payments and complete it.')) return;
+    var fd = new FormData();
+    fd.append('start_processing', '1');
+    fd.append('order_id', id);
+    fetch('orders.php', {method:'POST', body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){ showToast(res.message, res.success); if (res.success) loadOrders(currentPage); })
+        .catch(function(){ showToast('Network error.', false); });
+}
+
+function reopenOrder(id, orderNum) {
+    if (!confirm('Reopen ' + orderNum + '? It will be restored to its status before closing.')) return;
+    var fd = new FormData();
+    fd.append('reopen_order', '1');
+    fd.append('order_id', id);
+    fetch('orders.php', {method:'POST', body:fd})
+        .then(function(r){ return r.json(); })
+        .then(function(res){ showToast(res.message, res.success); if (res.success) loadOrders(currentPage); })
+        .catch(function(){ showToast('Network error.', false); });
 }
 
 // ── Link actions (new/open orders) ──────────────────────────────────────────────
@@ -1345,7 +1605,7 @@ function activateLink(id, orderNum) {
         .then(function(r){ return r.json(); })
         .then(function(res){
             showToast(res.message, res.success);
-            if (res.success) location.reload();
+            if (res.success) loadOrders(currentPage);
         })
         .catch(function(){ showToast('Network error.', false); });
 }
@@ -1359,7 +1619,7 @@ function finalizeOrdering(id, orderNum) {
         .then(function(r){ return r.json(); })
         .then(function(res){
             showToast(res.message, res.success);
-            if (res.success) location.reload();
+            if (res.success) loadOrders(currentPage);
         })
         .catch(function(){ showToast('Network error.', false); });
 }
@@ -1434,7 +1694,7 @@ function openApproveModal(o) {
     }
 
     var btn = document.getElementById('appr_submit');
-    btn.disabled = false; btn.textContent = 'Approve Order';
+    btn.disabled = false; btn.textContent = 'Complete Order';
     openModal('approveModal');
 }
 
@@ -1443,44 +1703,19 @@ function submitApprove() {
     var btn = document.getElementById('appr_submit');
     btn.disabled=true; btn.textContent='Processing…';
     var fd = new FormData();
-    fd.append('approve_order','1');
+    fd.append('complete_order','1');
     fd.append('order_id', _apprId);
     fetch('orders.php',{method:'POST',body:fd})
         .then(function(r){ return r.json(); })
         .then(function(res){
             showToast(res.message, res.success);
-            if (res.success) {
-                closeModal('approveModal');
-                var sc = document.querySelector('.status_cell_' +_apprId);
-                var ac = document.querySelector('.actions_cell_'+_apprId);
-                var rc = document.getElementById('rem_cell_'+_apprId);
-                if (sc) sc.innerHTML =
-                    '<span class="badge badge-approved">Approved</span>' +
-                    '<br><span class="col-sub">Sale #' + res.sale_id + '</span>';
-                if (ac) {
-                    var items = ac.querySelectorAll('.act-menu .act-item');
-                    Array.from(items).slice(2).forEach(function(el){ el.remove(); });
-                    ac.querySelectorAll('.act-menu .act-menu-sep').forEach(function(el){ el.remove(); });
-                }
-                if (rc) { rc.className = 'remaining-pill rp-zero'; rc.textContent = 'RWF 0'; }
-                adjustStat('pending',  -1);
-                adjustStat('approved', +1);
-            } else {
-                btn.disabled=false; btn.textContent='Approve Order';
-            }
+            if (res.success) { closeModal('approveModal'); loadOrders(currentPage); }
+            else { btn.disabled=false; btn.textContent='Complete Order'; }
         })
         .catch(function(){
             showToast('Network error.',false);
-            btn.disabled=false; btn.textContent='Approve Order';
+            btn.disabled=false; btn.textContent='Complete Order';
         });
-}
-
-// ── Stat counters ─────────────────────────────────────────────────────────────
-function adjustStat(key, delta) {
-    var map = {pending:'stat_pending',approved:'stat_approved',cancelled:'stat_cancelled'};
-    var el  = document.getElementById(map[key]);
-    if (!el) return;
-    el.textContent = Math.max(0, (parseInt(el.textContent)||0) + delta);
 }
 
 // ── Products modal ────────────────────────────────────────────────────────────
@@ -1527,12 +1762,52 @@ function openProductsModal(o) {
     openModal('productsModal');
 }
 
-// ── Search ────────────────────────────────────────────────────────────────────
-function filterOrders() {
-    var q = document.getElementById('order_search').value.toLowerCase();
-    document.querySelectorAll('#orders_tbody tr[id^="order_row_"]').forEach(function(row) {
-        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+// ── AJAX-driven table: filters + pagination ─────────────────────────────────────
+var currentPage = <?php echo (int)$page; ?>;
+var _searchTimer = null;
+
+function debouncedSearch() {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function(){ loadOrders(1); }, 300);
+}
+
+function loadOrders(page) {
+    page = Math.max(1, page);
+    var params = new URLSearchParams({
+        action:     'list_orders',
+        search:     document.getElementById('order_search').value,
+        status:     document.getElementById('f_status').value,
+        date_from:  document.getElementById('f_date_from').value,
+        date_to:    document.getElementById('f_date_to').value,
+        page:       page,
     });
+    fetch('orders.php?' + params.toString())
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+            if (!res.success) return;
+            currentPage = res.page;
+
+            document.getElementById('orders_tbody').innerHTML = res.is_empty
+                ? '<tr><td colspan="9" style="text-align:center;color:var(--secondary);padding:32px;">No orders found for this period.</td></tr>'
+                : res.rows_html;
+
+            document.getElementById('stat_open').textContent        = res.stats.open;
+            document.getElementById('stat_pending').textContent     = res.stats.pending;
+            document.getElementById('stat_processing').textContent  = res.stats.processing;
+            document.getElementById('stat_approved').textContent    = res.stats.completed;
+            document.getElementById('stat_cancelled').textContent   = res.stats.cancelled;
+            document.getElementById('stat_val_pending').textContent = 'RWF ' + Math.round(res.stats.val_pending).toLocaleString();
+            document.getElementById('stat_prepaid').textContent     = 'RWF ' + Math.round(res.stats.val_prepaid).toLocaleString();
+
+            document.getElementById('pg_info').textContent = 'Page ' + res.page + ' of ' + res.total_pages + ' (' + res.total + ' orders)';
+            document.getElementById('pg_prev').disabled = res.page <= 1;
+            document.getElementById('pg_next').disabled = res.page >= res.total_pages;
+
+            var qs = new URLSearchParams(params);
+            qs.delete('action');
+            history.replaceState(null, '', 'orders.php?' + qs.toString());
+        })
+        .catch(function(){ showToast('Network error loading orders.', false); });
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -1560,8 +1835,7 @@ function submitDelete() {
             showToast(res.message, res.success);
             if (res.success) {
                 closeModal('deleteModal');
-                var row = document.getElementById('order_row_' + _deleteId);
-                if (row) row.remove();
+                loadOrders(currentPage);
             } else {
                 btn.disabled = false; btn.textContent = 'Delete Permanently';
             }
@@ -1573,10 +1847,10 @@ function submitDelete() {
 }
 
 // ── Payments history modal ────────────────────────────────────────────────────
-var _pmId = 0, _pmIsPending = false, _pmTotal = 0, _pmCollected = 0;
+var _pmId = 0, _pmEditable = false, _pmTotal = 0, _pmCollected = 0;
 
-function openPaymentsModal(id, orderNum, isPending) {
-    _pmId = id; _pmIsPending = isPending;
+function openPaymentsModal(id, orderNum, editable) {
+    _pmId = id; _pmEditable = editable;
     document.getElementById('pm_order_num').textContent         = orderNum;
     document.getElementById('pm_owner').textContent             = '';
     document.getElementById('pm_total').textContent             = '—';
@@ -1585,7 +1859,8 @@ function openPaymentsModal(id, orderNum, isPending) {
     document.getElementById('pm_loading').style.display         = '';
     document.getElementById('pm_table_wrap').style.display      = 'none';
     document.getElementById('pm_add_section').style.display     = 'none';
-    ['cash','momo','bank','loan'].forEach(function(t){ document.getElementById('pm_'+t).value = 0; });
+    ['cash','momo','bank'].forEach(function(t){ document.getElementById('pm_'+t).value = 0; });
+    ['cash','momo','bank'].forEach(function(t){ document.getElementById('pm_is_'+t).checked = false; });
     openModal('paymentsModal');
     loadPayments(id);
 }
@@ -1651,7 +1926,7 @@ function loadPayments(id) {
             }
 
             document.getElementById('pm_table_wrap').style.display = '';
-            if (_pmIsPending) {
+            if (_pmEditable) {
                 document.getElementById('pm_add_section').style.display = '';
                 pmCalc();
             }
@@ -1659,12 +1934,32 @@ function loadPayments(id) {
         .catch(function(){ document.getElementById('pm_loading').textContent='Network error.'; document.getElementById('pm_loading').style.display=''; });
 }
 
+// Shared by both payment modals (prefix 'pm' or 'apm'): checking "Is Cash?" /
+// "Is Momo?" / "Is Bank?" dumps the whole remaining balance into that one
+// field and zeroes the others, same one-click idea as sale_bulk's shortcut
+// chips. There's no loan option here — payments recorded from these modals
+// are always cash/momo/bank; loan is only set at order creation.
+function toggleOrderPayShortcut(prefix, type) {
+    ['cash','momo','bank'].forEach(function(t){
+        if (t !== type) document.getElementById(prefix + '_is_' + t).checked = false;
+    });
+    var checked   = document.getElementById(prefix + '_is_' + type).checked;
+    var remaining = prefix === 'pm'
+        ? Math.max(0, _pmTotal - _pmCollected)
+        : Math.max(0, _apmTotal - _apmPrepaid);
+    if (checked) {
+        document.getElementById(prefix + '_cash').value = type === 'cash' ? remaining : 0;
+        document.getElementById(prefix + '_momo').value = type === 'momo' ? remaining : 0;
+        document.getElementById(prefix + '_bank').value = type === 'bank' ? remaining : 0;
+    }
+    if (prefix === 'pm') pmCalc(); else apmCalc();
+}
+
 function pmCalc() {
     var cash = parseFloat(document.getElementById('pm_cash').value)||0;
     var momo = parseFloat(document.getElementById('pm_momo').value)||0;
     var bank = parseFloat(document.getElementById('pm_bank').value)||0;
-    var loan = parseFloat(document.getElementById('pm_loan').value)||0;
-    var add  = cash+momo+bank+loan;
+    var add  = cash+momo+bank;
     var newRem = Math.max(0, _pmTotal - _pmCollected - add);
     var over   = (_pmCollected + add) > _pmTotal + 1;
     document.getElementById('pm_rem_val').textContent = 'RWF ' + Math.round(newRem).toLocaleString();
@@ -1680,7 +1975,6 @@ function submitPaymentFromModal() {
     fd.append('add_cash', document.getElementById('pm_cash').value);
     fd.append('add_momo', document.getElementById('pm_momo').value);
     fd.append('add_bank', document.getElementById('pm_bank').value);
-    fd.append('add_loan', document.getElementById('pm_loan').value);
     fetch('orders.php',{method:'POST',body:fd})
         .then(function(r){ return r.json(); })
         .then(function(res){
@@ -1697,7 +1991,8 @@ function submitPaymentFromModal() {
                     rc.textContent = 'RWF '+Math.round(res.new_remaining).toLocaleString();
                 }
                 // Reset form and reload payment rows
-                ['cash','momo','bank','loan'].forEach(function(t){ document.getElementById('pm_'+t).value=0; });
+                ['cash','momo','bank'].forEach(function(t){ document.getElementById('pm_'+t).value=0; });
+                ['cash','momo','bank'].forEach(function(t){ document.getElementById('pm_is_'+t).checked = false; });
                 pmCalc();
                 document.getElementById('pm_loading').style.display  = '';
                 document.getElementById('pm_table_wrap').style.display = 'none';
@@ -1716,7 +2011,8 @@ function openAddPaymentModal(id, orderNum, total, prepaid) {
     document.getElementById('apm_total').textContent       = 'RWF ' + total.toLocaleString();
     document.getElementById('apm_prepaid').textContent     = 'RWF ' + prepaid.toLocaleString();
     document.getElementById('apm_remaining').textContent   = 'RWF ' + Math.max(0, total - prepaid).toLocaleString();
-    ['cash','momo','bank','loan'].forEach(function(t){ document.getElementById('apm_'+t).value = 0; });
+    ['cash','momo','bank'].forEach(function(t){ document.getElementById('apm_'+t).value = 0; });
+    ['cash','momo','bank'].forEach(function(t){ document.getElementById('apm_is_'+t).checked = false; });
     apmCalc();
     openModal('addPaymentModal');
 }
@@ -1724,8 +2020,7 @@ function apmCalc() {
     var cash = parseFloat(document.getElementById('apm_cash').value)||0;
     var momo = parseFloat(document.getElementById('apm_momo').value)||0;
     var bank = parseFloat(document.getElementById('apm_bank').value)||0;
-    var loan = parseFloat(document.getElementById('apm_loan').value)||0;
-    var total_add    = cash + momo + bank + loan;
+    var total_add    = cash + momo + bank;
     var new_prepaid  = _apmPrepaid + total_add;
     var new_rem      = Math.max(0, _apmTotal - new_prepaid);
     var over         = new_prepaid > _apmTotal + 1;
@@ -1741,7 +2036,6 @@ function submitAddPayment() {
     fd.append('add_cash', document.getElementById('apm_cash').value);
     fd.append('add_momo', document.getElementById('apm_momo').value);
     fd.append('add_bank', document.getElementById('apm_bank').value);
-    fd.append('add_loan', document.getElementById('apm_loan').value);
     fetch('orders.php',{method:'POST',body:fd})
         .then(function(r){ return r.json(); })
         .then(function(res){
@@ -1874,18 +2168,8 @@ function submitCloseOrder() {
         .then(function(r){ return r.json(); })
         .then(function(res){
             showToast(res.message, res.success);
-            if (res.success) {
-                closeModal('closeOrderModal');
-                var sc = document.querySelector('.status_cell_'+_coId);
-                var ac = document.querySelector('.actions_cell_'+_coId);
-                if (sc) sc.innerHTML = '<span class="badge badge-closed">Closed</span>';
-                if (ac) {
-                    var items = ac.querySelectorAll('.act-menu .act-item');
-                    Array.from(items).slice(2).forEach(function(el){ el.remove(); });
-                    ac.querySelectorAll('.act-menu .act-menu-sep').forEach(function(el){ el.remove(); });
-                }
-                adjustStat('pending', -1);
-            } else { btn.disabled=false; btn.textContent='Confirm Close'; }
+            if (res.success) { closeModal('closeOrderModal'); loadOrders(currentPage); }
+            else { btn.disabled=false; btn.textContent='Confirm Close'; }
         })
         .catch(function(){ showToast('Network error.',false); btn.disabled=false; btn.textContent='Confirm Close'; });
 }
@@ -1893,7 +2177,8 @@ function submitCloseOrder() {
 // ── Thermal receipt print ─────────────────────────────────────────────────────
 function printReceipt(o) {
     var remaining = Math.max(0, o.total_amount - o.total_prepaid);
-    var statusColor = o.status === 'approved' ? '#166534' : o.status === 'cancelled' ? '#991b1b' : '#854d0e';
+    var statusColor = (o.status === 'approved' || o.status === 'completed') ? '#166534'
+        : (o.status === 'cancelled' || o.status === 'rejected') ? '#991b1b' : '#854d0e';
 
     var h = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
         '<style>' +

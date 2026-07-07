@@ -867,7 +867,7 @@ function renderBulkCart() {
                 '</div>' +
                 '<div class="cart-item-right">' +
                     '<span class="cart-item-total">RWF ' + Math.round(sub).toLocaleString() + '</span>' +
-                    '<button type="button" class="cart-rm" onclick="removeBulkCartItem(' + JSON.stringify(item.pid) + ',' + item.divisor + ')" title="Remove">&times;</button>' +
+                    '<button type="button" class="cart-rm" onclick="removeBulkCartItem(\'' + item.pid + '\',' + item.divisor + ')" title="Remove">&times;</button>' +
                 '</div>' +
             '</div>';
         }).join('');

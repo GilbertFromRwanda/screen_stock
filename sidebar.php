@@ -128,7 +128,7 @@ try {
 
             <?php $has_rep = hasPermission('reports'); $has_fin = hasPermission('financials'); ?>
             <?php if ($has_rep || $has_fin): ?>
-            <?php $ra = in_array($current_page,['summary-revenue.php','revenue.php']); ?>
+            <?php $ra = in_array($current_page,['summary-revenue.php','revenue.php','loss_products.php']); ?>
             <div class="tn-dropdown<?= $ra?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">Reports <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
@@ -137,6 +137,7 @@ try {
                     <?php endif; ?>
                     <?php if ($has_fin): ?>
                     <a href="revenue.php" class="tn-drop-item<?= $current_page==='revenue.php'?' active':'' ?>">Profit Analysis</a>
+                    <a href="loss_products.php" class="tn-drop-item<?= $current_page==='loss_products.php'?' active':'' ?>">Products Causing Loss</a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -171,6 +172,20 @@ try {
 
         <!-- User + Logout -->
         <div class="topnav-user">
+            <?php if (hasPermission('orders')): ?>
+            <div class="tn-notif-wrap" id="tnNotifWrap">
+                <button type="button" class="tn-notif" id="tnNotifBell" title="Notifications">
+                    &#128276;
+                    <span class="tn-notif-badge" id="tnNotifBadge" style="display:none;">0</span>
+                </button>
+                <div class="tn-notif-panel" id="tnNotifPanel">
+                    <div class="tn-notif-panel-hdr">Notifications</div>
+                    <div class="tn-notif-list" id="tnNotifList">
+                        <div class="tn-notif-empty">No notifications</div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
             <div class="topnav-avatar"><?= strtoupper(substr($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'U', 0, 1)) ?></div>
             <div class="topnav-user-info">
                 <div class="topnav-uname"><?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']) ?></div>
@@ -190,6 +205,7 @@ try {
     <a href="sale_bulk.php"     class="qb-btn qb-sale">+ Bulk Sale</a>
     <a href="sale_retail.php"   class="qb-btn qb-sale">+ Retail Sale</a>
     <a href="sale_external.php" class="qb-btn qb-sale">+ Ext. Sale</a>
+    <a href="orders.php" class="qb-btn qb-order">Orders</a>
     <a href="new-purchase.php"  class="qb-btn qb-buy">+ New Purchase</a>
     <a href="expenses.php"      class="qb-btn qb-exp">+ Expense</a>
     <a href="loans.php"         class="qb-btn qb-loan">+ Loan by Client</a>
@@ -281,6 +297,48 @@ try {
     flex-shrink: 0; margin-left: 8px;
     border-left: 1px solid rgba(255,255,255,.08); padding-left: 12px;
 }
+.tn-notif-wrap { position: relative; }
+.tn-notif {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    font-size: 15px; text-decoration: none; color: #cbd5e1;
+    background: none; border: none; cursor: pointer;
+    transition: background .15s, color .15s;
+}
+.tn-notif:hover { background: rgba(255,255,255,.08); color: #f1f5f9; }
+.tn-notif-badge {
+    position: absolute; top: -3px; right: -4px;
+    min-width: 15px; height: 15px; padding: 0 3px; border-radius: 99px;
+    background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
+    line-height: 15px; text-align: center;
+    box-shadow: 0 0 0 2px #0f172a;
+}
+.tn-notif-panel {
+    display: none; position: absolute; top: calc(100% + 10px); right: 0;
+    width: 320px; max-height: 380px; overflow-y: auto;
+    background: #1e293b; border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    z-index: 1100;
+}
+.tn-notif-panel.open { display: block; }
+.tn-notif-panel-hdr {
+    padding: 10px 14px; font-size: 12px; font-weight: 700; color: #f1f5f9;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.tn-notif-empty { padding: 20px 14px; font-size: 12.5px; color: #64748b; text-align: center; }
+.tn-notif-row {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.06);
+    font-size: 12.5px; color: #e2e8f0;
+}
+.tn-notif-row:last-child { border-bottom: none; }
+.tn-notif-row-actions { display: flex; gap: 12px; }
+.tn-notif-row-actions a, .tn-notif-row-actions span {
+    font-size: 11.5px; font-weight: 700; cursor: pointer; text-decoration: none;
+}
+.tn-notif-row-actions a { color: #93c5fd; }
+.tn-notif-row-actions span { color: #64748b; }
+.tn-notif-row-actions a:hover, .tn-notif-row-actions span:hover { text-decoration: underline; }
 .topnav-avatar {
     width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
     background: linear-gradient(135deg,#3b82f6,#6366f1);
@@ -330,6 +388,7 @@ try {
 .qb-exp  { background: #fef3c7; color: #b45309; border-color: #fde68a; }
 .qb-loan { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
 .qb-stock { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+.qb-order { background: #e0e7ff; color: #4338ca; border-color: #c7d2fe; }
 .qb-ip {
     margin-left: auto; flex-shrink: 0;
     display: inline-flex; align-items: center; gap: 5px;
@@ -437,3 +496,6 @@ window.qbCopyIP = function () {
     });
 };
 </script>
+<?php if (hasPermission('orders')): ?>
+<script src="js/order-notify.js"></script>
+<?php endif; ?>
