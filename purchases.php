@@ -186,18 +186,27 @@ if (isset($_SESSION['flash_error'])) {
 $date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($conn, $_GET['date_from']) : '';
 $date_to = isset($_GET['date_to']) ? mysqli_real_escape_string($conn, $_GET['date_to']) : '';
 
+// Deep-link to a single purchase (e.g. from loss_products.php) — show only that
+// row regardless of date filter/limit, same pattern as sales.php's highlight mode.
+$highlight_id = (int)($_GET['highlight'] ?? 0);
+
 $cid_and = cidAndFor('p');
-$where_clause = "WHERE 1=1 $cid_and";
-$limit=" limit 50";
-if ($date_from && $date_to) {
-    $limit=" ";
-    $where_clause .= " AND p.purchase_date BETWEEN '$date_from' AND '$date_to'";
-} elseif ($date_from) {
-    $limit=" ";
-    $where_clause .= " AND p.purchase_date >= '$date_from'";
-} elseif ($date_to) {
-    $limit=" ";
-    $where_clause .= " AND p.purchase_date <= '$date_to'";
+if ($highlight_id > 0) {
+    $where_clause = "WHERE p.id = $highlight_id $cid_and";
+    $limit = "";
+} else {
+    $where_clause = "WHERE 1=1 $cid_and";
+    $limit=" limit 50";
+    if ($date_from && $date_to) {
+        $limit=" ";
+        $where_clause .= " AND p.purchase_date BETWEEN '$date_from' AND '$date_to'";
+    } elseif ($date_from) {
+        $limit=" ";
+        $where_clause .= " AND p.purchase_date >= '$date_from'";
+    } elseif ($date_to) {
+        $limit=" ";
+        $where_clause .= " AND p.purchase_date <= '$date_to'";
+    }
 }
 
 // Fetch all purchases with details
@@ -414,7 +423,7 @@ $purchases = mysqli_query($conn, "
                             <td colspan="2" class="header-total">RWF <?php echo number_format($date_totals[$row_date], 0); ?></td>
                         </tr>
                         <?php endif; ?>
-                        <tr class="date-group-row" data-group="<?php echo $group_index; ?>" <?php if ($group_index > 0): ?>style="display:none"<?php endif; ?>>
+                        <tr id="purchase-row-<?php echo $row['id']; ?>" class="date-group-row" data-group="<?php echo $group_index; ?>" <?php if ($group_index > 0): ?>style="display:none"<?php endif; ?>>
                             <td><?=++$i; ?>. &nbsp; <?php echo htmlspecialchars($row['product_name']); ?></td>
                             <td><?php echo $row['quantity']; ?></td>
                             <td>RWF <?php echo number_format($row['cost_price'], 0); ?></td>
@@ -906,6 +915,23 @@ $purchases = mysqli_query($conn, "
             btn.disabled = true;
             btn.textContent = 'Updating...';
         });
+
+        // Highlight a specific purchase row when coming from loss_products.php
+        (function () {
+            var params = new URLSearchParams(location.search);
+            var hlId = params.get('highlight');
+            if (!hlId) return;
+            var row = document.getElementById('purchase-row-' + hlId);
+            if (!row) return;
+            row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            row.style.outline = '2px solid var(--warning, #f59e0b)';
+            row.style.background = '#fef9c3';
+            setTimeout(function () {
+                row.style.transition = 'background 1.5s, outline 1.5s';
+                row.style.background = '';
+                row.style.outline = '';
+            }, 2200);
+        })();
     </script>
 </body>
 </html>

@@ -267,6 +267,12 @@ body {
     font-size: 12px;
 }
 
+.btn:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 .btn-block {
     display: block;
     width: 100%;
