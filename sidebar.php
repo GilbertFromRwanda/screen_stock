@@ -137,7 +137,7 @@ try {
                     <?php endif; ?>
                     <?php if ($has_fin): ?>
                     <a href="revenue.php" class="tn-drop-item<?= $current_page==='revenue.php'?' active':'' ?>">Profit Analysis</a>
-                    <a href="loss_products.php" class="tn-drop-item<?= $current_page==='loss_products.php'?' active':'' ?>">Products Causing Loss</a>
+                    <a href="loss_products.php" class="tn-drop-item<?= $current_page==='loss_products.php'?' active':'' ?>">Sales Causing Loss</a>
                     <?php endif; ?>
                 </div>
             </div>

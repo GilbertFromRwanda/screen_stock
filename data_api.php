@@ -38,7 +38,7 @@ if ($action === 'categories') {
 if ($action === 'clients') {
     $rows = [];
     $q = mysqli_query($conn, "
-        SELECT id, name, phone, total_loans, paid_amount, unpaid_amount
+        SELECT id, name, phone, total_loans, paid_amount, unpaid_amount, updated_at
         FROM loan_clients
         WHERE 1=1 " . cidAnd() . "
         ORDER BY updated_at DESC

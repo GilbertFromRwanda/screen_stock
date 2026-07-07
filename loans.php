@@ -551,7 +551,8 @@ $clients_qr = mysqli_query($conn, "
     SELECT id AS client_id, name, phone, created_at AS registered_at,
            total_loans AS loan_count,
            paid_amount + unpaid_amount AS total_loaned,
-           paid_amount AS total_paid
+           paid_amount AS total_paid,
+           updated_at AS last_update
     FROM loan_clients WHERE 1=1 $cid_and
     ORDER BY updated_at DESC
 ");
@@ -670,6 +671,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                     <th>Paid</th>
                     <th>Outstanding</th>
                     <th>Status</th>
+                    <th>Last Update</th>
                 </tr>
             </thead>
             <tbody>
@@ -707,6 +709,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                     <strong>RWF <?php echo number_format(abs($outstanding), 0); ?></strong>
                 </td>
                 <td><span class="<?php echo $badge_cls; ?>"><?php echo $status; ?></span></td>
+                <td style="color:var(--secondary);font-size:12.5px;white-space:nowrap;"><?php echo date('M d, Y g:i A', strtotime($c['last_update'])); ?></td>
             </tr>
             <?php endforeach; ?>
             </tbody>
@@ -1845,6 +1848,14 @@ function _escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function _fmtLastUpdate(v) {
+    if (!v) return '&mdash;';
+    var d = new Date(String(v).replace(' ', 'T'));
+    if (isNaN(d.getTime())) return '&mdash;';
+    return d.toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}) +
+        ' ' + d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+}
+
 function reloadClientsTable() {
     var wrap = document.getElementById('clients-table-wrap');
     wrap.innerHTML = '<div style="text-align:center;padding:48px;color:var(--secondary);"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
@@ -1863,7 +1874,8 @@ function reloadClientsTable() {
                     client_id: c.id, name: c.name, phone: c.phone,
                     loan_count: c.total_loans,
                     total_loaned: parseFloat(c.paid_amount) + parseFloat(c.unpaid_amount),
-                    total_paid: c.paid_amount
+                    total_paid: c.paid_amount,
+                    last_update: c.updated_at
                 };
             });
             _updateLoanStats(statsRes.stats, statsRes.outstanding);
@@ -1907,7 +1919,7 @@ function _renderClientsTable(clients) {
         return;
     }
     var html = '<div style="overflow-x:auto;"><table class="table" id="tbl-loan-clients" style="min-width:700px;">' +
-        '<thead><tr><th>Actions</th><th>#</th><th>Client</th><th>Phone</th><th>Loans</th><th>Total Loaned</th><th>Paid</th><th>Outstanding</th><th>Status</th></tr></thead><tbody>';
+        '<thead><tr><th>Actions</th><th>#</th><th>Client</th><th>Phone</th><th>Loans</th><th>Total Loaned</th><th>Paid</th><th>Outstanding</th><th>Status</th><th>Last Update</th></tr></thead><tbody>';
 
     clients.forEach(function(c, i) {
         var outstanding = parseFloat(c.total_loaned) - parseFloat(c.total_paid);
@@ -1936,6 +1948,7 @@ function _renderClientsTable(clients) {
             '<td>RWF ' + parseFloat(c.total_paid).toLocaleString() + '</td>' +
             '<td class="' + (outstanding > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(outstanding).toLocaleString() + '</strong></td>' +
             '<td><span class="' + badge + '">' + status + '</span></td>' +
+            '<td style="color:var(--secondary);font-size:12.5px;white-space:nowrap;">' + _fmtLastUpdate(c.last_update) + '</td>' +
             '</tr>';
     });
 

@@ -8,26 +8,25 @@ $to         = isset($_GET['to'])   && $_GET['to']   ? mysqli_real_escape_string(
 $show_all   = isset($_GET['show_all']);
 $cid_and    = cidAnd();
 
-// One row per product with revenue/cost/qty summed across bulk + retail sales in range.
-// cost is the COGS snapshot taken at sale time (sales_bulk.cost_total / sales_retail.cost_total).
+// One row per individual sale (bulk or retail) in range, so each loss can be traced
+// back to the exact transaction it came from. cost is the COGS snapshot taken at
+// sale time (sales_bulk.cost_total / sales_retail.cost_total).
 $q = mysqli_query($conn, "
-    SELECT p.id, p.name, p.category,
-        COALESCE(SUM(x.revenue), 0) AS revenue,
-        COALESCE(SUM(x.cost), 0)    AS cost,
-        COALESCE(SUM(x.qty), 0)     AS qty,
-        COUNT(*)                   AS sale_count
-    FROM products p
-    JOIN (
-        SELECT product_id, total_amount AS revenue, cost_total AS cost, quantity AS qty
-        FROM sales_bulk
-        WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 AND has_loan = 0 $cid_and
-        UNION ALL
-        SELECT product_id, total_amount AS revenue, cost_total AS cost, pieces_sold AS qty
-        FROM sales_retail
-        WHERE sale_date BETWEEN '$from' AND '$to' AND refunded = 0 AND has_loan = 0 $cid_and
-    ) x ON x.product_id = p.id
-    GROUP BY p.id, p.name, p.category
-    ORDER BY (COALESCE(SUM(x.revenue), 0) - COALESCE(SUM(x.cost), 0)) ASC
+    SELECT 'bulk' AS sale_type, sb.id AS sale_id, sb.sale_date, p.name AS product_name, p.category,
+        sb.quantity AS qty, sb.total_amount AS revenue, sb.cost_total AS cost
+    FROM sales_bulk sb
+    JOIN products p ON p.id = sb.product_id
+    WHERE sb.sale_date BETWEEN '$from' AND '$to' AND sb.refunded = 0 AND sb.has_loan = 0 " . cidAndFor('sb') . "
+
+    UNION ALL
+
+    SELECT 'retail' AS sale_type, sr.id AS sale_id, sr.sale_date, p.name AS product_name, p.category,
+        sr.pieces_sold AS qty, sr.total_amount AS revenue, sr.cost_total AS cost
+    FROM sales_retail sr
+    JOIN products p ON p.id = sr.product_id
+    WHERE sr.sale_date BETWEEN '$from' AND '$to' AND sr.refunded = 0 AND sr.has_loan = 0 " . cidAndFor('sr') . "
+
+    ORDER BY sale_date DESC, sale_id DESC
 ");
 
 $rows = [];
@@ -58,7 +57,7 @@ $net_all = $total_revenue_all - $total_cost_all;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Products Causing Loss</title>
+    <title>Sales Causing Loss</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/revenue.css">
     <style>
@@ -89,9 +88,9 @@ $net_all = $total_revenue_all - $total_cost_all;
 <div class="dashboard-container">
     <?php include 'sidebar.php'; ?>
     <div class="main-content">
-        <h1>Products Causing Loss</h1>
+        <h1>Sales Causing Loss</h1>
         <p style="color:var(--secondary);font-size:13px;margin-bottom:20px;">
-            Products sold below cost (revenue &lt; cost of goods sold) &mdash;
+            Individual sales made below cost (revenue &lt; cost of goods sold) &mdash;
             <strong><?php echo date('M d, Y', strtotime($from)); ?></strong>
             &mdash;
             <strong><?php echo date('M d, Y', strtotime($to)); ?></strong>
@@ -109,7 +108,7 @@ $net_all = $total_revenue_all - $total_cost_all;
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--secondary);margin:0 4px;">
                 <input type="checkbox" name="show_all" value="1" <?php echo $show_all ? 'checked' : ''; ?>>
-                Show all products (not just losses)
+                Show all sales (not just losses)
             </label>
             <button type="submit" class="btn btn-primary">Filter</button>
             <button type="button" class="btn btn-secondary no-print" onclick="window.print()">Print</button>
@@ -117,7 +116,7 @@ $net_all = $total_revenue_all - $total_cost_all;
 
         <div class="summary-cards">
             <div class="summary-card red">
-                <label>Loss-Making Products</label>
+                <label>Loss-Making Sales</label>
                 <div class="val"><?php echo number_format($loss_count); ?></div>
             </div>
             <div class="summary-card red">
@@ -125,15 +124,15 @@ $net_all = $total_revenue_all - $total_cost_all;
                 <div class="val">RWF <?php echo number_format($total_loss, 0); ?></div>
             </div>
             <div class="summary-card">
-                <label>Total Revenue (all products)</label>
+                <label>Total Revenue (all sales)</label>
                 <div class="val">RWF <?php echo number_format($total_revenue_all, 0); ?></div>
             </div>
             <div class="summary-card">
-                <label>Total Cost (all products)</label>
+                <label>Total Cost (all sales)</label>
                 <div class="val">RWF <?php echo number_format($total_cost_all, 0); ?></div>
             </div>
             <div class="summary-card <?php echo $net_all >= 0 ? 'green' : 'red'; ?>">
-                <label>Net Profit (all products)</label>
+                <label>Net Profit (all sales)</label>
                 <div class="val <?php echo $net_all < 0 ? 'profit-negative' : 'profit-positive'; ?>">
                     RWF <?php echo number_format($net_all, 0); ?>
                 </div>
@@ -145,23 +144,30 @@ $net_all = $total_revenue_all - $total_cost_all;
                 <table class="table">
                     <thead>
                         <tr>
+                            <th>Sale Date</th>
+                            <th>Type</th>
                             <th>Product</th>
                             <th>Category</th>
-                            <th>Qty Sold</th>
-                            <th>Sales</th>
+                            <th>Qty</th>
                             <th>Revenue</th>
                             <th>Cost</th>
                             <th>Profit / Loss</th>
                             <th>Margin</th>
+                            <th>Sale</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (!empty($rows)): foreach ($rows as $r): $is_loss = $r['profit'] < 0; ?>
                         <tr class="<?php echo $is_loss ? 'highlight-loss' : 'highlight-profit'; ?>">
-                            <td><strong><?php echo htmlspecialchars($r['name']); ?></strong></td>
+                            <td style="white-space:nowrap;"><?php echo date('M d, Y', strtotime($r['sale_date'])); ?></td>
+                            <td>
+                                <span class="badge badge-<?php echo $r['sale_type'] === 'bulk' ? 'primary' : 'info'; ?>">
+                                    <?php echo ucfirst($r['sale_type']); ?>
+                                </span>
+                            </td>
+                            <td><strong><?php echo htmlspecialchars($r['product_name']); ?></strong></td>
                             <td><?php echo htmlspecialchars($r['category'] ?: '—'); ?></td>
                             <td><?php echo number_format($r['qty']); ?></td>
-                            <td><?php echo number_format($r['sale_count']); ?></td>
                             <td class="revenue-value">RWF <?php echo number_format($r['revenue'], 0); ?></td>
                             <td class="cost-value">RWF <?php echo number_format($r['cost'], 0); ?></td>
                             <td class="<?php echo $is_loss ? 'profit-negative' : 'profit-positive'; ?>">
@@ -174,11 +180,15 @@ $net_all = $total_revenue_all - $total_cost_all;
                                     else echo 'margin-low';
                                 ?>"><?php echo number_format($r['margin'], 1); ?>%</span>
                             </td>
+                            <td>
+                                <a href="sales.php?tab=<?php echo $r['sale_type']; ?>&highlight=<?php echo (int)$r['sale_id']; ?>"
+                                   target="_blank" class="btn btn-secondary btn-sm">View</a>
+                            </td>
                         </tr>
                         <?php endforeach; else: ?>
                         <tr>
-                            <td colspan="8" style="text-align:center;padding:30px;color:var(--secondary);">
-                                <?php echo $show_all ? 'No sales found for the selected period.' : 'No loss-making products in this period. 🎉'; ?>
+                            <td colspan="10" style="text-align:center;padding:30px;color:var(--secondary);">
+                                <?php echo $show_all ? 'No sales found for the selected period.' : 'No loss-making sales in this period. 🎉'; ?>
                             </td>
                         </tr>
                         <?php endif; ?>
