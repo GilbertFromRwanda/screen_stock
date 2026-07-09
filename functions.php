@@ -102,19 +102,20 @@ function redirect($url) {
 // Returns true if the current session user can perform $action on $module.
 // superadmin and admin always return true; manager/user check user_permissions table.
 function hasPermission(string $module, string $action = 'view'): bool {
-    global $conn;
+    static $cache = null;
+
     $role = $_SESSION['role'] ?? '';
     if (in_array($role, ['superadmin', 'admin'])) return true;
 
     $valid  = ['view', 'create', 'edit', 'delete'];
     $action = in_array($action, $valid) ? $action : 'view';
-    $col    = "can_$action";
     $uid    = (int)($_SESSION['user_id'] ?? 0);
-    $mod    = mysqli_real_escape_string($conn, $module);
 
-    $r   = mysqli_query($conn, "SELECT $col FROM user_permissions WHERE user_id=$uid AND module='$mod'");
-    $row = $r ? mysqli_fetch_assoc($r) : null;
-    return $row ? (bool)$row[$col] : false;
+    if ($cache === null) {
+        $cache = getUserPermissions($uid);
+    }
+
+    return $cache[$module][$action] ?? false;
 }
 
 // Returns all permissions for a user keyed by module → ['view'=>bool,'edit'=>bool,'delete'=>bool]

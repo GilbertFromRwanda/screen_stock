@@ -9,6 +9,7 @@ try {
 } catch (Throwable $e) {
     $_nav_server_ip = gethostbyname(gethostname());
 }
+//  $_nav_server_ip='';
 ?>
 <nav class="topnav" id="topnav">
     <div class="topnav-inner">
