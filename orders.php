@@ -165,6 +165,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_delivery_statu
     }
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM `orders` WHERE id=$id AND status != 'closed' " . cidAnd()));
     if (!$row) { echo json_encode(['success'=>false,'message'=>'Order not found or closed.']); exit; }
+    if ($row['status'] !== 'processing') {
+        echo json_encode(['success'=>false,'message'=>'Delivery status can only be updated while the order is processing.']); exit;
+    }
     mysqli_query($conn, "UPDATE `orders` SET delivery_status='$new_stage', updated_at=NOW() WHERE id=$id");
     logActivity($conn, $user_id, 'DELIVERY_STATUS', "Order #$id delivery status set to $new_stage", 'orders', $id, ['delivery_status'=>$row['delivery_status']], ['delivery_status'=>$new_stage]);
     echo json_encode(['success'=>true,'message'=>'Delivery status updated.']);

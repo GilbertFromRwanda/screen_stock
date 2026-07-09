@@ -44,6 +44,7 @@ $STRINGS = [
         'recent_orders'   => 'Amatumiza Yawe Aheruka',
         'no_recent'       => "Nta itumiza rirabikwa kuri iyi terefone/mudasobwa.",
         'remove_saved'    => 'Kuraho',
+        'status_changed'  => "Uko itumiza ryawe rimeze byahindutse: %s",
     ],
     'en' => [
         'page_title'      => 'Track Order',
@@ -81,6 +82,7 @@ $STRINGS = [
         'recent_orders'   => 'Your Recent Orders',
         'no_recent'       => "No orders saved on this device yet.",
         'remove_saved'    => 'Remove',
+        'status_changed'  => "Your order status changed: %s",
     ],
 ];
 $t = $STRINGS[$lang];
@@ -188,6 +190,10 @@ h1 { font-size:19px; margin:0 0 4px; }
 .recent-item-sub { font-size:12px; color:var(--secondary); margin-top:2px; }
 .recent-item-rm { background:none; border:none; color:#cbd5e1; cursor:pointer; font-size:16px; padding:0; flex-shrink:0; }
 .recent-item-rm:hover { color:#ef4444; }
+
+.status-toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); max-width:90vw; width:340px; background:#0f172a; color:#fff; border-radius:10px; padding:14px 16px; box-shadow:0 8px 24px rgba(0,0,0,.25); font-size:13px; line-height:1.5; cursor:pointer; z-index:99999; animation:stIn .2s ease-out; }
+@keyframes stIn { from{opacity:0;transform:translate(-50%,8px);} to{opacity:1;transform:translate(-50%,0);} }
+.status-toast small { display:block; margin-top:6px; color:#93c5fd; font-weight:700; }
 </style>
 </head>
 <body>
@@ -288,6 +294,16 @@ h1 { font-size:19px; margin:0 0 4px; }
 <?php if ($order): ?>
 <script>
 OrderHistory.saveOrder(<?php echo json_encode(orderHistoryPayload($order, $order_items), JSON_UNESCAPED_UNICODE); ?>);
+</script>
+<script src="js/order-status-watch.js"></script>
+<script>
+OrderStatusWatch.start({
+    orderNumber: <?php echo json_encode($order['order_number'], JSON_UNESCAPED_UNICODE); ?>,
+    phone:       <?php echo json_encode($order['phone'], JSON_UNESCAPED_UNICODE); ?>,
+    updatedAt:   <?php echo json_encode($order['updated_at'], JSON_UNESCAPED_UNICODE); ?>,
+    statusLabels: <?php echo json_encode($t['order_status'], JSON_UNESCAPED_UNICODE); ?>,
+    message:     <?php echo json_encode($t['status_changed'], JSON_UNESCAPED_UNICODE); ?>
+});
 </script>
 <?php else: ?>
 <script>

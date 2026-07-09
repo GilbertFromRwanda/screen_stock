@@ -1250,6 +1250,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditBulk(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['package_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                        <button class="act-item" onclick="printSaleReceipt('bulk',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,'pkg',<?php echo $row['package_price']; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','');closeActMenus()"><i class="fas fa-print"></i> Print</button>
                                         <button class="act-item" onclick="openRefundModal('bulk',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this bulk sale and restore stock?')">
@@ -1315,6 +1316,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditRetail(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['retail_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                        <button class="act-item" onclick="printSaleReceipt('retail',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,'pcs',<?php echo $actual_per_piece; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','');closeActMenus()"><i class="fas fa-print"></i> Print</button>
                                         <button class="act-item" onclick="openRefundModal('retail',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this retail sale and restore stock?')">
@@ -1374,6 +1376,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,<?php echo (float)($row['my_revenue'] ?? 0); ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                                        <button class="act-item" onclick="printSaleReceipt('external',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,'pkg',<?php echo $row['unit_price']; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['owner_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-print"></i> Print</button>
                                         <button class="act-item" onclick="openRefundModal('external',<?php echo $row['id']; ?>,0,'<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this external sale?')">
@@ -2459,6 +2462,70 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             document.getElementById('edit_ext_momo').value = momo;
             document.getElementById('edit_ext_loan').value = loan;
             openModal('editExternalModal');
+        }
+
+        function escH(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+        // ── Thermal receipt print (single-item sale: bulk/retail/external) ──────
+        function printSaleReceipt(type, id, date, product, qty, qtyUnit, unitPrice, total, cash, momo, loan, customer, seller, owner) {
+            var typeLabel = type === 'bulk' ? 'Wholesale Sale' : type === 'retail' ? 'Retail Sale' : 'External Sale';
+
+            var h = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+                '<style>' +
+                'body{font-family:monospace;font-size:11px;width:76mm;margin:0;padding:3mm 4mm;color:#000;}' +
+                'h2{text-align:center;font-size:13px;margin:0 0 2px;letter-spacing:1px;}' +
+                '.sub{text-align:center;font-size:10px;margin-bottom:4px;}' +
+                'hr{border:none;border-top:1px dashed #000;margin:5px 0;}' +
+                'table{width:100%;border-collapse:collapse;}' +
+                'td{padding:1px 0;vertical-align:top;font-size:10px;}' +
+                '.r{text-align:right;}' +
+                '.b{font-weight:bold;}' +
+                '.item-name{font-weight:bold;font-size:10px;}' +
+                '.grand td{font-weight:bold;border-top:1px solid #000;padding-top:3px;font-size:11px;}' +
+                '.footer{text-align:center;font-size:9px;margin-top:4px;}' +
+                '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
+                '</style></head><body>';
+
+            h += '<h2>SMART STOCK</h2>';
+            h += '<div class="sub">' + typeLabel + ' Receipt</div>';
+            h += '<hr>';
+
+            h += '<table>';
+            h += '<tr><td class="b">Sale #</td><td class="r b">' + id + '</td></tr>';
+            h += '<tr><td>Date</td><td class="r">' + escH(date) + '</td></tr>';
+            if (owner)    h += '<tr><td>Owner</td><td class="r">' + escH(owner) + '</td></tr>';
+            h += '<tr><td>Customer</td><td class="r">' + escH(customer || 'N/A') + '</td></tr>';
+            h += '</table>';
+            h += '<hr>';
+
+            h += '<table>';
+            h += '<tr><td colspan="2" class="item-name">' + escH(product) + '</td></tr>';
+            h += '<tr><td>' + Number(qty).toLocaleString() + ' ' + qtyUnit + ' &times; RWF ' + Number(unitPrice).toLocaleString() + '</td>' +
+                 '<td class="r b">RWF ' + Number(total).toLocaleString() + '</td></tr>';
+            h += '<tr class="grand"><td>TOTAL</td><td class="r">RWF ' + Number(total).toLocaleString() + '</td></tr>';
+            h += '</table>';
+
+            if (cash > 0 || momo > 0 || loan > 0) {
+                h += '<hr>';
+                h += '<table>';
+                h += '<tr><td colspan="2" class="b">Payment Received</td></tr>';
+                if (cash > 0) h += '<tr><td style="padding-left:6px">Cash</td><td class="r">RWF ' + Number(cash).toLocaleString() + '</td></tr>';
+                if (momo > 0) h += '<tr><td style="padding-left:6px">Momo</td><td class="r">RWF ' + Number(momo).toLocaleString() + '</td></tr>';
+                if (loan > 0) h += '<tr><td style="padding-left:6px">Loan</td><td class="r">RWF ' + Number(loan).toLocaleString() + '</td></tr>';
+                h += '</table>';
+            }
+
+            h += '<hr>';
+            if (seller) h += '<div class="footer">Sold by ' + escH(seller) + '</div>';
+            h += '<div class="footer">Thank you for your business!</div>';
+            h += '</body></html>';
+
+            var w = window.open('', '_blank', 'width=340,height=520,toolbar=0,menubar=0,scrollbars=1,resizable=1');
+            if (!w) { alert('Allow popups to print receipts.'); return; }
+            w.document.write(h);
+            w.document.close();
+            w.focus();
+            setTimeout(function() { w.print(); }, 350);
         }
 
         function filterTable(tableId, term) {
