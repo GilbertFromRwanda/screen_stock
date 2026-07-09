@@ -724,7 +724,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 <div id="globalLoanPayModal" class="modal">
     <div class="modal-content" style="max-width:600px;max-height:90vh;overflow-y:auto;">
         <span class="close" onclick="closeModal('globalLoanPayModal')">&times;</span>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;padding-right:34px;">
             <h2 style="margin:0;">Global Loan Payment</h2>
             <button id="gloanExportBtn" onclick="exportGlobalLoanPreview()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">&#8681; Export</button>
         </div>
@@ -787,7 +787,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 <div id="clientLoansModal" class="modal">
     <div class="modal-content" style="max-width:800px;">
         <span class="close" onclick="closeModal('clientLoansModal')">&times;</span>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;padding-right:34px;">
             <h2 id="clientLoansTitle" style="margin:0;">Loans</h2>
             <button id="clLoansExportBtn" onclick="exportClientLoans()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;gap:6px;align-items:center;">
                 &#8681; Export
@@ -807,7 +807,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 <div id="clientPaymentsModal" class="modal">
     <div class="modal-content" style="max-width:720px;">
         <span class="close" onclick="closeModal('clientPaymentsModal')">&times;</span>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;padding-right:34px;">
             <h2 id="clientPaymentsTitle" style="margin:0;">Payments</h2>
             <button id="cpayExportBtn" onclick="exportClientPayments()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">
                 &#8681; Export
@@ -1276,6 +1276,12 @@ function ajaxForm(formId, alertId, actionName, onSuccess) {
         btn.disabled = true; btn.textContent = 'Saving...';
         alertBox.style.display = 'none';
 
+        function resetBtn() {
+            btn.disabled = false;
+            btn.classList.remove('btn-loading');
+            btn.textContent = orig;
+        }
+
         var data = new FormData(form);
         data.append(actionName, '1');
 
@@ -1289,15 +1295,15 @@ function ajaxForm(formId, alertId, actionName, onSuccess) {
                     alertBox.className = 'alert alert-danger';
                     alertBox.textContent = 'Server returned unexpected response. Check console.';
                     alertBox.style.display = 'block';
-                    btn.disabled = false; btn.textContent = orig;
+                    resetBtn();
                     return;
                 }
-                if (res.success) { onSuccess(); }
+                if (res.success) { resetBtn(); onSuccess(); }
                 else {
                     alertBox.className = 'alert alert-danger';
                     alertBox.textContent = res.message || 'An error occurred.';
                     alertBox.style.display = 'block';
-                    btn.disabled = false; btn.textContent = orig;
+                    resetBtn();
                 }
             })
             .catch(function(err) {
@@ -1305,7 +1311,7 @@ function ajaxForm(formId, alertId, actionName, onSuccess) {
                 alertBox.className = 'alert alert-danger';
                 alertBox.textContent = 'Network error. Please try again.';
                 alertBox.style.display = 'block';
-                btn.disabled = false; btn.textContent = orig;
+                resetBtn();
             });
     });
 }
