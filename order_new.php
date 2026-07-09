@@ -57,7 +57,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
     $prepaid_momo  = max(0, (float)($_POST['prepaid_momo']  ?? 0));
     $prepaid_loan  = max(0, (float)($_POST['prepaid_loan']  ?? 0));
     $prepaid_bank  = max(0, (float)($_POST['prepaid_bank']  ?? 0));
-    $total_prepaid = $prepaid_cash + $prepaid_momo + $prepaid_loan + $prepaid_bank;
+    // total_prepaid tracks real money only (cash/momo/bank) — a loan is a promise
+    // to pay, not money in hand, so it must not count as "prepaid". total_committed
+    // (real + loan) is only used to validate against the order total.
+    $total_prepaid    = $prepaid_cash + $prepaid_momo + $prepaid_bank;
+    $total_committed  = $total_prepaid + $prepaid_loan;
     $note          = trim($_POST['note'] ?? '');
 
     $items = json_decode($items_raw, true) ?: [];
@@ -73,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
     if (!$owner)                                 $err = 'Please select or create an order owner.';
     elseif (count($items) < 1)                   $err = 'Add at least one product to the order.';
     elseif ($total_amount <= 0)                  $err = 'Order total must be greater than zero.';
-    elseif ($total_prepaid > $total_amount + 1)  $err = 'Prepaid cannot exceed order total.';
+    elseif ($total_committed > $total_amount + 1)  $err = 'Prepaid cannot exceed order total.';
     elseif ($prepaid_loan > 0 && !$owner['phone']) $err = 'Owner phone required when prepaid includes a loan.';
 
     if ($err) {
@@ -109,10 +113,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_order'])) {
                     "INSERT INTO order_items(order_id,product_id,stock_source,quantity,level_divisor,selling_price,item_total,source,added_by)
                      VALUES($order_id,$pid,'$src',$qty,$div,$prce,$itot,'staff',$user_id)");
         }
-            if ($total_prepaid > 0) {
+            if ($total_committed > 0) {
                 mysqli_query($conn, "INSERT INTO order_payments
                     (company_id,order_id,cash,momo,bank,loan,total,recorded_by,note)
-                    VALUES(" . cidSql() . ",$order_id,$prepaid_cash,$prepaid_momo,$prepaid_bank,$prepaid_loan,$total_prepaid,$user_id,'Initial prepaid')");
+                    VALUES(" . cidSql() . ",$order_id,$prepaid_cash,$prepaid_momo,$prepaid_bank,$prepaid_loan,$total_committed,$user_id,'Initial prepaid')");
             }
             $success = "Order $order_number created successfully for {$owner['name']}.";
         } // end else (ins_ok)

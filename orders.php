@@ -460,7 +460,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_payment'])) {
     $add_momo  = max(0, (float)($_POST['add_momo'] ?? 0));
     $add_bank  = max(0, (float)($_POST['add_bank'] ?? 0));
     $add_loan  = max(0, (float)($_POST['add_loan'] ?? 0));
-    $total_add = round($add_cash + $add_momo + $add_bank + $add_loan, 2);
+    $real_add  = round($add_cash + $add_momo + $add_bank, 2);
+    $total_add = round($real_add + $add_loan, 2);
 
     if ($total_add <= 0) {
         echo json_encode(['success'=>false,'message'=>'Enter at least one payment amount.']); exit;
@@ -470,26 +471,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_payment'])) {
     if (!$order) {
         echo json_encode(['success'=>false,'message'=>'Order not found or not being processed.']); exit;
     }
-    $new_prepaid = round((float)$order['total_prepaid'] + $total_add, 2);
-    if ($new_prepaid > (float)$order['total_amount'] + 1) {
+
+    // total_prepaid tracks real money only — a loan isn't money in hand. Real money
+    // added here pays down any existing loan first (converts it into an actual
+    // receipt); only the leftover beyond the loan is genuinely new commitment.
+    $prepaid_loan   = (float)$order['prepaid_loan'];
+    $loan_offset    = min($prepaid_loan, $real_add);
+    $new_real       = round((float)$order['total_prepaid'] + $real_add, 2);
+    $new_loan       = max(0, round($prepaid_loan - $loan_offset + $add_loan, 2));
+    $new_committed  = round($new_real + $new_loan, 2);
+    if ($new_committed > (float)$order['total_amount'] + 1) {
         echo json_encode(['success'=>false,'message'=>'Payment would exceed order total (RWF '.number_format((float)$order['total_amount'],0).').']); exit;
     }
     mysqli_query($conn, "UPDATE `orders` SET
         prepaid_cash  = prepaid_cash  + $add_cash,
         prepaid_momo  = prepaid_momo  + $add_momo,
         prepaid_bank  = prepaid_bank  + $add_bank,
-        prepaid_loan  = prepaid_loan  + $add_loan,
-        total_prepaid = total_prepaid + $total_add,
+        prepaid_loan  = GREATEST(0, prepaid_loan - $loan_offset) + $add_loan,
+        total_prepaid = total_prepaid + $real_add,
         updated_at    = NOW()
         WHERE id=$order_id");
     mysqli_query($conn, "INSERT INTO order_payments
         (company_id,order_id,cash,momo,bank,loan,total,recorded_by)
         VALUES(" . cidSql() . ",$order_id,$add_cash,$add_momo,$add_bank,$add_loan,$total_add,$user_id)");
     logActivity($conn, $_SESSION['user_id'], 'UPDATE', 'orders',
-        "Payment added to order #{$order_id}: Cash=$add_cash Momo=$add_momo Bank=$add_bank Loan=$add_loan",
-        $order_id, ['total_prepaid'=>$order['total_prepaid']], ['total_prepaid'=>$new_prepaid]);
-    $new_remaining = max(0, (float)$order['total_amount'] - $new_prepaid);
-    echo json_encode(['success'=>true,'message'=>'Payment recorded.','new_prepaid'=>$new_prepaid,'new_remaining'=>$new_remaining]);
+        "Payment added to order #{$order_id}: Cash=$add_cash Momo=$add_momo Bank=$add_bank Loan=$add_loan"
+        . ($loan_offset > 0 ? " (converted RWF $loan_offset from existing loan)" : ''),
+        $order_id, ['total_prepaid'=>$order['total_prepaid']], ['total_prepaid'=>$new_real]);
+    $new_remaining = max(0, (float)$order['total_amount'] - $new_real);
+    echo json_encode(['success'=>true,'message'=>'Payment recorded.','new_prepaid'=>$new_real,'new_remaining'=>$new_remaining,'new_loan'=>$new_loan,'loan_offset'=>$loan_offset]);
     exit;
 }
 
@@ -583,7 +593,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'order_payments') {
     header('Content-Type: application/json');
     $oid = (int)($_GET['order_id'] ?? 0);
     $order = mysqli_fetch_assoc(mysqli_query($conn,
-        "SELECT id, order_number, order_owner, total_amount, total_prepaid, status
+        "SELECT id, order_number, order_owner, total_amount, total_prepaid, prepaid_loan, status
          FROM `orders` WHERE id=$oid " . cidAnd()));
     if (!$order) { echo json_encode(['success'=>false,'message'=>'Order not found.']); exit; }
     $res = mysqli_query($conn,
@@ -823,7 +833,7 @@ function renderOrderRow(array $o, array $o_items, array $staff_users, string $ro
                 <?php endif; ?>
                 <?php if ($isProcessing): ?>
                 <div class="act-menu-sep"></div>
-                <button class="act-item" onclick='openAddPaymentModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo (float)$o["total_amount"]; ?>,<?php echo (float)$o["total_prepaid"]; ?>);closeActMenus()'><i class="fas fa-money-bill-wave"></i> Add Payment</button>
+                <button class="act-item" onclick='openAddPaymentModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo (float)$o["total_amount"]; ?>,<?php echo (float)$o["total_prepaid"]; ?>,<?php echo (float)$o["prepaid_loan"]; ?>);closeActMenus()'><i class="fas fa-money-bill-wave"></i> Add Payment</button>
                 <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Add Product</a>
                 <div class="act-menu-sep"></div>
                 <button class="act-item" style="color:#16a34a;" onclick='openApproveModal(<?php echo $data; ?>);closeActMenus()'><i class="fas fa-check"></i> Complete Order</button>
@@ -874,7 +884,7 @@ function renderOrderRow(array $o, array $o_items, array $staff_users, string $ro
     <td><strong>RWF <?php echo number_format((float)$o['total_amount'],0); ?></strong></td>
     <td>
         RWF <?php echo number_format((float)$o['total_prepaid'],0); ?>
-        <?php if ((float)$o['total_prepaid'] > 0): ?>
+        <?php if ((float)$o['total_prepaid'] > 0 || (float)$o['prepaid_loan'] > 0): ?>
         <div style="font-size:11px;color:var(--secondary);margin-top:2px;line-height:1.7;">
             <?php if ((float)$o['prepaid_cash']>0): ?>Cash: <?php echo number_format((float)$o['prepaid_cash'],0); ?><br><?php endif; ?>
             <?php if ((float)$o['prepaid_momo']>0): ?>Momo: <?php echo number_format((float)$o['prepaid_momo'],0); ?><br><?php endif; ?>
@@ -1340,6 +1350,7 @@ $stats = fetchOrderStats($conn);
         <div class="dr"><span>Customer</span><strong id="pm_owner"></strong></div>
         <div class="dr"><span>Order Total</span><strong id="pm_total"></strong></div>
         <div class="dr"><span>Total Collected</span><strong id="pm_collected" style="color:#059669;"></strong></div>
+        <div class="dr" id="pm_loan_row" style="display:none;"><span>Existing Loan (not collected)</span><strong id="pm_loan" style="color:#b45309;"></strong></div>
         <div class="dr"><span>Balance Due</span><strong id="pm_balance" style="color:var(--primary);"></strong></div>
     </div>
 
@@ -1384,6 +1395,7 @@ $stats = fetchOrderStats($conn);
             <div class="pay-row"><span class="pay-lbl">Cash</span><input type="number" id="pm_cash" min="0" step="any" value="0" oninput="pmCalc()"></div>
             <div class="pay-row"><span class="pay-lbl">Momo</span><input type="number" id="pm_momo" min="0" step="any" value="0" oninput="pmCalc()"></div>
             <div class="pay-row"><span class="pay-lbl">Bank</span><input type="number" id="pm_bank" min="0" step="any" value="0" oninput="pmCalc()"></div>
+            <div id="pm_convert_note" style="display:none;font-size:12px;color:#b45309;margin:4px 2px 0;"></div>
             <div class="pay-remaining" id="pm_rem_row">
                 <span>New Balance After</span>
                 <span id="pm_rem_val">—</span>
@@ -1404,6 +1416,7 @@ $stats = fetchOrderStats($conn);
     <div class="order-detail-box">
         <div class="dr"><span>Order Total</span><strong id="apm_total"></strong></div>
         <div class="dr"><span>Already Prepaid</span><strong id="apm_prepaid"></strong></div>
+        <div class="dr" id="apm_loan_row" style="display:none;"><span>Existing Loan (not collected)</span><strong id="apm_loan" style="color:#b45309;"></strong></div>
         <div class="dr"><span>Remaining</span><strong id="apm_remaining" style="color:var(--primary);"></strong></div>
     </div>
     <div class="section-lbl">Additional Payment</div>
@@ -1425,6 +1438,7 @@ $stats = fetchOrderStats($conn);
         <div class="pay-row"><span class="pay-lbl">Cash</span><input type="number" id="apm_cash" min="0" step="any" value="0" oninput="apmCalc()"></div>
         <div class="pay-row"><span class="pay-lbl">Momo</span><input type="number" id="apm_momo" min="0" step="any" value="0" oninput="apmCalc()"></div>
         <div class="pay-row"><span class="pay-lbl">Bank</span><input type="number" id="apm_bank" min="0" step="any" value="0" oninput="apmCalc()"></div>
+        <div id="apm_convert_note" style="display:none;font-size:12px;color:#b45309;margin:4px 2px 0;"></div>
         <div class="pay-remaining" id="apm_rem_row">
             <span>New Balance After</span>
             <span id="apm_rem_val">—</span>
@@ -1683,7 +1697,7 @@ function openApproveModal(o) {
             + ' &nbsp;<strong>RWF ' + it.item_total.toLocaleString() + '</strong></div>';
     }).join('');
 
-    if (o.total_prepaid > 0) {
+    if (o.total_prepaid > 0 || o.prepaid_loan > 0) {
         document.getElementById('appr_prep_row').style.display = '';
         document.getElementById('appr_prepaid').textContent    = 'RWF ' + o.total_prepaid.toLocaleString();
         var parts = [];
@@ -1850,7 +1864,7 @@ function submitDelete() {
 }
 
 // ── Payments history modal ────────────────────────────────────────────────────
-var _pmId = 0, _pmEditable = false, _pmTotal = 0, _pmCollected = 0;
+var _pmId = 0, _pmEditable = false, _pmTotal = 0, _pmCollected = 0, _pmLoan = 0;
 
 function openPaymentsModal(id, orderNum, editable) {
     _pmId = id; _pmEditable = editable;
@@ -1859,6 +1873,7 @@ function openPaymentsModal(id, orderNum, editable) {
     document.getElementById('pm_total').textContent             = '—';
     document.getElementById('pm_collected').textContent         = '—';
     document.getElementById('pm_balance').textContent           = '—';
+    document.getElementById('pm_loan_row').style.display        = 'none';
     document.getElementById('pm_loading').style.display         = '';
     document.getElementById('pm_table_wrap').style.display      = 'none';
     document.getElementById('pm_add_section').style.display     = 'none';
@@ -1878,11 +1893,14 @@ function loadPayments(id) {
             var o = res.order;
             _pmTotal     = parseFloat(o.total_amount);
             _pmCollected = parseFloat(o.total_prepaid);
+            _pmLoan      = parseFloat(o.prepaid_loan) || 0;
 
             document.getElementById('pm_owner').textContent     = o.order_owner || '—';
             document.getElementById('pm_total').textContent     = 'RWF ' + Math.round(_pmTotal).toLocaleString();
             document.getElementById('pm_collected').textContent = 'RWF ' + Math.round(_pmCollected).toLocaleString();
             document.getElementById('pm_balance').textContent   = 'RWF ' + Math.round(Math.max(0, _pmTotal - _pmCollected)).toLocaleString();
+            document.getElementById('pm_loan_row').style.display = _pmLoan > 0 ? '' : 'none';
+            if (_pmLoan > 0) document.getElementById('pm_loan').textContent = 'RWF ' + Math.round(_pmLoan).toLocaleString();
 
             var payments = res.payments || [];
             var tbody = document.getElementById('pm_tbody');
@@ -1946,7 +1964,9 @@ function toggleOrderPayShortcut(prefix, type) {
     ['cash','momo','bank'].forEach(function(t){
         if (t !== type) document.getElementById(prefix + '_is_' + t).checked = false;
     });
-    var checked   = document.getElementById(prefix + '_is_' + type).checked;
+    var checked = document.getElementById(prefix + '_is_' + type).checked;
+    // _pmCollected/_apmPrepaid are real money only (loan excluded), so total minus
+    // that already equals the full payable cap — including any existing loan.
     var remaining = prefix === 'pm'
         ? Math.max(0, _pmTotal - _pmCollected)
         : Math.max(0, _apmTotal - _apmPrepaid);
@@ -1963,11 +1983,24 @@ function pmCalc() {
     var momo = parseFloat(document.getElementById('pm_momo').value)||0;
     var bank = parseFloat(document.getElementById('pm_bank').value)||0;
     var add  = cash+momo+bank;
-    var newRem = Math.max(0, _pmTotal - _pmCollected - add);
-    var over   = (_pmCollected + add) > _pmTotal + 1;
+    // Real money pays down any existing loan first (converts it into an actual
+    // receipt); _pmCollected is real money only, so it just grows by the full
+    // amount — the loan shrinks separately and doesn't need to be netted out here.
+    var loanOffset    = Math.min(_pmLoan, add);
+    var newReal       = _pmCollected + add;
+    var newLoan       = Math.max(0, _pmLoan - loanOffset);
+    var over          = (newReal + newLoan) > _pmTotal + 1;
+    var newRem = Math.max(0, _pmTotal - newReal);
     document.getElementById('pm_rem_val').textContent = 'RWF ' + Math.round(newRem).toLocaleString();
     document.getElementById('pm_rem_row').className   = 'pay-remaining ' + (over ? 'invalid' : (newRem<=0 ? 'valid' : ''));
     document.getElementById('pm_submit').disabled     = (add<=0 || over);
+    var noteEl = document.getElementById('pm_convert_note');
+    if (loanOffset > 0) {
+        noteEl.style.display = '';
+        noteEl.textContent   = 'RWF ' + Math.round(loanOffset).toLocaleString() + ' of this pays off existing loan.';
+    } else {
+        noteEl.style.display = 'none';
+    }
 }
 
 function submitPaymentFromModal() {
@@ -1984,15 +2017,15 @@ function submitPaymentFromModal() {
             showToast(res.message, res.success);
             if (res.success) {
                 _pmCollected = res.new_prepaid;
+                _pmLoan      = res.new_loan || 0;
                 // Update the summary row
                 document.getElementById('pm_collected').textContent = 'RWF ' + Math.round(_pmCollected).toLocaleString();
                 document.getElementById('pm_balance').textContent   = 'RWF ' + Math.round(Math.max(0,_pmTotal-_pmCollected)).toLocaleString();
-                // Update the remaining pill in the orders table row
-                var rc = document.getElementById('rem_cell_'+_pmId);
-                if (rc) {
-                    rc.className   = 'remaining-pill '+(res.new_remaining<=0?'rp-zero':'rp-part');
-                    rc.textContent = 'RWF '+Math.round(res.new_remaining).toLocaleString();
-                }
+                document.getElementById('pm_loan_row').style.display = _pmLoan > 0 ? '' : 'none';
+                if (_pmLoan > 0) document.getElementById('pm_loan').textContent = 'RWF ' + Math.round(_pmLoan).toLocaleString();
+                // Refresh the underlying orders table (Prepaid/Loan breakdown and
+                // Remaining pill are otherwise stuck at their pre-payment values).
+                loadOrders(currentPage);
                 // Reset form and reload payment rows
                 ['cash','momo','bank'].forEach(function(t){ document.getElementById('pm_'+t).value=0; });
                 ['cash','momo','bank'].forEach(function(t){ document.getElementById('pm_is_'+t).checked = false; });
@@ -2007,13 +2040,15 @@ function submitPaymentFromModal() {
 }
 
 // ── Add Payment ───────────────────────────────────────────────────────────────
-var _apmId = 0, _apmTotal = 0, _apmPrepaid = 0;
-function openAddPaymentModal(id, orderNum, total, prepaid) {
-    _apmId = id; _apmTotal = total; _apmPrepaid = prepaid;
+var _apmId = 0, _apmTotal = 0, _apmPrepaid = 0, _apmLoan = 0;
+function openAddPaymentModal(id, orderNum, total, prepaid, loan) {
+    _apmId = id; _apmTotal = total; _apmPrepaid = prepaid; _apmLoan = loan || 0;
     document.getElementById('apm_order_num').textContent   = orderNum;
     document.getElementById('apm_total').textContent       = 'RWF ' + total.toLocaleString();
     document.getElementById('apm_prepaid').textContent     = 'RWF ' + prepaid.toLocaleString();
     document.getElementById('apm_remaining').textContent   = 'RWF ' + Math.max(0, total - prepaid).toLocaleString();
+    document.getElementById('apm_loan_row').style.display  = _apmLoan > 0 ? '' : 'none';
+    if (_apmLoan > 0) document.getElementById('apm_loan').textContent = 'RWF ' + Math.round(_apmLoan).toLocaleString();
     ['cash','momo','bank'].forEach(function(t){ document.getElementById('apm_'+t).value = 0; });
     ['cash','momo','bank'].forEach(function(t){ document.getElementById('apm_is_'+t).checked = false; });
     apmCalc();
@@ -2023,13 +2058,25 @@ function apmCalc() {
     var cash = parseFloat(document.getElementById('apm_cash').value)||0;
     var momo = parseFloat(document.getElementById('apm_momo').value)||0;
     var bank = parseFloat(document.getElementById('apm_bank').value)||0;
-    var total_add    = cash + momo + bank;
-    var new_prepaid  = _apmPrepaid + total_add;
-    var new_rem      = Math.max(0, _apmTotal - new_prepaid);
-    var over         = new_prepaid > _apmTotal + 1;
+    var total_add = cash + momo + bank;
+    // Real money pays down any existing loan first (converts it into an actual
+    // receipt); _apmPrepaid is real money only, so it just grows by the full
+    // amount — the loan shrinks separately and doesn't need to be netted out here.
+    var loanOffset  = Math.min(_apmLoan, total_add);
+    var new_real    = _apmPrepaid + total_add;
+    var new_loan    = Math.max(0, _apmLoan - loanOffset);
+    var over        = (new_real + new_loan) > _apmTotal + 1;
+    var new_rem     = Math.max(0, _apmTotal - new_real);
     document.getElementById('apm_rem_val').textContent = 'RWF ' + Math.round(new_rem).toLocaleString();
     document.getElementById('apm_rem_row').className   = 'pay-remaining ' + (over ? 'invalid' : (new_rem <= 0 ? 'valid' : ''));
     document.getElementById('apm_submit').disabled     = (total_add <= 0 || over);
+    var noteEl = document.getElementById('apm_convert_note');
+    if (loanOffset > 0) {
+        noteEl.style.display = '';
+        noteEl.textContent   = 'RWF ' + Math.round(loanOffset).toLocaleString() + ' of this pays off existing loan.';
+    } else {
+        noteEl.style.display = 'none';
+    }
 }
 function submitAddPayment() {
     var btn = document.getElementById('apm_submit');
@@ -2045,11 +2092,9 @@ function submitAddPayment() {
             showToast(res.message, res.success);
             if (res.success) {
                 closeModal('addPaymentModal');
-                var rc = document.getElementById('rem_cell_'+_apmId);
-                if (rc) {
-                    rc.className   = 'remaining-pill ' + (res.new_remaining<=0 ? 'rp-zero' : 'rp-part');
-                    rc.textContent = 'RWF ' + Math.round(res.new_remaining).toLocaleString();
-                }
+                // Full refresh so Prepaid/Loan breakdown and the Remaining pill
+                // both reflect the new payment, not just the pill on its own.
+                loadOrders(currentPage);
             } else { btn.disabled=false; btn.textContent='Record Payment'; }
         })
         .catch(function(){ showToast('Network error.',false); btn.disabled=false; btn.textContent='Record Payment'; });
@@ -2226,10 +2271,10 @@ function printReceipt(o) {
     h += '</table>';
 
     // Payments
-    if (o.total_prepaid > 0) {
+    if (o.total_prepaid > 0 || o.prepaid_loan > 0) {
         h += '<hr>';
         h += '<table>';
-        h += '<tr><td colspan="2" class="b">Payment Received</td></tr>';
+        h += '<tr><td colspan="2" class="b">Payment Summary</td></tr>';
         if (o.prepaid_cash > 0) h += '<tr><td style="padding-left:6px">Cash</td><td class="r">RWF ' + o.prepaid_cash.toLocaleString() + '</td></tr>';
         if (o.prepaid_momo > 0) h += '<tr><td style="padding-left:6px">Momo</td><td class="r">RWF ' + o.prepaid_momo.toLocaleString() + '</td></tr>';
         if (o.prepaid_bank > 0) h += '<tr><td style="padding-left:6px">Bank</td><td class="r">RWF ' + o.prepaid_bank.toLocaleString() + '</td></tr>';
