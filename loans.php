@@ -346,10 +346,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['exec_global_loan_payme
             $client_deltas[$cid] = ($client_deltas[$cid] ?? 0.0) + $pay;
         }
     }
+    $now=date('Y-m-d H:i:s');
 
     foreach ($client_deltas as $cid => $d) {
         if (!$ok) break;
-        $ok = (bool)mysqli_query($conn, "UPDATE loan_clients SET paid_amount = paid_amount + $d, unpaid_amount = unpaid_amount - $d WHERE id = $cid");
+        $ok = (bool)mysqli_query($conn, "UPDATE loan_clients SET updated_at = '$now', paid_amount = paid_amount + $d, unpaid_amount = unpaid_amount - $d WHERE id = $cid");
     }
 
     if ($ok) {
