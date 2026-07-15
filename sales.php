@@ -382,6 +382,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
 
     if ($ok) {
         mysqli_commit($conn);
+        touchCacheStore($conn, 'recent_sales_external');
         if ($loan_amount > 0) touchCacheStore($conn, 'clients');
         $parts = [];
         if ($cash_amount > 0) $parts[] = "Cash: RWF " . number_format($cash_amount, 0);
@@ -543,6 +544,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
       //  require_once 'stock_value.php';
         // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
         touchCacheStore($conn, 'products');
+        touchCacheStore($conn, 'recent_sales_bulk');
         if ($loan_amount > 0) touchCacheStore($conn, 'clients');
 
         $parts = [];
@@ -690,6 +692,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         // require_once 'stock_value.php';
         // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
         touchCacheStore($conn, 'products');
+        touchCacheStore($conn, 'recent_sales_retail');
         if ($loan_amount > 0) touchCacheStore($conn, 'clients');
 
         $parts = [];

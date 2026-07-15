@@ -48,12 +48,91 @@ if ($action === 'clients') {
     exit;
 }
 
+// Recent sales, most-recent-first — backs the "Recent Sales" panel on
+// sale_bulk/sale_retail/sale_external.php so it can render instantly from the
+// IndexedDB cache instead of waiting on a query each time the form loads.
+// product_id/owner_phone are included (even though not all are displayed) so
+// a row can be clicked to refill the sale form with the same product/owner.
+// One row per product (its latest sale) — a client rebuying the same item
+// repeatedly shouldn't crowd the other 14 slots out of the panel.
+if ($action === 'recent_sales_bulk') {
+    $rows = [];
+    $q = mysqli_query($conn, "
+        SELECT sb.id, sb.product_id, sb.quantity, sb.level_divisor, sb.package_price, sb.total_amount,
+               sb.customer_name, sb.created_at, sb.refunded,
+               p.name AS product_name, u.full_name AS seller_name
+        FROM sales_bulk sb
+        JOIN products p ON sb.product_id = p.id
+        LEFT JOIN users u ON sb.sold_by = u.id
+        JOIN (
+            SELECT product_id, MAX(id) AS max_id
+            FROM sales_bulk
+            WHERE 1=1 " . cidAnd() . "
+            GROUP BY product_id
+        ) latest ON latest.product_id = sb.product_id AND latest.max_id = sb.id
+        ORDER BY sb.created_at DESC
+        LIMIT 20
+    ");
+    while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
+    echo json_encode(['success' => true, 'data' => $rows]);
+    exit;
+}
+
+if ($action === 'recent_sales_retail') {
+    $rows = [];
+    $q = mysqli_query($conn, "
+        SELECT sr.id, sr.product_id, sr.pieces_sold, sr.retail_price, sr.total_amount,
+               sr.customer_name, sr.created_at, sr.refunded,
+               p.name AS product_name, u.full_name AS seller_name
+        FROM sales_retail sr
+        JOIN products p ON sr.product_id = p.id
+        LEFT JOIN users u ON sr.sold_by = u.id
+        JOIN (
+            SELECT product_id, MAX(id) AS max_id
+            FROM sales_retail
+            WHERE 1=1 " . cidAnd() . "
+            GROUP BY product_id
+        ) latest ON latest.product_id = sr.product_id AND latest.max_id = sr.id
+        ORDER BY sr.created_at DESC
+        LIMIT 20
+    ");
+    while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
+    echo json_encode(['success' => true, 'data' => $rows]);
+    exit;
+}
+
+if ($action === 'recent_sales_external') {
+    $rows = [];
+    $q = mysqli_query($conn, "
+        SELECT se.id, se.product_name, se.quantity, se.unit_price, se.total_amount,
+               se.customer_name, se.created_at, se.refunded,
+               u.full_name AS seller_name, po.name AS owner_name, po.phone AS owner_phone
+        FROM sales_external se
+        LEFT JOIN users u ON se.sold_by = u.id
+        LEFT JOIN product_owners po ON se.owner_id = po.id
+        JOIN (
+            SELECT product_name, MAX(id) AS max_id
+            FROM sales_external
+            WHERE 1=1 " . cidAnd() . "
+            GROUP BY product_name
+        ) latest ON latest.product_name = se.product_name AND latest.max_id = se.id
+        ORDER BY se.created_at DESC
+        LIMIT 20
+    ");
+    while ($r = mysqli_fetch_assoc($q)) $rows[] = $r;
+    echo json_encode(['success' => true, 'data' => $rows]);
+    exit;
+}
+
 // Cheap change-tracking check backing js/data-cache.js: returns each store's
 // last-changed timestamp (ms) so the client can decide whether its IndexedDB
 // copy is stale, instead of refetching the full dataset on a fixed timer.
 if ($action === 'meta') {
     $company_id = cid() ?? 0;
-    $out = ['products' => 0, 'clients' => 0, 'categories' => 0];
+    $out = [
+        'products' => 0, 'clients' => 0, 'categories' => 0,
+        'recent_sales_bulk' => 0, 'recent_sales_retail' => 0, 'recent_sales_external' => 0,
+    ];
     $q = mysqli_query($conn, "
         SELECT store_name, UNIX_TIMESTAMP(updated_at) AS ts
         FROM cache_meta

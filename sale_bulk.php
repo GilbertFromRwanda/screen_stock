@@ -198,6 +198,11 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .client-card-meta { color: var(--secondary); font-size: 12px; margin-top: 3px; }
         .client-card-clear { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; flex-shrink: 0; }
         .client-card-clear:hover { color: #dc2626; }
+        .client-fields-toggle-btn {
+            background: none; border: none; color: var(--primary); font-size: 13px; font-weight: 600;
+            cursor: pointer; padding: 6px 0; text-align: left;
+        }
+        .client-fields-toggle-btn:hover { text-decoration: underline; }
 
         /* ── Payment shortcut chips (compact) ─────────────────────────────────── */
         .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -209,10 +214,24 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         }
         .shortcut-chip input { width: 15px; height: 15px; cursor: pointer; margin: 0; }
 
-        /* ── Step 2: product + cart ───────────────────────────────────────────── */
-        .cart-split { display: grid; grid-template-columns: 1fr 360px; gap: 24px; align-items: start; }
-        @media (max-width: 900px) { .cart-split { grid-template-columns: 1fr; } }
-        .cart-panel { border: 1px solid var(--gray-200); border-radius: var(--radius-lg); overflow: hidden; position: sticky; top: 16px; }
+        /* ── Desktop 3-column layout: client/recent-sales, sale details, cart/payment ── */
+        .sale-3col { display: grid; grid-template-columns: 280px 1fr 340px; gap: 20px; align-items: start; }
+        .sale-col-client, .sale-col-details, .sale-col-cart {
+            border-radius: var(--radius-lg); padding: 16px; border: 1px solid transparent;
+        }
+        .sale-col-client  { background: #f8fafc; border-color: #e2e8f0; }
+        .sale-col-details { background: #fdf4ff; border-color: #f3e8ff; }
+        .sale-col-cart    { background: #f0fdf4; border-color: #bbf7d0; position: sticky; top: 16px; }
+        @media (max-width: 1150px) {
+            .sale-3col { grid-template-columns: 1fr 1fr; }
+            .sale-col-cart { grid-column: 1 / -1; position: static; }
+        }
+        @media (max-width: 900px) {
+            .sale-3col { grid-template-columns: 1fr; }
+            .sale-col-cart { grid-column: auto; }
+        }
+
+        .cart-panel { border: 1px solid var(--gray-200); border-radius: var(--radius-lg); overflow: hidden; }
         .cart-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); font-size: 13px; font-weight: 700; }
         .cart-badge { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; }
         .cart-badge.zero { background: var(--gray-300); }
@@ -235,6 +254,26 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
             color: #fff; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 700; cursor: pointer;
         }
         .add-item-btn:hover { background: #0284c7; }
+
+        /* ── Recent Sales panel ───────────────────────────────────────────────── */
+        .recent-sales-panel { background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; }
+        .recent-sales-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--gray-100); cursor: pointer; font-size: 13px; font-weight: 700; gap: 8px; }
+        .recent-sales-header:hover { background: var(--gray-200); }
+        .recent-sales-header-lbl { display: flex; align-items: center; gap: 8px; }
+        .recent-toggle-icon { font-size: 11px; color: var(--secondary); }
+        .recent-sales-body { padding: 12px 16px; border-top: 1px solid var(--gray-200); }
+        .recent-sales-list { background: var(--white); max-height: 260px; overflow-y: auto; }
+        .recent-sale-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--gray-100); border-left: 3px solid transparent; font-size: 13px; cursor: pointer; border-radius: 6px; }
+        .recent-sale-row:last-child { border-bottom: none; }
+        .recent-sale-row:hover { background: var(--gray-100); }
+        .recent-sale-row.selected { background: #eff6ff; border-left-color: var(--primary); }
+        .recent-sale-row.selected:hover { background: #eff6ff; }
+        .recent-sale-main { min-width: 0; }
+        .recent-sale-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .recent-sale-sub { font-size: 12px; color: var(--secondary); margin-top: 2px; }
+        .recent-sale-right { flex-shrink: 0; text-align: right; }
+        .recent-sale-total { font-weight: 700; }
+        .recent-sale-time { font-size: 11px; color: var(--secondary); margin-top: 2px; }
 
         /* ── Responsive ─────────────────────────────────────────────────────── */
         @media (max-width: 900px) {
@@ -279,63 +318,75 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
             <form method="POST" action="sales.php" id="bulkSaleForm">
                 <input type="hidden" id="bulk_items_json" name="items_json" value="[]">
 
-                <!-- ═══════════ Client ═══════════ -->
-                <div id="bulk_step_panel_1">
+                <div class="sale-3col">
+                    <!-- ═══════════ Column 1: Client + Recent Sales ═══════════ -->
+                    <div class="sale-col-client">
+                        <div id="bulk_step_panel_1">
 
-                    <div class="client-card" id="bulk_client_card">
-                        <div>
-                            <div class="client-card-name" id="bulk_client_card_name"></div>
-                            <div class="client-card-meta" id="bulk_client_card_meta"></div>
-                        </div>
-                        <button type="button" class="client-card-clear" onclick="clearBulkClient()" title="Change client">&times;</button>
-                    </div>
-
-                    <div id="bulk_client_select_area">
-                        <div class="form-group" id="bulkClientPickerGroup" style="display:none;">
-                            <label>Existing Client</label>
-                            <div class="searchable-select" id="bulkClientPickerWrap">
-                                <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
-                                    placeholder="Search registered client..." autocomplete="off">
-                                <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown"></div>
+                            <div class="client-card" id="bulk_client_card">
+                                <div>
+                                    <div class="client-card-name" id="bulk_client_card_name"></div>
+                                    <div class="client-card-meta" id="bulk_client_card_meta"></div>
+                                </div>
+                                <button type="button" class="client-card-clear" onclick="clearBulkClient()" title="Change client">&times;</button>
                             </div>
-                            <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
-                        </div>
-                        <div class="form-2col">
-                            <div class="form-group">
-                                <label>Client Name</label>
-                                 <input type="text" id="bulk_customer" name="customer_name" value="client" placeholder="Enter customer name">
-                            </div>
-                            <div class="form-group">
-                                <label>Client Phone <small style="font-weight:400;color:var(--secondary);">(required only for loans)</small></label>
-                                <input type="number" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- ═══════════ Products (cart) ═══════════ -->
-                <div id="bulk_step_panel_2">
-
-                    <div class="cart-split">
-                        <!-- Left: product picker -->
-                        <div>
-                            <div class="form-2col">
-                                <div class="form-group">
-                                    <label>Category</label>
-                                    <div class="searchable-select" id="bulkCatWrap">
-                                        <input type="text" class="searchable-select-input" id="bulk_cat_search"
-                                               placeholder="All categories…" autocomplete="off" readonly style="cursor:pointer;"
-                                               onfocus="this.removeAttribute('readonly')">
-                                        <div class="searchable-select-dropdown" id="bulk_cat_dropdown"></div>
+                            <div id="bulk_client_select_area">
+                                <div class="form-group" id="bulkClientPickerGroup" style="display:none;">
+                                    <label>Existing Client</label>
+                                    <div class="searchable-select" id="bulkClientPickerWrap">
+                                        <input type="text" class="searchable-select-input" id="bulk_client_picker_search"
+                                            placeholder="Search registered client..." autocomplete="off">
+                                        <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown"></div>
+                                    </div>
+                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                                </div>
+                                <button type="button" class="client-fields-toggle-btn" id="bulk_client_fields_toggle" onclick="toggleClientFields('bulk')">+ Set client name / phone</button>
+                                <div id="bulk_client_fields" style="display:none;">
+                                    <div class="form-group">
+                                        <label>Client Name</label>
+                                         <input type="text" id="bulk_customer" name="customer_name" placeholder="Enter customer name (defaults to &quot;client&quot;)">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Client Phone <small style="font-weight:400;color:var(--secondary);">(required only for loans)</small></label>
+                                        <input type="number" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
                                     </div>
                                 </div>
-                                <div class="form-group">
-                                    <label>Select Product*</label>
-                                    <input type="hidden" id="bulk_product_id" name="product_id">
-                                    <div class="searchable-select" id="bulkProductSearchable">
-                                        <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
-                                        <div class="searchable-select-dropdown" id="bulk_product_dropdown"></div>
-                                    </div>
+                            </div>
+                        </div>
+
+                        <div class="recent-sales-panel" id="bulk_recent_panel">
+                            <div class="recent-sales-header" onclick="toggleRecentSales('bulk')">
+                                <span class="recent-sales-header-lbl">Recent Sales <span id="bulk_recent_badge" class="cart-badge zero">0</span></span>
+                                <span class="recent-toggle-icon" id="bulk_recent_toggle_icon">&#9650;</span>
+                            </div>
+                            <div class="recent-sales-body" id="bulk_recent_body">
+                                <input type="text" class="searchable-select-input" id="bulk_recent_search" placeholder="Search recent sales (product or customer)...">
+                                <div id="bulk_recent_list" class="recent-sales-list" style="margin-top:10px;">
+                                    <div class="cart-empty">Loading&hellip;</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ═══════════ Column 2: Sale Details ═══════════ -->
+                    <div class="sale-col-details">
+                        <div id="bulk_step_panel_2">
+                            <div class="form-group">
+                                <label>Category</label>
+                                <div class="searchable-select" id="bulkCatWrap">
+                                    <input type="text" class="searchable-select-input" id="bulk_cat_search"
+                                           placeholder="All categories…" autocomplete="off" readonly style="cursor:pointer;"
+                                           onfocus="this.removeAttribute('readonly')">
+                                    <div class="searchable-select-dropdown" id="bulk_cat_dropdown"></div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Select Product*</label>
+                                <input type="hidden" id="bulk_product_id" name="product_id">
+                                <div class="searchable-select" id="bulkProductSearchable">
+                                    <input type="text" class="searchable-select-input" id="bulk_product_search" placeholder="Search product..." autocomplete="off">
+                                    <div class="searchable-select-dropdown" id="bulk_product_dropdown"></div>
                                 </div>
                             </div>
                             <div id="bulk_product_details" class="price-history" style="display:none;">
@@ -346,95 +397,92 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                 <div id="bulk_level_buttons" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
                             </div>
 
-                            <div class="form-2col">
-                                <div class="form-group">
-                                    <label id="bulk_qty_label">Quantity (Packages)*</label>
-                                    <input type="number" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
-                                    <small id="bulk_stock_info" class="field-hint"></small>
-                                    <small id="bulk_qty_error" class="field-error"></small>
+                            <div class="form-group">
+                                <label id="bulk_qty_label">Quantity (Packages)*</label>
+                                <input type="number" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
+                                <small id="bulk_stock_info" class="field-hint"></small>
+                                <small id="bulk_qty_error" class="field-error"></small>
+                            </div>
+                            <div class="form-group">
+                                <label>Selling Price (per package)*</label>
+                                <div class="price-input-group">
+                                    <input type="number" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
+                                    <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
                                 </div>
-                                <div class="form-group">
-                                    <label>Selling Price (per package)*</label>
-                                    <div class="price-input-group">
-                                        <input type="number" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
-                                        <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
-                                    </div>
-                                    <div id="bulk_price_warning" class="price-warning"></div>
-                                </div>
+                                <div id="bulk_price_warning" class="price-warning"></div>
                             </div>
 
                             <button type="button" class="add-item-btn" id="bulk_add_cart_btn" disabled onclick="addBulkToCart()">
                                 + Add to Sale
                             </button>
                         </div>
+                    </div>
 
-                        <!-- Right: cart + payment -->
-                        <div>
-                            <div class="cart-panel">
-                                <div class="cart-header">
-                                    Items to Sell
-                                    <span id="bulk_cart_badge" class="cart-badge zero">0</span>
-                                </div>
-                                <div class="cart-body" id="bulk_cart_body">
-                                    <div class="cart-empty">No items yet.<br>Search and add products from the left.</div>
-                                </div>
-                                <div class="cart-foot">
-                                    <span class="cart-foot-lbl">Sale Total</span>
-                                    <span class="cart-foot-val" id="bulk_cart_total">RWF 0</span>
-                                </div>
+                    <!-- ═══════════ Column 3: Cart + Payment ═══════════ -->
+                    <div class="sale-col-cart">
+                        <div class="cart-panel">
+                            <div class="cart-header">
+                                Items to Sell
+                                <span id="bulk_cart_badge" class="cart-badge zero">0</span>
+                            </div>
+                            <div class="cart-body" id="bulk_cart_body">
+                                <div class="cart-empty">No items yet.<br>Search and add products from the left.</div>
+                            </div>
+                            <div class="cart-foot">
+                                <span class="cart-foot-lbl">Sale Total</span>
+                                <span class="cart-foot-val" id="bulk_cart_total">RWF 0</span>
+                            </div>
+                        </div>
+
+                        <!-- ═══════════ Payment (under the cart card) ═══════════ -->
+                        <div id="bulk_step_panel_3" style="margin-top:16px;">
+                            <div class="shortcut-chips">
+                                <label class="shortcut-chip" title="Full amount goes to loan">
+                                    <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="accent-color:var(--primary);">
+                                    Is Loan?
+                                </label>
+                                <label class="shortcut-chip" title="Full amount goes to cash">
+                                    <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="accent-color:#16a34a;">
+                                    Is Cash?
+                                </label>
+                                <label class="shortcut-chip" title="Full amount goes to momo">
+                                    <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="accent-color:#2563eb;">
+                                    Is Momo?
+                                </label>
                             </div>
 
-                            <!-- ═══════════ Payment (under the cart card) ═══════════ -->
-                            <div id="bulk_step_panel_3" style="margin-top:16px;">
-                                <div class="shortcut-chips">
-                                    <label class="shortcut-chip" title="Full amount goes to loan">
-                                        <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="accent-color:var(--primary);">
-                                        Is Loan?
-                                    </label>
-                                    <label class="shortcut-chip" title="Full amount goes to cash">
-                                        <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="accent-color:#16a34a;">
-                                        Is Cash?
-                                    </label>
-                                    <label class="shortcut-chip" title="Full amount goes to momo">
-                                        <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="accent-color:#2563eb;">
-                                        Is Momo?
-                                    </label>
-                                </div>
+                            <div id="bulk_loan_phone_warn" style="display:none;font-size:12px;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;">
+                                &#9888; Client phone is required when part of the sale goes to loan. Add it above.
+                            </div>
 
-                                <div id="bulk_loan_phone_warn" style="display:none;font-size:12px;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;">
-                                    &#9888; Client phone is required when part of the sale goes to loan. Add it above.
-                                </div>
-
-                                <div id="bulk_payment_section">
-                                    <div class="form-group">
-                                        <label>Payment Breakdown</label>
-                                        <div class="split-payment-box">
-                                            <div class="split-row">
-                                                <span class="split-label">Cash</span>
-                                                <input type="number" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
-                                            </div>
-                                            <div class="split-row">
-                                                <span class="split-label">Momo</span>
-                                                <input type="number" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
-                                            </div>
-                                            <div class="split-row">
-                                                <span class="split-label">Loan</span>
-                                                <input type="number" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
-                                            </div>
-                                            <div class="split-row split-remaining-row" id="bulk_remaining_row">
-                                                <span class="split-label">Remaining</span>
-                                                <span id="bulk_remaining">—</span>
-                                            </div>
+                            <div id="bulk_payment_section">
+                                <div class="form-group">
+                                    <label>Payment Breakdown</label>
+                                    <div class="split-payment-box">
+                                        <div class="split-row">
+                                            <span class="split-label">Cash</span>
+                                            <input type="number" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
+                                        </div>
+                                        <div class="split-row">
+                                            <span class="split-label">Momo</span>
+                                            <input type="number" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
+                                        </div>
+                                        <div class="split-row">
+                                            <span class="split-label">Loan</span>
+                                            <input type="number" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
+                                        </div>
+                                        <div class="split-row split-remaining-row" id="bulk_remaining_row">
+                                            <span class="split-label">Remaining</span>
+                                            <span id="bulk_remaining">—</span>
                                         </div>
                                     </div>
-                                    <button type="button" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()" style="width:100%;padding:12px;">
-                                        Save Sale
-                                    </button>
                                 </div>
+                                <button type="button" id="bulk_submit_btn" class="btn btn-primary" disabled onclick="handleBulkSubmit()" style="width:100%;padding:12px;">
+                                    Save Sale
+                                </button>
                             </div>
                         </div>
                     </div>
-
                 </div>
 
             </form>
@@ -693,6 +741,23 @@ DataCache.getClients().then(function(list) {
         function(opt) { showClientCard('bulk', opt); });
 });
 
+// Client name/phone are collapsed behind a toggle by default — most sales are
+// walk-in/anonymous, so only reveal these fields on demand (or automatically
+// once a loan amount makes the phone number actually required).
+function toggleClientFields(prefix) {
+    var wrap = document.getElementById(prefix + '_client_fields');
+    var open = wrap.style.display !== 'none';
+    wrap.style.display = open ? 'none' : 'block';
+    document.getElementById(prefix + '_client_fields_toggle').textContent = open ? '+ Set client name / phone' : '− Hide client name / phone';
+}
+function showClientFields(prefix) {
+    var wrap = document.getElementById(prefix + '_client_fields');
+    if (wrap.style.display === 'none') {
+        wrap.style.display = 'block';
+        document.getElementById(prefix + '_client_fields_toggle').textContent = '− Hide client name / phone';
+    }
+}
+
 function clearBulkClient() {
     document.getElementById('bulk_customer').value = '';
     document.getElementById('bulk_phone').value = '';
@@ -713,7 +778,7 @@ function updateBulkProductDetails() {
         document.getElementById('bulk_level_buttons').innerHTML = '';
         document.getElementById('bulk_qty_label').textContent = 'Quantity (Packages)*';
         addBtn.disabled = true;
-        return;
+        return Promise.resolve();
     }
     var price = bulkSelectedProduct.price;
     var stock = bulkSelectedProduct.stock;
@@ -727,7 +792,10 @@ function updateBulkProductDetails() {
     document.getElementById('bulk_product_info').innerHTML = name + ' &mdash; Default price: RWF ' + parseFloat(price).toLocaleString();
     calculateBulkTotal();
 
-    fetch('ajax_levels.php?product_id=' + bulkSelectedProduct.id)
+    // Returned so callers (e.g. reuseBulkSale()) can apply their own qty/price
+    // only after the async level lookup below has finished populating the
+    // level buttons — otherwise the level auto-click would clobber them.
+    return fetch('ajax_levels.php?product_id=' + bulkSelectedProduct.id)
         .then(function(r){ return r.json(); })
         .then(function(data) {
             var sel  = document.getElementById('bulk_level_selector');
@@ -883,6 +951,105 @@ function renderBulkCart() {
 
 function escBulkHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// ── Recent Sales panel, backed by DataCache (instant from IndexedDB, refreshed
+// in the background when the server reports newer data) ────────────────────
+var bulkRecentSales = [];
+
+function toggleRecentSales(prefix) {
+    var body = document.getElementById(prefix + '_recent_body');
+    var icon = document.getElementById(prefix + '_recent_toggle_icon');
+    var open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    icon.innerHTML = open ? '&#9660;' : '&#9650;';
+}
+
+function relSaleTime(ts) {
+    var d = new Date(String(ts||'').replace(' ', 'T'));
+    if (isNaN(d.getTime())) return '';
+    var diff = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    if (diff < 172800) return 'Yesterday';
+    return d.toLocaleDateString();
+}
+
+function loadBulkRecentSales(force) {
+    DataCache.getRecentSales('bulk', force ? {force:true} : {}).then(function(list) {
+        bulkRecentSales = list || [];
+        renderBulkRecentSales(document.getElementById('bulk_recent_search').value.trim());
+    });
+}
+loadBulkRecentSales();
+
+document.getElementById('bulk_recent_search').addEventListener('input', function() {
+    renderBulkRecentSales(this.value.trim());
+});
+
+function renderBulkRecentSales(filter) {
+    var term = (filter || '').toLowerCase();
+    var rows = bulkRecentSales.filter(function(r) {
+        if (!term) return true;
+        return (r.product_name || '').toLowerCase().indexOf(term) !== -1 ||
+               (r.customer_name || '').toLowerCase().indexOf(term) !== -1;
+    });
+    var badge = document.getElementById('bulk_recent_badge');
+    badge.textContent = bulkRecentSales.length;
+    badge.className = 'cart-badge' + (bulkRecentSales.length === 0 ? ' zero' : '');
+
+    var list = document.getElementById('bulk_recent_list');
+    if (!rows.length) {
+        list.innerHTML = '<div class="cart-empty">' + (bulkRecentSales.length ? 'No matches.' : 'No recent sales yet.') + '</div>';
+        return;
+    }
+    list.innerHTML = rows.map(function(r) {
+        var qty = parseInt(r.quantity) || 0;
+        return '<div class="recent-sale-row" title="Click to refill the form with this sale">' +
+            '<div class="recent-sale-main">' +
+                '<div class="recent-sale-name">' + escBulkHtml(r.product_name) + (r.refunded == 1 ? ' <small style="color:#dc2626;">(refunded)</small>' : '') + '</div>' +
+                '<div class="recent-sale-sub">' + qty.toLocaleString() + ' &times; RWF ' + Number(r.package_price).toLocaleString() + ' &middot; ' + escBulkHtml(r.customer_name || 'client') + '</div>' +
+            '</div>' +
+            '<div class="recent-sale-right">' +
+                '<div class="recent-sale-total">RWF ' + Math.round(r.total_amount).toLocaleString() + '</div>' +
+                '<div class="recent-sale-time">' + relSaleTime(r.created_at) + '</div>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+    list.querySelectorAll('.recent-sale-row').forEach(function(el, i) {
+        el.addEventListener('click', function() {
+            list.querySelectorAll('.recent-sale-row.selected').forEach(function(o) { o.classList.remove('selected'); });
+            el.classList.add('selected');
+            reuseBulkSale(rows[i]);
+        });
+    });
+}
+
+// Refills the picker + quantity/price/customer fields from a past sale so a
+// repeat sale can be entered with one click instead of re-searching from
+// scratch. The user still has to hit "+ Add to Sale" and submit.
+function reuseBulkSale(r) {
+    DataCache.getProducts().then(function(list) {
+        var p = list.find(function(x) { return String(x.id) === String(r.product_id); });
+        if (!p) { showSaleToast('That product is no longer available.', false); return; }
+
+        var label = (p.category ? p.category + '-' : '') + p.name;
+        bulkSelectedCat = p.category || '';
+        document.getElementById('bulk_cat_search').value = bulkSelectedCat;
+        document.getElementById('bulk_cat_search').setAttribute('readonly', '');
+        bulkSelectedProduct = { id: p.id, name: label, price: parseFloat(p.bulk_price) || 0, stock: parseInt(p.wh_qty) || 0, unit: p.unit_measure || '' };
+        document.getElementById('bulk_product_search').value = label;
+        document.getElementById('bulk_product_id').value = p.id;
+
+        Promise.resolve(updateBulkProductDetails()).then(function() {
+            document.getElementById('bulk_quantity').value = 1;
+            document.getElementById('bulk_selling_price').value = r.package_price;
+            calculateBulkTotal();
+        });
+
+        document.getElementById('bulk_product_search').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+}
+
 // Applies the Is Loan/Cash/Momo shortcut defaults against the current cart
 // total. Runs on every cart change (not just once on a step transition) so
 // the split stays correct as items are added or removed.
@@ -931,6 +1098,7 @@ function calcBulkSplit(changed) {
     document.getElementById('bulk_remaining').textContent = 'RWF ' + remaining.toLocaleString();
     document.getElementById('bulk_remaining_row').className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
 
+    if (loan > 0) showClientFields('bulk');
     var phoneOk = loan <= 0 || document.getElementById('bulk_phone').value.trim().length > 0;
     document.getElementById('bulk_loan_phone_warn').style.display = (loan > 0 && !phoneOk) ? 'block' : 'none';
 
@@ -987,9 +1155,10 @@ function handleBulkSubmit() {
         .then(function(res) {
             showSaleToast(res.message, res.success);
             if (res.success) {
-                // Sale reduces stock and (on loan) touches loan_clients — invalidate
-                // both before reload so other pages don't read stale cached data.
-                Promise.all([DataCache.invalidate('products'), DataCache.invalidate('clients')])
+                // Sale reduces stock and (on loan) touches loan_clients, and adds a row
+                // to recent_sales_bulk — invalidate all three before reload so other
+                // pages/panels don't read stale cached data.
+                Promise.all([DataCache.invalidate('products'), DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_bulk')])
                     .then(function() { location.reload(); });
             } else {
                 btn.textContent = 'Save Sale';

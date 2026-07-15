@@ -13,10 +13,10 @@
 // call touchCacheStore().
 var DataCache = (function() {
     var DB_NAME = 'screen_stock_cache';
-    var DB_VERSION = 1;
+    var DB_VERSION = 2;
     var META_CHECK_MIN_MS = 15 * 1000;
     var FALLBACK_TTL_MS = 30 * 60 * 1000;
-    var STORES = ['products', 'clients', 'categories'];
+    var STORES = ['products', 'clients', 'categories', 'recent_sales_bulk', 'recent_sales_retail', 'recent_sales_external'];
 
     var companyKey = (typeof window.APP_COMPANY_ID !== 'undefined' && window.APP_COMPANY_ID !== null)
         ? String(window.APP_COMPANY_ID) : 'all';
@@ -94,8 +94,8 @@ var DataCache = (function() {
     }
 
     function fetchFromServer(store) {
-        var action = (store === 'products' || store === 'categories') ? store : 'clients';
-        return fetch('data_api.php?action=' + action, { method: 'GET' })
+        // Every store name matches its data_api.php?action= value 1:1.
+        return fetch('data_api.php?action=' + store, { method: 'GET' })
             .then(function(r) { return r.json(); })
             .then(function(res) { return (res && res.success) ? (res.data || []) : []; });
     }
@@ -171,10 +171,16 @@ var DataCache = (function() {
     // including brand-new categories with zero products yet.
     function getCategoriesList(opts) { return get('categories', opts); }
 
+    // The last 15 sales (most recent first) for one sale type, backing the
+    // "Recent Sales" panel on sale_bulk/sale_retail/sale_external.php.
+    // `type` is 'bulk' | 'retail' | 'external'.
+    function getRecentSales(type, opts) { return get('recent_sales_' + type, opts); }
+
     return {
         getProducts: getProducts,
         getClients: getClients,
         getCategoriesList: getCategoriesList,
+        getRecentSales: getRecentSales,
         invalidate: invalidate
     };
 })();
