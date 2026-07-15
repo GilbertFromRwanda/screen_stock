@@ -334,7 +334,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     </div>
                                     <div class="form-group">
                                         <label>Client Phone <small style="font-weight:400;color:var(--secondary);">(required only for loans)</small></label>
-                                        <input type="number" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX">
+                                        <input type="text" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX">
                                     </div>
                                 </div>
                             </div>
