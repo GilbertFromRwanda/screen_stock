@@ -298,7 +298,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             </div>
                             <div class="form-group">
                                 <label>Client Phone <small style="font-weight:400;color:var(--secondary);">(required only for loans)</small></label>
-                                <input type="text" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX">
+                                <input type="number" id="ext_phone" name="ext_phone" placeholder="e.g. 07XXXXXXXX">
                             </div>
                         </div>
                     </div>
@@ -369,16 +369,16 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                             <div class="form-2col">
                                 <div class="form-group">
                                     <label>Quantity*</label>
-                                    <input type="text" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtValidity()">
+                                    <input type="number" id="ext_quantity" name="ext_quantity" required min="1" value="1" oninput="calcExtValidity()">
                                 </div>
                                 <div class="form-group">
                                     <label>Unit Price (RWF)*</label>
-                                    <input type="text" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtValidity()">
+                                    <input type="number" id="ext_unit_price" name="ext_unit_price" required min="1" step="1" placeholder="0" oninput="calcExtValidity()">
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label>My Commission (RWF)</label>
-                                <input type="text" id="ext_my_revenue" name="ext_my_revenue" min="0" step="1" value="0" placeholder="Your commission">
+                                <input type="number" id="ext_my_revenue" name="ext_my_revenue" min="0" step="1" value="0" placeholder="Your commission">
                             </div>
 
                             <button type="button" class="add-item-btn" id="ext_add_cart_btn" disabled onclick="addExtToCart()">
@@ -429,15 +429,15 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                         <div class="split-payment-box">
                                             <div class="split-row">
                                                 <span class="split-label">Cash</span>
-                                                <input type="text" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
+                                                <input type="number" id="ext_cash" name="ext_cash_amount" min="0" step="1" value="0" oninput="calcExtSplit('cash')">
                                             </div>
                                             <div class="split-row">
                                                 <span class="split-label">Momo</span>
-                                                <input type="text" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
+                                                <input type="number" id="ext_momo" name="ext_momo_amount" min="0" step="1" value="0" oninput="calcExtSplit('momo')">
                                             </div>
                                             <div class="split-row">
                                                 <span class="split-label">Loan</span>
-                                                <input type="text" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
+                                                <input type="number" id="ext_loan" name="ext_loan_amount" min="0" step="1" value="0" oninput="calcExtSplit('loan')">
                                             </div>
                                             <div class="split-row split-remaining-row" id="ext_remaining_row">
                                                 <span class="split-label">Remaining</span>

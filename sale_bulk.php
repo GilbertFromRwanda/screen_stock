@@ -307,7 +307,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                             </div>
                             <div class="form-group">
                                 <label>Client Phone <small style="font-weight:400;color:var(--secondary);">(required only for loans)</small></label>
-                                <input type="text" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
+                                <input type="number" id="bulk_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
                             </div>
                         </div>
                     </div>
@@ -349,14 +349,14 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                             <div class="form-2col">
                                 <div class="form-group">
                                     <label id="bulk_qty_label">Quantity (Packages)*</label>
-                                    <input type="text" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
+                                    <input type="number" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
                                     <small id="bulk_stock_info" class="field-hint"></small>
                                     <small id="bulk_qty_error" class="field-error"></small>
                                 </div>
                                 <div class="form-group">
                                     <label>Selling Price (per package)*</label>
                                     <div class="price-input-group">
-                                        <input type="text" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
+                                        <input type="number" id="bulk_selling_price" name="selling_price" required min="1" oninput="calculateBulkTotal()">
                                         <span class="default-price-badge" onclick="setBulkDefaultPrice()">Use Default</span>
                                     </div>
                                     <div id="bulk_price_warning" class="price-warning"></div>
@@ -411,15 +411,15 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                         <div class="split-payment-box">
                                             <div class="split-row">
                                                 <span class="split-label">Cash</span>
-                                                <input type="text" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
+                                                <input type="number" id="bulk_cash" name="cash_amount" min="0" step="1" value="0" oninput="calcBulkSplit('cash')">
                                             </div>
                                             <div class="split-row">
                                                 <span class="split-label">Momo</span>
-                                                <input type="text" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
+                                                <input type="number" id="bulk_momo" name="momo_amount" min="0" step="1" value="0" oninput="calcBulkSplit('momo')">
                                             </div>
                                             <div class="split-row">
                                                 <span class="split-label">Loan</span>
-                                                <input type="text" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
+                                                <input type="number" id="bulk_loan_split" name="loan_amount" min="0" step="1" value="0" oninput="calcBulkSplit('loan')">
                                             </div>
                                             <div class="split-row split-remaining-row" id="bulk_remaining_row">
                                                 <span class="split-label">Remaining</span>
