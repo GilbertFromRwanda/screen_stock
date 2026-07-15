@@ -490,7 +490,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 </div>
 
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
-<script src="js/data-cache.js"></script>
+<script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script src="script.js"></script>
 <script>
 // ── Product picker, backed by DataCache (js/data-cache.js) ─────────────────────

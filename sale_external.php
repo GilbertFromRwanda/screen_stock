@@ -512,7 +512,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 </div>
 
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
-<script src="js/data-cache.js"></script>
+<script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script src="script.js"></script>
 <script>
 var extSelectedCat   = '';

@@ -630,7 +630,8 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
 </div>
 
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
-<script src="js/data-cache.js"></script>
+<script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
+
 <script src="script.js"></script>
 <?php if (isset($success)): ?>
 <script>DataCache.invalidate('products');</script>

@@ -749,7 +749,7 @@ $suppliers   = [];
 <div class="toast" id="toast"></div>
 
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
-<script src="js/data-cache.js"></script>
+<script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script>
 // ── Multi-step navigation ─────────────────────────────────────────────────────
 var currentStep = 1;

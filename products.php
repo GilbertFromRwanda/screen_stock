@@ -450,7 +450,7 @@ if (isset($_GET['ajax'])) {
 </div>
 
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
-<script src="js/data-cache.js"></script>
+<script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script src="script.js"></script>
 <script>
 // Populates both category <select>s from DataCache.getCategoriesList() (the full
