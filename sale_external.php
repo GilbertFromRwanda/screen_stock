@@ -790,6 +790,10 @@ function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phone
         document.getElementById(clientInputId).value = opt.getAttribute('data-client');
         var phoneEl = document.getElementById(phoneInputId);
         phoneEl.value = opt.getAttribute('data-phone');
+        // Setting .value directly doesn't fire 'input', so the payment-split
+        // recheck (which clears the "phone required for loan" warning) never
+        // ran on its own — dispatch it so picking a client re-validates immediately.
+        phoneEl.dispatchEvent(new Event('input'));
         search.value = opt.getAttribute('data-client');
         dropdown.classList.remove('open'); hi = -1;
         if (afterPick) afterPick(opt);
