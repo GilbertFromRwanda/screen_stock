@@ -198,11 +198,6 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .client-card-meta { color: var(--secondary); font-size: 12px; margin-top: 3px; }
         .client-card-clear { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; flex-shrink: 0; }
         .client-card-clear:hover { color: #dc2626; }
-        .client-fields-toggle-btn {
-            background: none; border: none; color: var(--primary); font-size: 13px; font-weight: 600;
-            cursor: pointer; padding: 6px 0; text-align: left;
-        }
-        .client-fields-toggle-btn:hover { text-decoration: underline; }
 
         /* ── Payment shortcut chips (compact) ─────────────────────────────────── */
         .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -341,8 +336,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                     </div>
                                     <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
                                 </div>
-                                <button type="button" class="client-fields-toggle-btn" id="bulk_client_fields_toggle" onclick="toggleClientFields('bulk')">+ Set client name / phone</button>
-                                <div id="bulk_client_fields" style="display:none;">
+                                <div id="bulk_client_fields">
                                     <div class="form-group">
                                         <label>Client Name</label>
                                          <input type="text" id="bulk_customer" name="customer_name" placeholder="Enter customer name (defaults to &quot;client&quot;)">
@@ -724,7 +718,11 @@ function showClientCard(prefix, opt) {
     document.getElementById(prefix + '_client_card_name').textContent = name;
     document.getElementById(prefix + '_client_card_meta').textContent = meta.join(' · ');
     document.getElementById(prefix + '_client_card').classList.add('show');
-    document.getElementById(prefix + '_client_select_area').style.display = 'none';
+    // Only collapse the "Existing Client" search box — the name/phone inputs
+    // below it stay visible (and now hold the picked client's values) even
+    // after a client is selected.
+    var pickerGroup = document.getElementById(prefix + 'ClientPickerGroup');
+    if (pickerGroup) pickerGroup.style.display = 'none';
 }
 function _escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -745,28 +743,13 @@ DataCache.getClients().then(function(list) {
         function(opt) { showClientCard('bulk', opt); });
 });
 
-// Client name/phone are collapsed behind a toggle by default — most sales are
-// walk-in/anonymous, so only reveal these fields on demand (or automatically
-// once a loan amount makes the phone number actually required).
-function toggleClientFields(prefix) {
-    var wrap = document.getElementById(prefix + '_client_fields');
-    var open = wrap.style.display !== 'none';
-    wrap.style.display = open ? 'none' : 'block';
-    document.getElementById(prefix + '_client_fields_toggle').textContent = open ? '+ Set client name / phone' : '− Hide client name / phone';
-}
-function showClientFields(prefix) {
-    var wrap = document.getElementById(prefix + '_client_fields');
-    if (wrap.style.display === 'none') {
-        wrap.style.display = 'block';
-        document.getElementById(prefix + '_client_fields_toggle').textContent = '− Hide client name / phone';
-    }
-}
 
 function clearBulkClient() {
     document.getElementById('bulk_customer').value = '';
     document.getElementById('bulk_phone').value = '';
     document.getElementById('bulk_client_card').classList.remove('show');
-    document.getElementById('bulk_client_select_area').style.display = '';
+    var pickerGroup = document.getElementById('bulkClientPickerGroup');
+    if (pickerGroup) pickerGroup.style.display = '';
     document.getElementById('bulk_client_picker_search') && (document.getElementById('bulk_client_picker_search').value = '');
 }
 
@@ -1102,7 +1085,6 @@ function calcBulkSplit(changed) {
     document.getElementById('bulk_remaining').textContent = 'RWF ' + remaining.toLocaleString();
     document.getElementById('bulk_remaining_row').className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
 
-    if (loan > 0) showClientFields('bulk');
     var phoneOk = loan <= 0 || document.getElementById('bulk_phone').value.trim().length > 0;
     document.getElementById('bulk_loan_phone_warn').style.display = (loan > 0 && !phoneOk) ? 'block' : 'none';
 

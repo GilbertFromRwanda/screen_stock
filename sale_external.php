@@ -185,11 +185,6 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         .client-card-meta { color: var(--secondary); font-size: 12px; margin-top: 3px; }
         .client-card-clear { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; flex-shrink: 0; }
         .client-card-clear:hover { color: #dc2626; }
-        .client-fields-toggle-btn {
-            background: none; border: none; color: var(--primary); font-size: 13px; font-weight: 600;
-            cursor: pointer; padding: 6px 0; text-align: left;
-        }
-        .client-fields-toggle-btn:hover { text-decoration: underline; }
 
         /* ── Payment shortcut chips (compact) ─────────────────────────────────── */
         .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -332,8 +327,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     </div>
                                     <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
                                 </div>
-                                <button type="button" class="client-fields-toggle-btn" id="ext_client_fields_toggle" onclick="toggleClientFields('ext')">+ Set client name / phone</button>
-                                <div id="ext_client_fields" style="display:none;">
+                                <div id="ext_client_fields">
                                     <div class="form-group">
                                         <label>Client Name</label>
                                         <input type="text" id="ext_customer_name" name="ext_customer_name" placeholder="Enter customer name (defaults to &quot;client&quot;)">
@@ -817,7 +811,11 @@ function showClientCard(prefix, opt) {
     document.getElementById(prefix + '_client_card_name').textContent = name;
     document.getElementById(prefix + '_client_card_meta').textContent = meta.join(' · ');
     document.getElementById(prefix + '_client_card').classList.add('show');
-    document.getElementById(prefix + '_client_select_area').style.display = 'none';
+    // Only collapse the "Existing Client" search box — the name/phone inputs
+    // below it stay visible (and now hold the picked client's values) even
+    // after a client is selected.
+    var pickerGroup = document.getElementById(prefix + 'ClientPickerGroup');
+    if (pickerGroup) pickerGroup.style.display = 'none';
 }
 
 function _escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -840,28 +838,13 @@ DataCache.getClients().then(function(list) {
 });
 
 
-// Client name/phone are collapsed behind a toggle by default — most sales are
-// walk-in/anonymous, so only reveal these fields on demand (or automatically
-// once a loan amount makes the phone number actually required).
-function toggleClientFields(prefix) {
-    var wrap = document.getElementById(prefix + '_client_fields');
-    var open = wrap.style.display !== 'none';
-    wrap.style.display = open ? 'none' : 'block';
-    document.getElementById(prefix + '_client_fields_toggle').textContent = open ? '+ Set client name / phone' : '− Hide client name / phone';
-}
-function showClientFields(prefix) {
-    var wrap = document.getElementById(prefix + '_client_fields');
-    if (wrap.style.display === 'none') {
-        wrap.style.display = 'block';
-        document.getElementById(prefix + '_client_fields_toggle').textContent = '− Hide client name / phone';
-    }
-}
 
 function clearExtClient() {
     document.getElementById('ext_customer_name').value = '';
     document.getElementById('ext_phone').value = '';
     document.getElementById('ext_client_card').classList.remove('show');
-    document.getElementById('ext_client_select_area').style.display = '';
+    var pickerGroup = document.getElementById('extClientPickerGroup');
+    if (pickerGroup) pickerGroup.style.display = '';
     document.getElementById('ext_client_picker_search') && (document.getElementById('ext_client_picker_search').value = '');
 }
 
@@ -1087,7 +1070,6 @@ function calcExtSplit(changed) {
     document.getElementById('ext_remaining').textContent = 'RWF ' + remaining.toLocaleString();
     document.getElementById('ext_remaining_row').className = 'split-row split-remaining-row ' + (splitOk ? 'valid' : 'invalid');
 
-    if (loan > 0) showClientFields('ext');
     var phoneOk = loan <= 0 || document.getElementById('ext_phone').value.trim().length > 0;
     document.getElementById('ext_loan_phone_warn').style.display = (loan > 0 && !phoneOk) ? 'block' : 'none';
 
