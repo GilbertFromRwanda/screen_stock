@@ -526,6 +526,19 @@ body {
 #saleToast.show { display: block; opacity: 1; }
 #saleToast.toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
 #saleToast.toast-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+#saleToast.toast-warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+/* ── Offline sale queue pending-count badge ───────────────────────────────── */
+#saleQueueBadge {
+    position: fixed; top: 22px; left: 24px; z-index: 99999;
+    min-width: 180px; max-width: 320px;
+    padding: 10px 16px; border-radius: 10px;
+    font-size: 13px; font-weight: 600; line-height: 1.4;
+    box-shadow: 0 8px 28px rgba(0,0,0,.18);
+    background: #fffbeb; color: #92400e; border: 1px solid #fde68a;
+    display: none;
+}
+#saleQueueBadge.show { display: block; }
 
 /* ── Actions dropdown menu (global) ───────────────────────────────────────── */
 .act-menu-wrap { position: relative; display: inline-block; }

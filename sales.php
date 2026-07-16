@@ -253,6 +253,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     $momo_amount   = max(0, (float)($_POST['ext_momo_amount'] ?? 0));
     $loan_amount   = max(0, (float)($_POST['ext_loan_amount'] ?? 0));
 
+    // Idempotency: see identical block in the bulk_sale handler below.
+    // Each cart item is inserted as its own row and gets its own derived ref
+    // ("<client_ref>-<index>") so every product row — not just the first — is
+    // individually protected by the uq_se_client_ref unique key. A retry of this
+    // same submission is recognized by the presence of any row sharing the prefix.
+    $client_ref = trim((string)($_POST['client_ref'] ?? ''));
+    $client_ref_esc = mysqli_real_escape_string($conn, $client_ref);
+    if ($client_ref !== '') {
+        $dupe = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM sales_external WHERE client_ref LIKE '{$client_ref_esc}-%' $cid_and LIMIT 1"));
+        if ($dupe) saleResp(true, "Sale already recorded.", 'external', true);
+    }
+
     $items = json_decode($_POST['items_json'] ?? '[]', true) ?: [];
     $cart  = [];
     foreach ($items as $it) {
@@ -286,34 +298,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     $loan_date = date('Y-m-d');
     $ph_lc_ext = $phone !== '' ? "'$phone'" : 'NULL';
 
-    // The loan record must reflect everything the client took, not just the first cart
-    // item — so when there's more than one product, point it at no single product_id and
-    // describe the whole cart in product_name instead.
-    $loan_product_id_sql = 'NULL';
-    $loan_product_name   = '';
-    $loan_cart_sql       = 'NULL';
-    $loan_qty            = array_sum(array_column($cart, 'quantity'));
-    if (count($cart) === 1 && $cart[0]['product_id'] > 0) {
-        $loan_product_id_sql = $cart[0]['product_id'];
-    }
+    // Loans are inserted one row per product (see loop below) so each product's
+    // own balance is tracked separately. Each row's share of loan_amount is
+    // proportional to that item's share of the cart total, with the rounding
+    // remainder folded into the last item so the rows always sum to exactly
+    // loan_amount.
+    $loan_shares = array_fill(0, count($cart), 0.0);
     if ($loan_amount > 0) {
-        $loan_names = [];
-        $loan_cart_items = [];
-        foreach ($cart as $it) {
-            $loan_names[] = $it['product_name'] . " ({$it['quantity']})";
-            $loan_cart_items[] = [
-                'product_id' => $it['product_id'], 'name' => $it['product_name'],
-                'quantity' => $it['quantity'], 'price' => $it['unit_price'],
-                'item_total' => round($it['quantity'] * $it['unit_price'], 2),
-            ];
+        $n = count($cart);
+        $running = 0.0;
+        foreach ($cart as $i => $it) {
+            if ($i === $n - 1) {
+                $loan_shares[$i] = round($loan_amount - $running, 2);
+            } else {
+                $share = round(($it['quantity'] * $it['unit_price'] / $total_amount) * $loan_amount, 2);
+                $loan_shares[$i] = $share;
+                $running += $share;
+            }
         }
-        $loan_product_name = mysqli_real_escape_string($conn, implode(', ', $loan_names));
-        $loan_cart_sql = "'" . mysqli_real_escape_string($conn, json_encode($loan_cart_items)) . "'";
     }
 
     mysqli_begin_transaction($conn);
     $ok = true;
+    $new_loan_ids = [];
 
+    try {
     foreach ($cart as $i => $it) {
         $product_name    = mysqli_real_escape_string($conn, $it['product_name']);
         $ext_product_id  = $it['product_id'];
@@ -326,6 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         $row_cash        = $i === 0 ? $cash_amount : 0;
         $row_momo        = $i === 0 ? $momo_amount : 0;
         $row_loan        = $i === 0 ? $loan_amount : 0;
+        $row_client_ref  = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
 
         // Resolve owner for this item
         $owner_id_val   = 'NULL';
@@ -344,30 +354,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         }
         if (!$ok) break;
 
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by)
-                       VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $item_total, $row_cash, $row_momo, $row_loan, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by, client_ref)
+                       VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $item_total, $row_cash, $row_momo, $row_loan, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by, $row_client_ref)");
         if (!$ok) break;
         $ext_sale_id = (int)mysqli_insert_id($conn);
 
-        if ($i === 0 && $loan_amount > 0) {
-            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($cid_sql, $loan_product_id_sql, '$loan_product_name', $loan_cart_sql, $loan_qty, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
-            if ($ok) {
-                $new_loan_id = (int)mysqli_insert_id($conn);
-                $ok = (bool)mysqli_query($conn, "
-                    INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-                    VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
-                    ON DUPLICATE KEY UPDATE
-                        id            = LAST_INSERT_ID(id),
-                        total_loans   = total_loans   + 1,
-                        unpaid_amount = unpaid_amount + $loan_amount
-                ");
-                $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-                if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
-           $amount_paid=$cash_amount+$momo_amount;
-             if($amount_paid>0){
-         mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payments On LoanId# $new_loan_id')");
-             }
-                }
+        if ($loan_amount > 0 && $loan_shares[$i] > 0) {
+            $item_loan_amount = $loan_shares[$i];
+            $item_product_id_sql = $ext_product_id > 0 ? $ext_product_id : 'NULL';
+            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, external_id) VALUES ($cid_sql, $item_product_id_sql, '$product_name', NULL, $quantity, $item_loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $ext_sale_id)");
+            if ($ok) $new_loan_ids[] = (int)mysqli_insert_id($conn);
             if (!$ok) break;
         }
 
@@ -378,6 +374,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         } else {
             mysqli_query($conn, "INSERT INTO wishlist (product_name, client_count) VALUES ('$product_name', 1)");
         }
+    }
+
+    // Client-level aggregates (loan_clients balance, the payment already collected)
+    // apply once to the whole sale, not per product row.
+    if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $ok = (bool)mysqli_query($conn, "
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
+            ON DUPLICATE KEY UPDATE
+                id            = LAST_INSERT_ID(id),
+                total_loans   = total_loans   + 1,
+                unpaid_amount = unpaid_amount + $loan_amount
+        ");
+        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) {
+            $loan_ids_sql = implode(',', $new_loan_ids);
+            $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id IN ($loan_ids_sql)");
+        }
+        $amount_paid = $cash_amount + $momo_amount;
+        if ($ok && $amount_paid > 0) {
+            mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payment on sale')");
+        }
+    }
+    } catch (mysqli_sql_exception $e) {
+        mysqli_rollback($conn);
+        if (isDuplicateClientRefError($e)) saleResp(true, "Sale already recorded.", 'external', true);
+        saleResp(false, "Sale could not be recorded. Please try again.", 'external');
     }
 
     if ($ok) {
@@ -396,12 +419,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     }
 }
 
+// A queued offline submission can be retried (background flush) while its own
+// immediate attempt is still in flight, sending the same client_ref twice at
+// once. Both requests can pass the SELECT dupe-check before either commits its
+// INSERT, so the second INSERT hits the uq_*_client_ref unique key — this
+// tells that case apart from a real DB failure so it's reported as a
+// duplicate instead of crashing.
+function isDuplicateClientRefError(mysqli_sql_exception $e): bool {
+    return $e->getCode() === 1062 && stripos($e->getMessage(), 'client_ref') !== false;
+}
+
 // ── AJAX-aware response helper ────────────────────────────────────────────────
-function saleResp(bool $ok, string $msg, string $tab = '') {
+function saleResp(bool $ok, string $msg, string $tab = '', bool $duplicate = false) {
     if (!empty($_POST['ajax'])) {
         ob_clean();
         header('Content-Type: application/json');
-        echo json_encode(['success' => $ok, 'message' => $msg]);
+        echo json_encode(['success' => $ok, 'message' => $msg, 'duplicate' => $duplicate]);
         exit;
     }
     if ($ok) { $_SESSION['flash_success'] = $msg; if ($tab) $_SESSION['flash_sale_type'] = $tab; }
@@ -423,6 +456,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     $cash_amount   = max(0, (float)($_POST['cash_amount'] ?? 0));
     $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
     $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
+
+    // Idempotency: a queued/retried offline submission carries the same client_ref
+    // as its earlier attempt(s). If a row with this ref already exists, the sale
+    // was already recorded (the earlier attempt's response was simply lost) — tell
+    // the caller it succeeded without inserting again.
+    // Each cart item is inserted as its own row and gets its own derived ref
+    // ("<client_ref>-<index>") so every product row — not just the first — is
+    // individually protected by the uq_sb_client_ref unique key. A retry of this
+    // same submission is recognized by the presence of any row sharing the prefix.
+    $client_ref = trim((string)($_POST['client_ref'] ?? ''));
+    $client_ref_esc = mysqli_real_escape_string($conn, $client_ref);
+    if ($client_ref !== '') {
+        $dupe = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM sales_bulk WHERE client_ref LIKE '{$client_ref_esc}-%' $cid_and LIMIT 1"));
+        if ($dupe) saleResp(true, "Sale already recorded.", 'bulk', true);
+    }
 
     $items = json_decode($_POST['items_json'] ?? '[]', true) ?: [];
     $cart  = [];
@@ -460,38 +508,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     $loan_date = date('Y-m-d');
     $ph_lc     = $phone !== '' ? "'$phone'" : 'NULL';
 
-    // The loan record must reflect everything the client took, not just the first cart
-    // item — so when there's more than one product, point it at no single product_id,
-    // describe the whole cart in product_name, and store the itemized list in `cart`
-    // (same fallback loans.php already uses for external sales, plus structured detail).
-    $loan_product_names = [];
-    $loan_cart_sql = 'NULL';
+    // Loans are inserted one row per product (see loop below) so each product's
+    // own balance is tracked separately. Each row's share of loan_amount is
+    // proportional to that item's share of the cart total, with the rounding
+    // remainder folded into the last item so the rows always sum to exactly
+    // loan_amount.
+    $names_by_id = [];
+    $loan_shares = array_fill(0, count($cart), 0.0);
     if ($loan_amount > 0) {
         $cart_pids = array_unique(array_column($cart, 'product_id'));
-        $names_by_id = [];
         $pids_sql = implode(',', array_map('intval', $cart_pids));
         $nres = mysqli_query($conn, "SELECT id, name FROM products WHERE id IN ($pids_sql)");
         while ($nr = mysqli_fetch_assoc($nres)) $names_by_id[$nr['id']] = $nr['name'];
-        $loan_cart_items = [];
-        foreach ($cart as $it) {
-            $pname = $names_by_id[$it['product_id']] ?? ('#' . $it['product_id']);
-            $loan_product_names[] = "$pname ({$it['quantity']})";
-            $loan_cart_items[] = [
-                'product_id' => $it['product_id'], 'name' => $pname,
-                'quantity' => $it['quantity'], 'price' => $it['selling_price'],
-                'item_total' => round($it['quantity'] * $it['selling_price'], 2),
-            ];
+
+        $n = count($cart);
+        $running = 0.0;
+        foreach ($cart as $i => $it) {
+            if ($i === $n - 1) {
+                $loan_shares[$i] = round($loan_amount - $running, 2);
+            } else {
+                $share = round(($it['quantity'] * $it['selling_price'] / $total_amount) * $loan_amount, 2);
+                $loan_shares[$i] = $share;
+                $running += $share;
+            }
         }
-        $loan_cart_sql = "'" . mysqli_real_escape_string($conn, json_encode($loan_cart_items)) . "'";
     }
-    $loan_product_id_sql = count($cart) === 1 ? $cart[0]['product_id'] : 'NULL';
-    $loan_qty            = array_sum(array_column($cart, 'quantity'));
-    $loan_product_name   = mysqli_real_escape_string($conn, implode(', ', $loan_product_names));
 
     mysqli_begin_transaction($conn);
     $ok = true;
     $touched_products = [];
+    $new_loan_ids = [];
 
+    try {
     foreach ($cart as $i => $it) {
         $product_id    = $it['product_id'];
         $quantity      = $it['quantity'];
@@ -505,9 +553,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $row_cash = $i === 0 ? $cash_amount : 0;
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
+        $row_client_ref = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
 
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref)
+                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref)");
         if (!$ok) break;
         $bulk_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;
@@ -515,28 +564,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $ok = (bool)mysqli_query($conn, "UPDATE stock SET quantity = quantity - $packages_to_deduct WHERE product_id = $product_id $cid_and");
         if (!$ok) break;
 
-        if ($i === 0 && $loan_amount > 0) {
-            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ($cid_sql, $loan_product_id_sql, '$loan_product_name', $loan_cart_sql, $loan_qty, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $bulk_sale_id)");
-            if ($ok) {
-                $new_loan_id = (int)mysqli_insert_id($conn);
-                $ok = (bool)mysqli_query($conn, "
-                    INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-                    VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
-                    ON DUPLICATE KEY UPDATE
-                        id            = LAST_INSERT_ID(id),
-                        total_loans   = total_loans   + 1,
-                        unpaid_amount = unpaid_amount + $loan_amount
-                ");
-                $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-                if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
-             $amount_paid=$cash_amount+$momo_amount;
-             if($amount_paid>0){
-                mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payments On LoanId# $new_loan_id')");
-            //  mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by,note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by,'Partial payments On LoanId#'.$new_loan_id)");
-             }
-                }
+        if ($loan_amount > 0 && $loan_shares[$i] > 0) {
+            $item_loan_amount = $loan_shares[$i];
+            $item_product_name = mysqli_real_escape_string($conn, $names_by_id[$product_id] ?? ('#' . $product_id));
+            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, bulk_id) VALUES ($cid_sql, $product_id, '$item_product_name', NULL, $quantity, $item_loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $bulk_sale_id)");
+            if ($ok) $new_loan_ids[] = (int)mysqli_insert_id($conn);
             if (!$ok) break;
         }
+    }
+
+    // Client-level aggregates (loan_clients balance, the payment already collected)
+    // apply once to the whole sale, not per product row.
+    if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $ok = (bool)mysqli_query($conn, "
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+            ON DUPLICATE KEY UPDATE
+                id            = LAST_INSERT_ID(id),
+                total_loans   = total_loans   + 1,
+                unpaid_amount = unpaid_amount + $loan_amount
+        ");
+        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) {
+            $loan_ids_sql = implode(',', $new_loan_ids);
+            $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id IN ($loan_ids_sql)");
+        }
+        $amount_paid = $cash_amount + $momo_amount;
+        if ($ok && $amount_paid > 0) {
+            mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payment on sale')");
+        }
+    }
+    } catch (mysqli_sql_exception $e) {
+        mysqli_rollback($conn);
+        if (isDuplicateClientRefError($e)) saleResp(true, "Sale already recorded.", 'bulk', true);
+        saleResp(false, "Sale could not be recorded. Please try again.", 'bulk');
     }
 
     if ($ok) {
@@ -570,6 +631,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     $cash_amount   = max(0, (float)($_POST['cash_amount'] ?? 0));
     $momo_amount   = max(0, (float)($_POST['momo_amount'] ?? 0));
     $loan_amount   = max(0, (float)($_POST['loan_amount'] ?? 0));
+
+    // Idempotency: see identical block in the bulk_sale handler above.
+    $client_ref = trim((string)($_POST['client_ref'] ?? ''));
+    $client_ref_esc = mysqli_real_escape_string($conn, $client_ref);
+    if ($client_ref !== '') {
+        $dupe = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM sales_retail WHERE client_ref LIKE '{$client_ref_esc}-%' $cid_and LIMIT 1"));
+        if ($dupe) saleResp(true, "Sale already recorded.", 'retail', true);
+    }
 
     $items = json_decode($_POST['items_json'] ?? '[]', true) ?: [];
     $cart  = [];
@@ -607,38 +676,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     $loan_date = date('Y-m-d');
     $ph_lc     = $phone !== '' ? "'$phone'" : 'NULL';
 
-    // The loan record must reflect everything the client took, not just the first cart
-    // item — so when there's more than one product, point it at no single product_id and
-    // describe the whole cart in product_name instead (same fallback loans.php already
-    // uses for external sales).
-    $loan_product_names = [];
-    $loan_cart_sql = 'NULL';
+    // Loans are inserted one row per product (see loop below) so each product's
+    // own balance is tracked separately. Each row's share of loan_amount is
+    // proportional to that item's share of the cart total, with the rounding
+    // remainder folded into the last item so the rows always sum to exactly
+    // loan_amount.
+    $names_by_id = [];
+    $loan_shares = array_fill(0, count($cart), 0.0);
     if ($loan_amount > 0) {
         $cart_pids = array_unique(array_column($cart, 'product_id'));
-        $names_by_id = [];
         $pids_sql = implode(',', array_map('intval', $cart_pids));
         $nres = mysqli_query($conn, "SELECT id, name FROM products WHERE id IN ($pids_sql)");
         while ($nr = mysqli_fetch_assoc($nres)) $names_by_id[$nr['id']] = $nr['name'];
-        $loan_cart_items = [];
-        foreach ($cart as $it) {
-            $pname = $names_by_id[$it['product_id']] ?? ('#' . $it['product_id']);
-            $loan_product_names[] = "$pname ({$it['qty_sold']})";
-            $loan_cart_items[] = [
-                'product_id' => $it['product_id'], 'name' => $pname,
-                'quantity' => $it['qty_sold'], 'price' => $it['selling_price'],
-                'item_total' => round($it['qty_sold'] * $it['selling_price'], 2),
-            ];
+
+        $n = count($cart);
+        $running = 0.0;
+        foreach ($cart as $i => $it) {
+            if ($i === $n - 1) {
+                $loan_shares[$i] = round($loan_amount - $running, 2);
+            } else {
+                $share = round(($it['qty_sold'] * $it['selling_price'] / $total_amount) * $loan_amount, 2);
+                $loan_shares[$i] = $share;
+                $running += $share;
+            }
         }
-        $loan_cart_sql = "'" . mysqli_real_escape_string($conn, json_encode($loan_cart_items)) . "'";
     }
-    $loan_product_id_sql = count($cart) === 1 ? $cart[0]['product_id'] : 'NULL';
-    $loan_qty            = array_sum(array_column($cart, 'qty_sold'));
-    $loan_product_name   = mysqli_real_escape_string($conn, implode(', ', $loan_product_names));
 
     mysqli_begin_transaction($conn);
     $ok = true;
     $touched_products = [];
+    $new_loan_ids = [];
 
+    try {
     foreach ($cart as $i => $it) {
         $product_id       = $it['product_id'];
         $qty_sold         = $it['qty_sold'];
@@ -652,10 +721,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $row_cash = $i === 0 ? $cash_amount : 0;
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
+        $row_client_ref = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
 
         // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by)
-                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref)
+                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref)");
         if (!$ok) break;
         $retail_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;
@@ -663,28 +733,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $pieces_to_deduct WHERE product_id = $product_id $cid_and");
         if (!$ok) break;
 
-        if ($i === 0 && $loan_amount > 0) {
-            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ($cid_sql, $loan_product_id_sql, '$loan_product_name', $loan_cart_sql, $loan_qty, $loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $retail_sale_id)");
-            if ($ok) {
-                $new_loan_id = (int)mysqli_insert_id($conn);
-                $ok = (bool)mysqli_query($conn, "
-                    INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-                    VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
-                    ON DUPLICATE KEY UPDATE
-                        id            = LAST_INSERT_ID(id),
-                        total_loans   = total_loans   + 1,
-                        unpaid_amount = unpaid_amount + $loan_amount
-                ");
-                $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
-                if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id = $new_loan_id");
-            $amount_paid=$cash_amount+$momo_amount;
-             if($amount_paid>0){
-                mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payments On LoanId# $new_loan_id')");
-            //  mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by,note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by,'Partial payments On LoanId#'.$new_loan_id)");
-             }
-                }
+        if ($loan_amount > 0 && $loan_shares[$i] > 0) {
+            $item_loan_amount = $loan_shares[$i];
+            $item_product_name = mysqli_real_escape_string($conn, $names_by_id[$product_id] ?? ('#' . $product_id));
+            $ok = (bool)mysqli_query($conn, "INSERT INTO loans (company_id, product_id, product_name, cart, qty, amount, client, phone, loan_date, given_by, retail_id) VALUES ($cid_sql, $product_id, '$item_product_name', NULL, $qty_sold, $item_loan_amount, '$customer_name', '$phone', '$loan_date', $sold_by, $retail_sale_id)");
+            if ($ok) $new_loan_ids[] = (int)mysqli_insert_id($conn);
             if (!$ok) break;
         }
+    }
+
+    // Client-level aggregates (loan_clients balance, the payment already collected)
+    // apply once to the whole sale, not per product row.
+    if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $ok = (bool)mysqli_query($conn, "
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+            ON DUPLICATE KEY UPDATE
+                id            = LAST_INSERT_ID(id),
+                total_loans   = total_loans   + 1,
+                unpaid_amount = unpaid_amount + $loan_amount
+        ");
+        $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
+        if ($ok) {
+            $loan_ids_sql = implode(',', $new_loan_ids);
+            $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $new_client_id WHERE id IN ($loan_ids_sql)");
+        }
+        $amount_paid = $cash_amount + $momo_amount;
+        if ($ok && $amount_paid > 0) {
+            mysqli_query($conn, "INSERT INTO client_payments (company_id, client_id, amount, payment_date, recorded_by, note) VALUES ($cid_sql, $new_client_id, $amount_paid, '$loan_date', $sold_by, 'Partial payment on sale')");
+        }
+    }
+    } catch (mysqli_sql_exception $e) {
+        mysqli_rollback($conn);
+        if (isDuplicateClientRefError($e)) saleResp(true, "Sale already recorded.", 'retail', true);
+        saleResp(false, "Sale could not be recorded. Please try again.", 'retail');
     }
 
     if ($ok) {

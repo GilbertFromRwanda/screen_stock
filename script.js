@@ -7,7 +7,7 @@ function showSaleToast(message, success) {
         document.body.appendChild(t);
     }
     t.textContent = message;
-    t.className = success ? 'show toast-success' : 'show toast-error';
+    t.className = success === 'warning' ? 'show toast-warning' : (success ? 'show toast-success' : 'show toast-error');
     clearTimeout(t._timer);
     t._timer = setTimeout(function() {
         t.style.opacity = '0';

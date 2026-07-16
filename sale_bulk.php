@@ -486,6 +486,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
 <script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
+<script src="js/sale-queue.js?v=<?php echo filemtime(__DIR__ . '/js/sale-queue.js'); ?>"></script>
 <script src="script.js"></script>
 <script>
 // ── Product picker, backed by DataCache (js/data-cache.js) ─────────────────────
@@ -493,6 +494,8 @@ var bulkSelectedProduct = null;
 var bulkSelectedCat     = '';
 var bulkAllCategories   = [];
 var bulkCart            = [];
+SaleQueue.init();
+if (window.matchMedia('(max-width: 640px)').matches) toggleRecentSales('bulk');
 
 // ── Bulk category searchable select ──────────────────────────────────────────
 (function() {
@@ -1132,15 +1135,11 @@ function handleBulkSubmit() {
     var btn = document.getElementById('bulk_submit_btn');
     btn.disabled = true; btn.textContent = 'Saving...';
 
-    var fd = new FormData(document.getElementById('bulkSaleForm'));
-    fd.append('bulk_sale', '1');
-    fd.append('ajax', '1');
-
-    fetch('sales.php', { method: 'POST', body: fd })
-        .then(function(r) { return r.json(); })
-        .then(function(res) {
-            showSaleToast(res.message, res.success);
-            if (res.success) {
+    var form = document.getElementById('bulkSaleForm');
+    SaleQueue.enqueue('bulk', form, { bulk_sale: '1', ajax: '1' }).then(function(res) {
+        if (res.immediate) {
+            showSaleToast(res.message, res.ok);
+            if (res.ok) {
                 // Sale reduces stock and (on loan) touches loan_clients, and adds a row
                 // to recent_sales_bulk — invalidate all three before reload so other
                 // pages/panels don't read stale cached data.
@@ -1150,12 +1149,18 @@ function handleBulkSubmit() {
                 btn.textContent = 'Save Sale';
                 btn.disabled = false;
             }
-        })
-        .catch(function() {
-            showSaleToast('Network error. Please try again.', false);
+        } else {
+            // Network is too slow/unavailable — the sale is safely queued in
+            // IndexedDB and will sync automatically. Clear the cart so the
+            // cashier can move straight on to the next customer.
+            showSaleToast(res.message, true);
+            bulkCart = [];
+            form.reset();
+            renderBulkCart();
             btn.textContent = 'Save Sale';
             btn.disabled = false;
-        });
+        }
+    });
 }
 </script>
 </body>

@@ -403,3 +403,20 @@ SET sr.purchase_id = (
     ORDER BY pu.purchase_date DESC LIMIT 1
 )
 WHERE sr.purchase_id IS NULL;
+
+-- ── client_ref idempotency key on sales_bulk / sales_retail / sales_external ──
+-- The offline sales queue (js/sale-queue.js) may retry a submission whose first
+-- attempt actually reached the server (stock deducted, loan recorded) but whose
+-- JSON response was lost to a flaky connection. client_ref is a client-generated
+-- id sent with every sale submission (queued or live); sales.php checks it
+-- against this column before inserting and short-circuits with a success
+-- response — without re-inserting — if it's already present, so a replay never
+-- double-counts a sale. Nullable + non-unique-alone because company_id can be
+-- NULL for un-tenanted rows; uniqueness is scoped per company below.
+ALTER TABLE `sales_bulk`     ADD COLUMN IF NOT EXISTS `client_ref` VARCHAR(64) NULL AFTER `sold_by`;
+ALTER TABLE `sales_retail`   ADD COLUMN IF NOT EXISTS `client_ref` VARCHAR(64) NULL AFTER `sold_by`;
+ALTER TABLE `sales_external` ADD COLUMN IF NOT EXISTS `client_ref` VARCHAR(64) NULL AFTER `sold_by`;
+
+CREATE UNIQUE INDEX IF NOT EXISTS `uq_sb_client_ref` ON `sales_bulk`     (`company_id`, `client_ref`);
+CREATE UNIQUE INDEX IF NOT EXISTS `uq_sr_client_ref` ON `sales_retail`   (`company_id`, `client_ref`);
+CREATE UNIQUE INDEX IF NOT EXISTS `uq_se_client_ref` ON `sales_external` (`company_id`, `client_ref`);

@@ -507,8 +507,11 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
 <script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
+<script src="js/sale-queue.js?v=<?php echo filemtime(__DIR__ . '/js/sale-queue.js'); ?>"></script>
 <script src="script.js"></script>
 <script>
+SaleQueue.init();
+if (window.matchMedia('(max-width: 640px)').matches) toggleRecentSales('ext');
 var extSelectedCat   = '';
 var extAllCategories = [];
 var extCart          = [];
@@ -1118,15 +1121,11 @@ function handleExtSubmit() {
     var btn = document.getElementById('ext_submit_btn');
     btn.disabled = true; btn.textContent = 'Saving...';
 
-    var fd = new FormData(document.getElementById('externalSaleForm'));
-    fd.append('external_sale', '1');
-    fd.append('ajax', '1');
-
-    fetch('sales.php', { method: 'POST', body: fd })
-        .then(function(r) { return r.json(); })
-        .then(function(res) {
-            showSaleToast(res.message, res.success);
-            if (res.success) {
+    var form = document.getElementById('externalSaleForm');
+    SaleQueue.enqueue('external', form, { external_sale: '1', ajax: '1' }).then(function(res) {
+        if (res.immediate) {
+            showSaleToast(res.message, res.ok);
+            if (res.ok) {
                 // External sale doesn't touch owned stock, but may create/update
                 // a loan client, and always adds a row to recent_sales_external —
                 // invalidate both before reload.
@@ -1136,12 +1135,18 @@ function handleExtSubmit() {
                 btn.textContent = 'Save Sale';
                 btn.disabled = false;
             }
-        })
-        .catch(function() {
-            showSaleToast('Network error. Please try again.', false);
+        } else {
+            // Network is too slow/unavailable — the sale is safely queued in
+            // IndexedDB and will sync automatically. Clear the cart so the
+            // cashier can move straight on to the next customer.
+            showSaleToast(res.message, true);
+            extCart = [];
+            form.reset();
+            renderExtCart();
             btn.textContent = 'Save Sale';
             btn.disabled = false;
-        });
+        }
+    });
 }
 </script>
 </body>

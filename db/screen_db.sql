@@ -637,6 +637,7 @@ CREATE TABLE `sales_bulk` (
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
   `sold_by` int(11) DEFAULT NULL,
+  `client_ref` varchar(64) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `payment_method` varchar(20) DEFAULT 'Cash',
   `cash_amount` decimal(12,2) DEFAULT 0.00,
@@ -650,6 +651,7 @@ CREATE TABLE `sales_bulk` (
   KEY `idx_sale_date` (`sale_date`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_sb_purchase_id` (`purchase_id`),
+  UNIQUE KEY `uq_sb_client_ref` (`company_id`, `client_ref`),
   CONSTRAINT `sales_bulk_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -667,12 +669,14 @@ CREATE TABLE `sales_external` (
   `loan_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `customer_name` varchar(255) DEFAULT NULL,
   `sold_by` int(11) DEFAULT NULL,
+  `client_ref` varchar(64) DEFAULT NULL,
   `phone` varchar(20) DEFAULT NULL,
   `sale_date` date NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `refunded` tinyint(1) NOT NULL DEFAULT 0,
   `my_revenue` decimal(12,2) NOT NULL DEFAULT 0.00,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_se_client_ref` (`company_id`, `client_ref`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `sales_retail`;
@@ -688,6 +692,7 @@ CREATE TABLE `sales_retail` (
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
   `sold_by` int(11) DEFAULT NULL,
+  `client_ref` varchar(64) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `payment_method` varchar(20) DEFAULT 'Cash',
   `cash_amount` decimal(12,2) DEFAULT 0.00,
@@ -701,6 +706,7 @@ CREATE TABLE `sales_retail` (
   KEY `idx_sale_date` (`sale_date`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_sr_purchase_id` (`purchase_id`),
+  UNIQUE KEY `uq_sr_client_ref` (`company_id`, `client_ref`),
   CONSTRAINT `sales_retail_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
