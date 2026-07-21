@@ -15,7 +15,11 @@ $date_from     = $_GET['date_from'] ?? date('Y-m-d', strtotime('monday this week
 $date_to       = $_GET['date_to']   ?? date('Y-m-d');
 
 $where_parts = ["al.created_at BETWEEN '$date_from 00:00:00' AND '$date_to 23:59:59'"];
-if (!$is_super) $where_parts[] = "(al.company_id = " . (int)cid() . " OR al.company_id IS NULL)";
+if (!$is_super) {
+    $cid_list = cidList();
+    $cid_condition = $cid_list !== null ? "IN (" . implode(',', $cid_list) . ")" : "= " . (int)cid();
+    $where_parts[] = "(al.company_id $cid_condition OR al.company_id IS NULL)";
+}
 if ($filter_action !== '') $where_parts[] = "al.action = '" . mysqli_real_escape_string($conn, $filter_action) . "'";
 if ($filter_table  !== '') $where_parts[] = "al.table_name = '" . mysqli_real_escape_string($conn, $filter_table) . "'";
 if ($filter_user   >  0)  $where_parts[] = "al.user_id = $filter_user";

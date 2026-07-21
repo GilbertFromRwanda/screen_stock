@@ -1,6 +1,41 @@
 <?php
 $current_page = basename($_SERVER['PHP_SELF']);
 $role = $_SESSION['role'] ?? 'staff';
+
+// Ensure $conn is defined. Prefer existing global connection, otherwise try
+// a local default connection to avoid undefined variable errors.
+if (!isset($conn)) {
+    if (isset($GLOBALS['conn'])) {
+        $conn = $GLOBALS['conn'];
+    } else {
+        // Best-effort fallback; adjust credentials/db as appropriate for your env.
+        $conn = @mysqli_connect('127.0.0.1', 'root', '', '');
+    }
+}
+
+// Companies this user can switch their view to. Superadmin can browse "as" any
+// active company (plus an explicit "All Companies" option, cid()=null); everyone
+// else is limited to their own + whatever they were granted (own + granted). Only
+// shown when there's an actual choice — a single-company user gets no dropdown.
+$_nav_accessible_companies = [];
+$_nav_show_all_option = false;
+if (isLoggedIn()) {
+    if ($role === 'superadmin') {
+        $res_sc = mysqli_query($conn, "SELECT id, name FROM companies WHERE status='active' ORDER BY name");
+        while ($row = mysqli_fetch_assoc($res_sc)) {
+            $row['id'] = (int)$row['id'];
+            $_nav_accessible_companies[] = $row;
+        }
+        $_nav_show_all_option = true;
+    } else {
+        $_nav_accessible_companies = getAccessibleCompanies($conn, (int)$_SESSION['user_id']);
+    }
+}
+$_nav_viewing_company_id = cid();
+// True when a non-superadmin, multi-company user is viewing the combined
+// "All (My) Companies" aggregate (cidList() !== null) rather than one company.
+$_nav_viewing_all_mine = $role !== 'superadmin' && cidList() !== null;
+
 try {
     $sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
     socket_connect($sock, '8.8.8.8', 80);
@@ -187,6 +222,28 @@ try {
                 </div>
             </div>
             <?php endif; ?>
+            <?php if (count($_nav_accessible_companies) > 1 || $_nav_show_all_option): ?>
+            <form method="POST" action="switch_company.php" class="tn-company-switch">
+                <input type="hidden" name="return" value="<?= htmlspecialchars($current_page) ?>">
+                <select name="company_id" class="tn-company-select" onchange="this.form.submit()"
+                        title="<?= $_nav_viewing_all_mine ? 'Viewing combined data — pick one company to create or edit records' : 'Viewing company' ?>">
+                    <?php if ($_nav_show_all_option): ?>
+                        <option value="" <?= $_nav_viewing_company_id === null ? 'selected' : '' ?>>All Companies</option>
+                    <?php endif; ?>
+                    <?php if ($role !== 'superadmin' && count($_nav_accessible_companies) > 1): ?>
+                        <option value="all_mine" <?= $_nav_viewing_all_mine ? 'selected' : '' ?>>All My Companies</option>
+                    <?php endif; ?>
+                    <?php foreach ($_nav_accessible_companies as $co): ?>
+                        <option value="<?= (int)$co['id'] ?>" <?= (!$_nav_viewing_all_mine && $_nav_viewing_company_id == $co['id']) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($co['name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($_nav_viewing_all_mine): ?>
+                    <span class="tn-company-agg-tag" title="Viewing combined data — pick one company to create or edit records">&#8942; combined</span>
+                <?php endif; ?>
+            </form>
+            <?php endif; ?>
             <div class="topnav-avatar"><?= strtoupper(substr($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'U', 0, 1)) ?></div>
             <div class="topnav-user-info">
                 <div class="topnav-uname"><?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']) ?></div>
@@ -297,6 +354,18 @@ try {
     display: flex; align-items: center; gap: 8px;
     flex-shrink: 0; margin-left: 8px;
     border-left: 1px solid rgba(255,255,255,.08); padding-left: 12px;
+}
+.tn-company-switch { display: flex; align-items: center; }
+.tn-company-select {
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    color: #cbd5e1; font-size: 11.5px; font-weight: 600; font-family: inherit;
+    padding: 4px 8px; border-radius: 6px; cursor: pointer; max-width: 140px;
+}
+.tn-company-select:hover { background: rgba(255,255,255,.1); }
+.tn-company-select:focus { outline: none; border-color: #3b82f6; }
+.tn-company-agg-tag {
+    font-size: 9.5px; font-weight: 700; color: #fbbf24;
+    margin-left: 4px; white-space: nowrap; letter-spacing: .3px;
 }
 .tn-notif-wrap { position: relative; }
 .tn-notif {

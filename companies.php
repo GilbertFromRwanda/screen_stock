@@ -24,7 +24,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $q = "INSERT INTO companies (name,email,phone,address,status,created_at)
                       VALUES ('$name','$email','$phone','$address','$status',NOW())";
                 if (mysqli_query($conn, $q)) {
+                    $new_company_id = (int)mysqli_insert_id($conn);
                     $success = "Company added successfully!";
+
+                    // Optionally create this company's first admin (owner) in the same step
+                    $owner_name  = trim($_POST['owner_full_name'] ?? '');
+                    $owner_user  = trim($_POST['owner_username'] ?? '');
+                    $owner_email = trim($_POST['owner_email'] ?? '');
+                    $owner_pass  = $_POST['owner_password'] ?? '';
+                    if ($owner_name !== '' || $owner_user !== '' || $owner_email !== '' || $owner_pass !== '') {
+                        if ($owner_name === '' || $owner_user === '' || $owner_email === '' || strlen($owner_pass) < 6) {
+                            $error = "Company created, but the owner account needs a full name, username, email, and a password of at least 6 characters.";
+                        } else {
+                            $owner_user_e  = mysqli_real_escape_string($conn, $owner_user);
+                            $owner_email_e = mysqli_real_escape_string($conn, $owner_email);
+                            $owner_name_e  = mysqli_real_escape_string($conn, $owner_name);
+                            $dupe = mysqli_query($conn, "SELECT id FROM users WHERE username='$owner_user_e' OR email='$owner_email_e'");
+                            if (mysqli_num_rows($dupe) > 0) {
+                                $error = "Company created, but that username or email is already taken — add the owner from the Users page instead.";
+                            } else {
+                                $hash = password_hash($owner_pass, PASSWORD_DEFAULT);
+                                $oq = "INSERT INTO users (company_id, username, password, email, full_name, role, status, created_at)
+                                       VALUES ($new_company_id, '$owner_user_e', '$hash', '$owner_email_e', '$owner_name_e', 'admin', 'active', NOW())";
+                                if (mysqli_query($conn, $oq)) {
+                                    $owner_uid = (int)mysqli_insert_id($conn);
+                                    grantCompanyAccess($conn, $owner_uid, $new_company_id, (int)$_SESSION['user_id']);
+                                    $success = "Company and owner account created successfully!";
+                                    logActivity($conn, (int)$_SESSION['user_id'], 'Add User', "Added owner user: $owner_user",
+                                        'users', $owner_uid, [],
+                                        ['username' => $owner_user, 'email' => $owner_email, 'full_name' => $owner_name, 'role' => 'admin', 'status' => 'active']
+                                    );
+                                } else {
+                                    $error = "Company created, but failed to create the owner account: " . mysqli_error($conn);
+                                }
+                            }
+                        }
+                    }
                 } else {
                     $error = "Error: " . mysqli_error($conn);
                 }
@@ -43,6 +78,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'companies', $company_id, $old_company,
                         ['name' => $name, 'email' => $email, 'phone' => $phone, 'address' => $address, 'status' => $status]
                     );
+
+                    // Optionally promote an existing user of this company to admin/owner
+                    $new_owner_id = isset($_POST['new_owner_user_id']) && $_POST['new_owner_user_id'] !== ''
+                        ? (int)$_POST['new_owner_user_id'] : null;
+                    if ($new_owner_id !== null) {
+                        $target = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, full_name, role, company_id FROM users WHERE id=$new_owner_id"));
+                        if ($target && (int)$target['company_id'] === $company_id) {
+                            if ($target['role'] !== 'admin') {
+                                mysqli_query($conn, "UPDATE users SET role='admin' WHERE id=$new_owner_id");
+                                logActivity($conn, (int)$_SESSION['user_id'], 'Set Company Owner',
+                                    "Promoted user '" . $target['full_name'] . "' to admin/owner of company: $name",
+                                    'users', $new_owner_id, ['role' => $target['role']], ['role' => 'admin']
+                                );
+                            }
+                            $success .= " Owner set.";
+                        } else {
+                            $error = "Company updated, but the selected owner no longer belongs to this company.";
+                        }
+                    }
                 } else {
                     $error = "Error: " . mysqli_error($conn);
                 }
@@ -86,6 +140,14 @@ $res = mysqli_query($conn, "
     ORDER BY c.created_at DESC
 ");
 while ($row = mysqli_fetch_assoc($res)) $companies[] = $row;
+
+// Users grouped by company, for the "set owner" picker in the Edit modal —
+// only users already belonging to a company can be picked as its owner.
+$company_users = [];
+$ures = mysqli_query($conn, "SELECT id, company_id, full_name, username, role FROM users WHERE company_id IS NOT NULL ORDER BY full_name");
+while ($row = mysqli_fetch_assoc($ures)) {
+    $company_users[(int)$row['company_id']][] = $row;
+}
 
 $total    = count($companies);
 $active   = count(array_filter($companies, fn($c) => $c['status'] === 'active'));
@@ -187,6 +249,7 @@ function companyColor($name) {
                     <thead>
                         <tr>
                             <th>Company</th>
+                            <th>Owner</th>
                             <th>Contact</th>
                             <th>Users</th>
                             <th>Status</th>
@@ -198,7 +261,8 @@ function companyColor($name) {
                     <?php foreach ($companies as $c):
                         $color = companyColor($c['name']);
                         $initial = strtoupper($c['name'][0]);
-                        $search_val = strtolower($c['name'] . ' ' . $c['email'] . ' ' . $c['phone']);
+                        $owner_names = implode(' ', array_column(array_filter($company_users[(int)$c['id']] ?? [], fn($u) => $u['role'] === 'admin'), 'full_name'));
+                        $search_val = strtolower($c['name'] . ' ' . $c['email'] . ' ' . $c['phone'] . ' ' . $owner_names);
                         $data = 'data-id="'      . $c['id']                        . '"'
                               . ' data-name="'   . htmlspecialchars($c['name'])    . '"'
                               . ' data-email="'  . htmlspecialchars($c['email'] ?? '') . '"'
@@ -220,6 +284,20 @@ function companyColor($name) {
                                         <?php endif; ?>
                                     </div>
                                 </div>
+                            </td>
+                            <td>
+                                <?php
+                                    $owners = array_filter($company_users[(int)$c['id']] ?? [], fn($u) => $u['role'] === 'admin');
+                                ?>
+                                <?php if (!empty($owners)): ?>
+                                    <div style="font-size:13px;">
+                                        <?php foreach ($owners as $o): ?>
+                                            <div><?php echo htmlspecialchars($o['full_name']); ?> <span style="color:var(--gray-400);">@<?php echo htmlspecialchars($o['username']); ?></span></div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php else: ?>
+                                    <span style="color:var(--gray-400);font-size:13px;">— no owner —</span>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <div style="font-size:13px;">
@@ -261,7 +339,7 @@ function companyColor($name) {
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($companies)): ?>
-                        <tr><td colspan="6" style="text-align:center;color:var(--secondary);padding:32px;">No companies registered yet.</td></tr>
+                        <tr><td colspan="7" style="text-align:center;color:var(--secondary);padding:32px;">No companies registered yet.</td></tr>
                     <?php endif; ?>
                     </tbody>
                 </table>
@@ -314,6 +392,43 @@ function companyColor($name) {
                         <option value="inactive">Inactive</option>
                     </select>
                 </div>
+
+                <div id="ownerSection">
+                    <div class="form-group" style="margin-top:8px;padding-top:16px;border-top:1px solid var(--gray-200);">
+                        <label style="margin-bottom:2px;">Owner Account <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+                        <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;">Create this company's first admin account now, or leave blank and add one later from Users.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Owner Full Name</label>
+                        <input type="text" name="owner_full_name" id="mOwnerName" placeholder="Jane Doe">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Owner Username</label>
+                            <input type="text" name="owner_username" id="mOwnerUsername" placeholder="janedoe">
+                        </div>
+                        <div class="form-group">
+                            <label>Owner Email</label>
+                            <input type="email" name="owner_email" id="mOwnerEmail" placeholder="jane@company.com">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Owner Password</label>
+                        <input type="password" name="owner_password" id="mOwnerPassword" placeholder="Min. 6 characters">
+                    </div>
+                </div>
+
+                <div id="editOwnerSection" style="display:none;">
+                    <div class="form-group" style="margin-top:8px;padding-top:16px;border-top:1px solid var(--gray-200);">
+                        <label style="margin-bottom:2px;">Company Owner</label>
+                        <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;">Promote one of this company's existing users to admin/owner.</p>
+                    </div>
+                    <div class="form-group">
+                        <select name="new_owner_user_id" id="mOwnerSelect">
+                            <option value="">— no change —</option>
+                        </select>
+                    </div>
+                </div>
             </div>
 
             <div class="modal-footer">
@@ -326,6 +441,9 @@ function companyColor($name) {
 
 <script src="script.js"></script>
 <script>
+// users grouped by company_id, pre-loaded from PHP — for the "set owner" picker
+const companyUsers = <?php echo json_encode($company_users); ?>;
+
 function openModal() {
     document.getElementById('modalAction').value = 'add_company';
     document.getElementById('modalTitle').textContent = 'New Company';
@@ -334,6 +452,8 @@ function openModal() {
     document.getElementById('modalIcon').style.color = '#2563eb';
     document.getElementById('companyForm').reset();
     document.getElementById('modalId').value = '';
+    document.getElementById('ownerSection').style.display = '';
+    document.getElementById('editOwnerSection').style.display = 'none';
     document.getElementById('companyModal').classList.add('is-open');
     document.getElementById('mName').focus();
 }
@@ -350,6 +470,23 @@ function openEditModal(btn) {
     document.getElementById('mPhone').value    = btn.dataset.phone;
     document.getElementById('mAddress').value  = btn.dataset.address;
     document.getElementById('mStatus').value   = btn.dataset.status;
+    document.getElementById('ownerSection').style.display = 'none';
+
+    const sel = document.getElementById('mOwnerSelect');
+    sel.innerHTML = '';
+    const noChangeOpt = document.createElement('option');
+    noChangeOpt.value = '';
+    noChangeOpt.textContent = '— no change —';
+    sel.appendChild(noChangeOpt);
+    const users = companyUsers[btn.dataset.id] || [];
+    users.forEach(function(u) {
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = u.full_name + ' (@' + u.username + ')' + (u.role === 'admin' ? ' — current admin' : '');
+        sel.appendChild(opt);
+    });
+    document.getElementById('editOwnerSection').style.display = '';
+
     document.getElementById('companyModal').classList.add('is-open');
     document.getElementById('mName').focus();
 }
@@ -366,6 +503,17 @@ function validateForm() {
     if (document.getElementById('mName').value.trim().length < 2) {
         alert('Company name must be at least 2 characters.');
         return false;
+    }
+    if (document.getElementById('modalAction').value === 'add_company') {
+        const oName = document.getElementById('mOwnerName').value.trim();
+        const oUser = document.getElementById('mOwnerUsername').value.trim();
+        const oEmail = document.getElementById('mOwnerEmail').value.trim();
+        const oPass = document.getElementById('mOwnerPassword').value;
+        const anyOwnerField = oName || oUser || oEmail || oPass;
+        if (anyOwnerField && (!oName || !oUser || !oEmail || oPass.length < 6)) {
+            alert('To create an owner account, fill in owner full name, username, email, and a password of at least 6 characters — or leave all owner fields blank.');
+            return false;
+        }
     }
     return true;
 }

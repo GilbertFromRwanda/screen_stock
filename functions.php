@@ -12,25 +12,106 @@ function isSuperAdmin() {
     return ($_SESSION['role'] ?? '') === 'superadmin';
 }
 
-// Returns the session company_id as int, or null for superadmin
+// Thrown by cidSql() when a write is attempted while viewing the "All
+// Companies" aggregate — a new row must belong to exactly one company, and
+// there's no safe single choice to make on the user's behalf. Caught by the
+// global handler in config.php, which turns it into a friendly flash_error
+// (or a JSON error for AJAX requests) instead of a raw fatal error.
+class AggregateViewWriteBlocked extends \RuntimeException {}
+
+// Returns the company_id whose data should currently be shown: the company the
+// user switched to via the nav selector (viewing_company_id), falling back to
+// their home company_id. Null means "no scope" (superadmin sees everything).
+// While viewing the "All Companies" aggregate (cidList() !== null), this still
+// returns a single representative id (home company) for the many call sites
+// that need exactly one company (recalcStockValue, client cache keying, etc.)
+// — use cidAnd()/cidWhere()/cidAndFor() for read filters, which properly
+// expand to an IN(...) list in aggregate mode instead of just this one id.
 function cid(): ?int {
+    if (isset($_SESSION['viewing_company_id']) && $_SESSION['viewing_company_id'] !== null) {
+        return (int)$_SESSION['viewing_company_id'];
+    }
     return isset($_SESSION['company_id']) && $_SESSION['company_id'] !== null
         ? (int)$_SESSION['company_id'] : null;
 }
-// Returns company_id for SQL INSERT values ("5" or "NULL")
+
+// Returns the list of company ids to filter reads by when the user is viewing
+// the "All Companies" aggregate (their own accessible set — never a global,
+// system-wide unscope; that's only ever null/superadmin territory). Returns
+// null when not in aggregate mode, meaning callers should use cid() instead.
+function cidList(): ?array {
+    if (empty($_SESSION['viewing_all_mine']) || isSuperAdmin() || !isLoggedIn()) {
+        return null;
+    }
+    global $conn;
+    $ids = array_column(getAccessibleCompanies($conn, (int)$_SESSION['user_id']), 'id');
+    return !empty($ids) ? $ids : null;
+}
+
+// Returns the user's real/home company_id (unaffected by the viewing-company switch).
+// Use this for identity/permission checks (e.g. "can this admin manage this user"),
+// never for data scoping — use cid() for that.
+function homeCid(): ?int {
+    return isset($_SESSION['company_id']) && $_SESSION['company_id'] !== null
+        ? (int)$_SESSION['company_id'] : null;
+}
+
+// Companies a user is allowed to switch their view to. Purely driven by
+// user_company_access — including the user's own "home" company, which is
+// no longer hardcoded/implicit: it's granted a row automatically whenever a
+// user is created or assigned a company_id (see users.php/companies.php), but
+// that row can be revoked afterward like any other, same as a granted company.
+// Superadmin has no home company and isn't granted rows here — tenant users only.
+function getAccessibleCompanies($conn, $user_id) {
+    try {
+        $companies = [];
+        $res = mysqli_query($conn, "SELECT c.id, c.name FROM user_company_access uca
+            JOIN companies c ON c.id = uca.company_id
+            WHERE uca.user_id = " . (int)$user_id . " AND c.status = 'active'
+            ORDER BY c.name");
+        while ($row = mysqli_fetch_assoc($res)) {
+            $row['id'] = (int)$row['id'];
+            $companies[$row['id']] = $row;
+        }
+        return array_values($companies);
+    } catch (\Throwable $th) {
+        return [];
+    }
+}
+
+// Grants a user access to view a company (idempotent — safe to call even if
+// the row already exists). Used to auto-seed a user's home company on
+// creation/reassignment, and by users.php when an admin explicitly grants more.
+function grantCompanyAccess($conn, int $user_id, int $company_id, ?int $granted_by = null): void {
+    $granted_by_sql = $granted_by !== null ? (int)$granted_by : 'NULL';
+    mysqli_query($conn, "INSERT IGNORE INTO user_company_access (user_id, company_id, granted_by)
+        VALUES ($user_id, $company_id, $granted_by_sql)");
+}
+// Returns company_id for SQL INSERT values ("5" or "NULL"). Throws when viewing
+// the "All Companies" aggregate — a new row can't belong to several companies
+// at once, so writes are blocked until the user picks one specific company.
 function cidSql(): string {
+    if (cidList() !== null) {
+        throw new AggregateViewWriteBlocked("Select a single company from the nav before creating or editing records.");
+    }
     $c = cid(); return $c !== null ? (string)$c : 'NULL';
 }
-// Returns "AND company_id = X" or "" (superadmin sees all)
+// Returns "AND company_id = X" / "AND company_id IN (...)" or "" (superadmin sees all)
 function cidAnd(): string {
+    $list = cidList();
+    if ($list !== null) return "AND company_id IN (" . implode(',', $list) . ")";
     $c = cid(); return $c !== null ? "AND company_id = $c" : '';
 }
-// Returns "AND alias.company_id = X" or "" — use when query has multiple joined tables
+// Returns "AND alias.company_id = X" / "IN (...)" or "" — use when query has multiple joined tables
 function cidAndFor(string $alias): string {
+    $list = cidList();
+    if ($list !== null) return "AND $alias.company_id IN (" . implode(',', $list) . ")";
     $c = cid(); return $c !== null ? "AND $alias.company_id = $c" : '';
 }
-// Returns "WHERE company_id = X" or "" (superadmin sees all)
+// Returns "WHERE company_id = X" / "WHERE company_id IN (...)" or "" (superadmin sees all)
 function cidWhere(): string {
+    $list = cidList();
+    if ($list !== null) return "WHERE company_id IN (" . implode(',', $list) . ")";
     $c = cid(); return $c !== null ? "WHERE company_id = $c" : '';
 }
 

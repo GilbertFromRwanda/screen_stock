@@ -35,7 +35,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             $_SESSION['username']   = $user['username'];
             $_SESSION['full_name']  = $user['full_name'];
             $_SESSION['role']       = $user['role'];
-            $_SESSION['company_id'] = $user['company_id'] ?? null;
+            $_SESSION['company_id']      = $user['company_id'] ?? null;
+            $_SESSION['viewing_all_mine'] = false;
+
+            // Default the viewing company to home if the user still has access to it
+            // (home access can be revoked from users.php's Company Access modal, same
+            // as any other granted company) — otherwise fall back to whatever they do
+            // still have access to.
+            $_SESSION['viewing_company_id'] = null;
+            if ($_SESSION['company_id'] !== null) {
+                $accessible = getAccessibleCompanies($conn, (int)$user['id']);
+                $accessible_ids = array_column($accessible, 'id');
+                if (in_array((int)$_SESSION['company_id'], $accessible_ids, true)) {
+                    $_SESSION['viewing_company_id'] = (int)$_SESSION['company_id'];
+                } elseif (!empty($accessible_ids)) {
+                    $_SESSION['viewing_company_id'] = (int)$accessible_ids[0];
+                } else {
+                    // Defensive fallback — save_company_access blocks a user from ending
+                    // up with zero accessible companies, so this shouldn't happen.
+                    $_SESSION['viewing_company_id'] = (int)$_SESSION['company_id'];
+                }
+            }
             $time=date('Y-m-d H:i:s');
             mysqli_query($conn, "UPDATE users SET last_login = '$time' WHERE id = " . $user['id']);
             echo json_encode(['success' => true, 'redirect' => 'dashboard.php']);
