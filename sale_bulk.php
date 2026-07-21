@@ -1140,10 +1140,12 @@ function handleBulkSubmit() {
         if (res.immediate) {
             showSaleToast(res.message, res.ok);
             if (res.ok) {
-                // Sale reduces stock and (on loan) touches loan_clients, and adds a row
-                // to recent_sales_bulk — invalidate all three before reload so other
-                // pages/panels don't read stale cached data.
-                Promise.all([DataCache.invalidate('products'), DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_bulk')])
+                // Sale (on loan) touches loan_clients and adds a row to recent_sales_bulk —
+                // invalidate both before reload so other pages/panels don't read stale
+                // cached data. Products are left cached: ajax_levels.php re-checks the
+                // real stock level for a product at selection time, so a stale wh_qty in
+                // the cached search list is only cosmetic.
+                Promise.all([DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_bulk')])
                     .then(function() { location.reload(); });
             } else {
                 btn.textContent = 'Save Sale';

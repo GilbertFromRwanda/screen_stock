@@ -1145,7 +1145,10 @@ function handleRetailSubmit() {
         if (res.immediate) {
             showSaleToast(res.message, res.ok);
             if (res.ok) {
-                Promise.all([DataCache.invalidate('products'), DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_retail')])
+                // Products are left cached: ajax_levels.php re-checks the real stock
+                // level for a product at selection time, so a stale wh_qty in the
+                // cached search list is only cosmetic.
+                Promise.all([DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_retail')])
                     .then(function() { location.reload(); });
             } else {
                 btn.textContent = 'Save Sale';
