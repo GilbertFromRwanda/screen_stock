@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
             mysqli_commit($conn);
             // require_once 'stock_value.php';
             // recalcStockValue($conn, cid(), (int)$row['product_id']);
-            touchCacheStore($conn, 'products');
+            //touchCacheStore($conn, 'products');
             if ($del_client_id > 0) touchCacheStore($conn, 'clients');
 
             $_SESSION['flash_success'] = "Bulk sale deleted and stock restored.";
@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
         mysqli_query($conn, "UPDATE sales_bulk SET quantity=$new_qty, package_price=$new_price, total_amount=$total_amount, cost_total=$new_cost_total, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         // require_once 'stock_value.php';
         // recalcStockValue($conn, cid(), (int)$old['product_id']);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Bulk sale updated.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Bulk Sale', "Edited bulk sale #{$id}",
             'sales_bulk', $id,
@@ -143,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale']))
             mysqli_commit($conn);
             // require_once 'stock_value.php';
             // recalcStockValue($conn, cid(), (int)$row['product_id']);
-            touchCacheStore($conn, 'products');
+            //touchCacheStore($conn, 'products');
             if ($del_client_id > 0) touchCacheStore($conn, 'clients');
 
             $_SESSION['flash_success'] = "Retail sale deleted and stock restored.";
@@ -184,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
         mysqli_query($conn, "UPDATE sales_retail SET pieces_sold=$new_qty, retail_price=$new_price, total_amount=$total_amount, cost_total=$new_cost_total, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         // require_once 'stock_value.php';
         // recalcStockValue($conn, cid(), (int)$old['product_id']);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Retail sale updated.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Retail Sale', "Edited retail sale #{$id}",
             'sales_retail', $id,
@@ -604,7 +604,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         mysqli_commit($conn);
       //  require_once 'stock_value.php';
         // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         touchCacheStore($conn, 'recent_sales_bulk');
         if ($loan_amount > 0) touchCacheStore($conn, 'clients');
 
@@ -773,7 +773,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         mysqli_commit($conn);
         // require_once 'stock_value.php';
         // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         touchCacheStore($conn, 'recent_sales_retail');
         if ($loan_amount > 0) touchCacheStore($conn, 'clients');
 
