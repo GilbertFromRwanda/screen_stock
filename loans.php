@@ -689,13 +689,13 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                         <div class="act-menu">
                               <?php if ($outstanding > 0): ?>
                             <div class="act-menu-sep"></div>
-                            <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo (int)$c['client_id']; ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
+                            <button class="act-item warning" onclick="openGlobalLoanPayFor(<?php echo (int)$c['client_id']; ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
                             <?php endif; ?>
                             <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
 
                             <div class="act-menu-sep"></div>
-                            <button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
+                            <button class="act-item info" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
                           
                         </div>
                     </div>
@@ -790,7 +790,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <span class="close" onclick="closeModal('clientLoansModal')">&times;</span>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;padding-right:34px;">
             <h2 id="clientLoansTitle" style="margin:0;">Loans</h2>
-            <button id="clLoansExportBtn" onclick="exportClientLoans()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;gap:6px;align-items:center;">
+            <button id="clLoansExportBtn" class="btn btn-secondary" onclick="exportClientLoans()" style="display:none;">
                 &#8681; Export
             </button>
         </div>
@@ -1508,10 +1508,14 @@ function renderClientLoans() {
         if (l.external_id) { saleTab = 'external'; saleId = l.external_id; }
         else if (l.bulk_id) { saleTab = 'bulk'; saleId = l.bulk_id; }
         else if (l.retail_id) { saleTab = 'retail'; saleId = l.retail_id; }
-        var saleLink = saleId
-            ? '<a href="sales.php?tab=' + saleTab + '&highlight=' + saleId + '" target="_blank" ' +
-              'style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 6px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;">' +
-              saleTab.charAt(0).toUpperCase() + saleTab.slice(1) + ' ↗</a>' : '';
+        var saleLabel = saleTab.charAt(0).toUpperCase() + saleTab.slice(1);
+        var saleItem = saleId
+            ? '<a class="act-item" href="sales.php?tab=' + saleTab + '&highlight=' + saleId + '" target="_blank"><i class="fas fa-arrow-up-right-from-square"></i> ' + saleLabel + ' Sale</a>'
+            : '';
+        var payItem = balance > 0
+            ? (saleId ? '<div class="act-menu-sep"></div>' : '') +
+              '<button class="act-item warning" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>'
+            : '';
         var cartItems = null;
         try { cartItems = l.cart ? JSON.parse(l.cart) : null; } catch (e) { cartItems = null; }
         var productCell;
@@ -1525,10 +1529,11 @@ function renderClientLoans() {
             productCell = _escHtml(l.product_category || '') + '-' + _escHtml(l.product_name || '—');
         }
         html += '<tr>' +
-            '<td style="white-space:nowrap;">' + saleLink +
-            (balance > 0 ? '<button class="btn-pay" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this)" style="margin-right:4px;">Pay</button>' : '') +
-            '<a href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');" style="font-size:12px;color:var(--danger);text-decoration:none;padding:3px 6px;border:1px solid var(--danger);border-radius:4px;">Del</a>' +
-            '</td>' +
+            '<td><div class="act-menu-wrap"><button class="act-btn" title="Actions" onclick="toggleActMenu(this)">&#8942;</button>' +
+            '<div class="act-menu">' + saleItem + payItem +
+            '<div class="act-menu-sep"></div>' +
+            '<a class="act-item danger" href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');"><i class="fas fa-trash"></i> Delete</a>' +
+            '</div></div></td>' +
             '<td style="color:var(--secondary);">' + (start + idx + 1) + '</td>' +
             '<td style="white-space:nowrap;">' + l.loan_date + '</td>' +
             '<td>' + productCell + '</td>' +
@@ -1936,7 +1941,7 @@ function _renderClientsTable(clients) {
         else                                          { status = 'Unpaid';  badge = 'badge-unpaid'; }
 
         var payBtn = outstanding > 0
-            ? '<div class="act-menu-sep"></div><button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(' + c.client_id + ',' + outstanding + ');closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>'
+            ? '<div class="act-menu-sep"></div><button class="act-item warning" onclick="openGlobalLoanPayFor(' + c.client_id + ',' + outstanding + ');closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>'
             : '';
 
         html += '<tr data-status="' + status.toLowerCase() + '">' +
@@ -1945,7 +1950,7 @@ function _renderClientsTable(clients) {
             '<button class="act-item" onclick="viewClientLoans(' + _escHtml(JSON.stringify(c.name)) + ',' + parseInt(c.client_id) + ');closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>' +
             '<button class="act-item" onclick="viewClientPayments(' + parseInt(c.client_id) + ',' + _escHtml(JSON.stringify(c.name)) + ');closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>' +
             '<div class="act-menu-sep"></div>' +
-            '<button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(' + parseInt(c.client_id) + ',this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>' +
+            '<button class="act-item info" onclick="recalcClientBalance(' + parseInt(c.client_id) + ',this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>' +
             '</div></div></td>' +
             '<td style="color:var(--secondary);">' + (i + 1) + '</td>' +
             '<td style="font-weight:600;">' + _escHtml(c.name) + '</td>' +

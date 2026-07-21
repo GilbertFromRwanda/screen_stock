@@ -565,6 +565,10 @@ body {
 .act-item:hover { background: var(--gray-50); color: var(--dark); }
 .act-item.danger { color: var(--danger); }
 .act-item.danger:hover { background: #fef2f2; }
+.act-item.warning { color: var(--warning); }
+.act-item.warning:hover { background: #fffbeb; }
+.act-item.info { color: var(--info); }
+.act-item.info:hover { background: #eff6ff; }
 .act-item i { width: 14px; text-align: center; font-size: 12px; opacity: .7; }
 .act-menu-sep { height: 1px; background: var(--gray-100); margin: 4px 0; }
 .act-menu form { display: block; margin: 0; padding: 0; }

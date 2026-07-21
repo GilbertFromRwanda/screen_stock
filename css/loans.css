@@ -239,20 +239,6 @@
     align-items: center;
 }
 
-.btn-pay {
-    background: var(--primary);
-    color: var(--white);
-    border: none;
-    padding: 5px 14px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-
-.btn-pay:hover { background: var(--primary-dark); }
-
 .btn-del {
     background: #fff1f2;
     color: var(--danger);
