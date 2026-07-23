@@ -256,7 +256,7 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
         }
         .searchable-select-input:focus {
             outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+            box-shadow: 0 0 0 3px rgba(16,48,96,0.15);
         }
         .searchable-select-dropdown {
             display: none; position: absolute; top: 100%;
@@ -617,7 +617,7 @@ $total_balance = $stats['total_amount'] - $stats['total_paid'];
         <span class="close" onclick="closeModal('conPaymentModal')">&times;</span>
         <h2>Record Payment</h2>
         <div id="conPaymentAlert" class="alert" style="display:none;"></div>
-        <div id="conPaymentInfo" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#1e40af;display:none;gap:24px;flex-wrap:wrap;"></div>
+        <div id="conPaymentInfo" style="background:#e8edf5;border:1px solid #c9d6ea;border-radius:10px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#103060;display:none;gap:24px;flex-wrap:wrap;"></div>
         <form id="conPaymentForm">
             <input type="hidden" id="pay_con_id" name="con_id">
             <div class="form-group">

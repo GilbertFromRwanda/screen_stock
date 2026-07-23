@@ -234,7 +234,7 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
     width:100%; padding:10px 12px; border:1px solid var(--gray-300);
     border-radius:var(--radius); font-size:14px; background:var(--white); box-sizing:border-box;
 }
-.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(16,48,96,.12); }
 .ss-drop {
     display:none; position:absolute; top:100%; left:0; right:0;
     max-height:240px; overflow-y:auto; background:var(--white);
@@ -257,7 +257,7 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
     font-size:13px; font-weight:600; color:var(--secondary); transition:.15s; text-align:center; line-height:1.3;
 }
 .stype-btn:hover:not(.active):not(:disabled) { border-color:var(--gray-300); background:var(--gray-100); }
-.stype-btn.active  { border-color:var(--primary); background:#eff6ff; color:var(--primary); }
+.stype-btn.active  { border-color:var(--primary); background:#e8edf5; color:var(--primary); }
 .stype-btn:disabled { opacity:.35; cursor:not-allowed; }
 .stype-avail { display:block; font-size:11px; font-weight:500; margin-top:3px; color:var(--secondary); }
 .stype-btn.active .stype-avail { color:var(--primary); }
@@ -294,9 +294,9 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
 .cart-item-total { font-size:13px; font-weight:700; }
 .cart-rm  { background:none; border:none; color:#cbd5e1; cursor:pointer; font-size:15px; padding:0; line-height:1; }
 .cart-rm:hover { color:#ef4444; }
-.cart-foot { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; background:#eff6ff; border-top:1px solid #bfdbfe; }
-.cart-foot-lbl { font-size:12px; font-weight:700; color:#1e40af; }
-.cart-foot-val { font-size:20px; font-weight:800; color:#1d4ed8; }
+.cart-foot { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; background:#e8edf5; border-top:1px solid #c9d6ea; }
+.cart-foot-lbl { font-size:12px; font-weight:700; color:#103060; }
+.cart-foot-val { font-size:20px; font-weight:800; color:#0a2148; }
 
 /* Submit bar */
 .submit-bar {
@@ -464,7 +464,7 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
                 ? '<span style="font-size:10px;background:#fef3c7;color:#854d0e;border:1px solid #fde68a;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">RT</span>'
                 : ($src === 'custom'
                     ? '<span style="font-size:10px;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">CUSTOM</span>'
-                    : '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">WH</span>');
+                    : '<span style="font-size:10px;background:#e8edf5;color:#103060;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:6px;font-weight:600;">WH</span>');
             $unit = $src === 'rt' ? 'pcs' : ($src === 'custom' ? '' : 'pkg');
             $isAvailable = ($ei['status'] ?? 'pending') !== 'out_of_stock';
         ?>
@@ -481,7 +481,7 @@ $order_num = $order['order_number'] ?: '#'.$order_id;
                 <?php if (($ei['source'] ?? 'staff') === 'customer'): ?>
                 <span style="font-size:10px;background:#ede9fe;color:#5b21b6;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Customer</span>
                 <?php else: ?>
-                <span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Staff<?php echo !empty($ei['added_by_name']) ? ' &middot; '.htmlspecialchars($ei['added_by_name']) : ''; ?></span>
+                <span style="font-size:10px;background:#e8edf5;color:#103060;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Staff<?php echo !empty($ei['added_by_name']) ? ' &middot; '.htmlspecialchars($ei['added_by_name']) : ''; ?></span>
                 <?php endif; ?>
             </div>
             <div class="ei-edit-row">
@@ -769,7 +769,7 @@ function renderCart() {
             var sub   = item.qty * item.price;
             var badge = item.type === 'rt'
                 ? '<span style="font-size:10px;background:#fef3c7;color:#854d0e;border:1px solid #fde68a;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">RT</span>'
-                : '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">WH</span>';
+                : '<span style="font-size:10px;background:#e8edf5;color:#103060;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">WH</span>';
             return '<div class="cart-item">'
                 + '<div class="cart-item-info">'
                 +   '<div class="cart-item-name">'+escH(item.name)+badge+'</div>'

@@ -55,7 +55,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         }
         .searchable-select-input:focus {
             outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+            box-shadow: 0 0 0 3px rgba(16,48,96,.15);
         }
         .searchable-select-dropdown {
             display: none; position: absolute; top: 100%; left: 0; right: 0;
@@ -93,8 +93,8 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
             border-radius: var(--radius); cursor: pointer; background: var(--white);
             transition: all .15s; min-width: 100px; gap: 2px;
         }
-        .lvl-btn:hover { border-color: var(--primary); background: #eff6ff; }
-        .lvl-btn.active { border-color: var(--primary); background: #eff6ff; }
+        .lvl-btn:hover { border-color: var(--primary); background: #e8edf5; }
+        .lvl-btn.active { border-color: var(--primary); background: #e8edf5; }
         .lvl-btn-name  { font-size: 13px; font-weight: 700; color: var(--dark); }
         .lvl-btn-stock { font-size: 11px; color: var(--secondary); }
         .lvl-btn-price { font-size: 14px; font-weight: 700; color: var(--primary); }
@@ -188,12 +188,12 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 
         /* ── Client card (step 1) ───────────────────────────────────────────── */
         .client-card {
-            display: none; background: #eff6ff; border: 1px solid #bfdbfe;
+            display: none; background: #e8edf5; border: 1px solid #c9d6ea;
             border-radius: var(--radius); padding: 12px 16px;
             align-items: center; justify-content: space-between; gap: 10px;
         }
         .client-card.show { display: flex; }
-        .client-card-name { font-weight: 700; color: #1e40af; font-size: 15px; }
+        .client-card-name { font-weight: 700; color: #103060; font-size: 15px; }
         .client-card-meta { color: var(--secondary); font-size: 12px; margin-top: 3px; }
         .client-card-clear { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; flex-shrink: 0; }
         .client-card-clear:hover { color: #dc2626; }
@@ -240,9 +240,9 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .cart-item-total { font-size: 13px; font-weight: 700; }
         .cart-rm { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 15px; padding: 0; line-height: 1; }
         .cart-rm:hover { color: #ef4444; }
-        .cart-foot { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; background: #eff6ff; border-top: 1px solid #bfdbfe; }
-        .cart-foot-lbl { font-size: 12px; font-weight: 700; color: #1e40af; }
-        .cart-foot-val { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+        .cart-foot { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; background: #e8edf5; border-top: 1px solid #c9d6ea; }
+        .cart-foot-lbl { font-size: 12px; font-weight: 700; color: #103060; }
+        .cart-foot-val { font-size: 20px; font-weight: 800; color: #0a2148; }
         .add-item-btn {
             width: 100%; padding: 11px; margin-top: 4px; background: #0ea5e9;
             color: #fff; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 700; cursor: pointer;
@@ -260,8 +260,8 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .recent-sale-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--gray-100); border-left: 3px solid transparent; font-size: 13px; cursor: pointer; border-radius: 6px; }
         .recent-sale-row:last-child { border-bottom: none; }
         .recent-sale-row:hover { background: var(--gray-100); }
-        .recent-sale-row.selected { background: #eff6ff; border-left-color: var(--primary); }
-        .recent-sale-row.selected:hover { background: #eff6ff; }
+        .recent-sale-row.selected { background: #e8edf5; border-left-color: var(--primary); }
+        .recent-sale-row.selected:hover { background: #e8edf5; }
         .recent-sale-main { min-width: 0; }
         .recent-sale-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .recent-sale-sub { font-size: 12px; color: var(--secondary); margin-top: 2px; }
@@ -439,7 +439,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                     Is Cash?
                                 </label>
                                 <label class="shortcut-chip" title="Full amount goes to momo">
-                                    <input type="checkbox" id="retail_is_momo" onchange="toggleRetailShortcut('momo')" style="accent-color:#2563eb;">
+                                    <input type="checkbox" id="retail_is_momo" onchange="toggleRetailShortcut('momo')" style="accent-color:#103060;">
                                     Is Momo?
                                 </label>
                             </div>

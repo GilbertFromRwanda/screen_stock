@@ -27,7 +27,7 @@
 
 .loan-card {
     background: var(--white);
-    border-radius: 14px;
+    border-radius: var(--radius);
     padding: 20px 18px;
     box-shadow: var(--shadow-sm);
     border: 1px solid var(--gray-200);
@@ -78,7 +78,7 @@
     margin-bottom: 20px;
     padding: 16px 20px;
     background: var(--white);
-    border-radius: 12px;
+    border-radius: var(--radius);
     border: 1px solid var(--gray-200);
     box-shadow: var(--shadow-sm);
     flex-wrap: wrap;
@@ -101,7 +101,7 @@
 .loans-filter .filter-group input {
     padding: 8px 12px;
     border: 1px solid var(--gray-300);
-    border-radius: 8px;
+    border-radius: var(--radius);
     font-size: 14px;
     background: var(--white);
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -111,13 +111,13 @@
 .loans-filter .filter-group input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    box-shadow: 0 0 0 3px rgba(16,48,96,0.12);
 }
 
 /* ── Table ──────────────────────────────────────────────────────────────────── */
 .loans-table-wrap {
     background: var(--white);
-    border-radius: 16px;
+    border-radius: var(--radius);
     border: 1px solid var(--gray-200);
     box-shadow: var(--shadow-sm);
     overflow: hidden;
@@ -131,8 +131,8 @@
 }
 
 .loans-table-wrap .table th {
-    background: #0f172a;
-    color: #94a3b8;
+    background: var(--primary);
+    color: #b8c4d9;
     font-size: 11px;
     letter-spacing: 0.8px;
     padding: 14px 16px;
@@ -180,7 +180,7 @@
 
 /* Grand total row */
 .loans-table-wrap .grand-total td {
-    background: #0f172a !important;
+    background: var(--primary) !important;
     color: #f8fafc !important;
     font-size: 13px;
     padding: 13px 16px !important;
@@ -244,7 +244,7 @@
     color: var(--danger);
     border: 1px solid #fecdd3;
     padding: 5px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
@@ -269,13 +269,13 @@
 }
 
 .payment-info-box {
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
-    border-radius: 10px;
+    background: var(--primary-dim);
+    border: 1px solid #c9d6ea;
+    border-radius: var(--radius);
     padding: 14px 16px;
     margin-bottom: 20px;
     font-size: 13px;
-    color: #1e40af;
+    color: var(--primary);
     display: flex;
     gap: 20px;
     flex-wrap: wrap;
@@ -306,7 +306,7 @@
 .searchable-select-input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    box-shadow: 0 0 0 3px rgba(16,48,96,0.12);
 }
 
 .searchable-select-dropdown {
@@ -338,7 +338,7 @@
 
 .searchable-select-option:hover,
 .searchable-select-option.highlighted {
-    background: #eff6ff;
+    background: var(--primary-dim);
     color: var(--primary);
 }
 

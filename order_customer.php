@@ -357,7 +357,7 @@ $langUrl   = '?code=' . urlencode($code) . '&lang=' . $otherLang;
 <title><?php echo htmlspecialchars($t['page_title']); ?></title>
 <style>
 :root {
-    --primary:#2563eb; --primary-dark:#1d4ed8; --dark:#0f172a; --secondary:#64748b;
+    --primary:#103060; --primary-dark:#0a2148; --dark:#0f172a; --secondary:#64748b;
     --gray-50:#f8fafc; --gray-100:#f1f5f9; --gray-200:#e2e8f0; --gray-300:#cbd5e1;
     --radius:8px; --radius-lg:14px; --white:#fff;
 }
@@ -374,8 +374,8 @@ h1 { font-size:19px; margin:0 0 4px; }
 .msg-icon { font-size:40px; margin-bottom:12px; }
 .msg-title { font-size:17px; font-weight:800; margin-bottom:6px; }
 .msg-sub { font-size:13px; color:var(--secondary); }
-.order-num-box { text-align:center; background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius); padding:14px; margin-top:16px; }
-.order-num-lbl { font-size:11px; font-weight:700; color:#1d4ed8; text-transform:uppercase; letter-spacing:.5px; }
+.order-num-box { text-align:center; background:#e8edf5; border:1px solid #c9d6ea; border-radius:var(--radius); padding:14px; margin-top:16px; }
+.order-num-lbl { font-size:11px; font-weight:700; color:#0a2148; text-transform:uppercase; letter-spacing:.5px; }
 .order-num-val { font-size:24px; font-weight:800; color:#1e3a8a; letter-spacing:1px; margin-top:2px; }
 .order-num-note { font-size:12px; color:var(--secondary); margin-top:8px; }
 .track-link { display:inline-block; font-size:13px; font-weight:700; color:var(--primary); text-decoration:none; margin-top:10px; }
@@ -384,13 +384,13 @@ h1 { font-size:19px; margin:0 0 4px; }
 .form-group { margin-bottom:12px; }
 .form-group label { display:block; font-size:12px; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; }
 .form-group input { width:100%; padding:10px 12px; border:1px solid var(--gray-300); border-radius:var(--radius); font-size:14px; }
-.form-group input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+.form-group input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(16,48,96,.12); }
 
 .sec-lbl { font-size:12px; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:.4px; margin:18px 0 8px; }
 
 .ss-wrap { position:relative; }
 .ss-input { width:100%; padding:11px 12px; border:1px solid var(--gray-300); border-radius:var(--radius); font-size:14px; background:var(--white); }
-.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(16,48,96,.12); }
 .ss-drop { display:none; position:absolute; top:100%; left:0; right:0; max-height:240px; overflow-y:auto; background:var(--white); border:1px solid var(--gray-300); border-top:none; border-radius:0 0 var(--radius) var(--radius); z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,.12); }
 .ss-drop.open { display:block; }
 .ss-opt { padding:10px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--gray-100); }
@@ -401,7 +401,7 @@ h1 { font-size:19px; margin:0 0 4px; }
 
 .stype-toggle { display:flex; gap:8px; margin-top:10px; }
 .stype-btn { flex:1; padding:8px 10px; border:2px solid var(--gray-200); border-radius:var(--radius); background:#fff; cursor:pointer; font-size:12px; font-weight:600; color:var(--secondary); text-align:center; }
-.stype-btn.active { border-color:var(--primary); background:#eff6ff; color:var(--primary); }
+.stype-btn.active { border-color:var(--primary); background:#e8edf5; color:var(--primary); }
 .stype-btn:disabled { opacity:.35; cursor:not-allowed; }
 
 .form-2col { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; margin-top:10px; }
@@ -440,7 +440,7 @@ h1 { font-size:19px; margin:0 0 4px; }
 #toast.err { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
 
 .code-input { width:100%; text-align:center; font-size:26px; font-weight:800; letter-spacing:10px; padding:14px 10px 14px 20px; border:1px solid var(--gray-300); border-radius:var(--radius); }
-.code-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+.code-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(16,48,96,.12); }
 .code-error { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; border-radius:var(--radius); padding:10px 12px; font-size:13px; margin-bottom:14px; text-align:center; }
 </style>
 </head>

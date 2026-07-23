@@ -78,16 +78,16 @@ h1 { font-size: 24px; font-weight: 700; color: #0f172a; margin-bottom: 10px; }
     outline: none; letter-spacing: 1px; text-transform: uppercase;
     transition: border-color .2s, box-shadow .2s;
 }
-.key-input:focus { border-color: #3b82f6; background: #fff; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
+.key-input:focus { border-color: #1a4280; background: #fff; box-shadow: 0 0 0 3px rgba(26,66,128,.12); }
 .key-input::placeholder { letter-spacing: 0; text-transform: none; color: #cbd5e1; }
 .btn-activate {
     width: 100%; margin-top: 14px; padding: 12px;
-    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    background: linear-gradient(135deg, #1a4280, #0a2148);
     color: #fff; border: none; border-radius: 10px;
     font-size: 15px; font-weight: 600; font-family: inherit;
     cursor: pointer; transition: opacity .2s, box-shadow .2s;
 }
-.btn-activate:hover { opacity: .9; box-shadow: 0 4px 16px rgba(59,130,246,.3); }
+.btn-activate:hover { opacity: .9; box-shadow: 0 4px 16px rgba(26,66,128,.3); }
 .alert { padding: 12px 16px; border-radius: 10px; font-size: 13px; margin-top: 14px; text-align: left; }
 .alert-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }

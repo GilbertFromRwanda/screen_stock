@@ -280,7 +280,7 @@ $purchases = mysqli_query($conn, "
             text-transform: uppercase; letter-spacing: .3px;
         }
         .lv-name em { font-style: normal; color: #94a3b8; font-weight: 400; text-transform: none; }
-        .lv-price   { font-size: 11px; font-weight: 700; color: #3b82f6; }
+        .lv-price   { font-size: 11px; font-weight: 700; color: #1a4280; }
 
         /* ── Date subtotal row ────────────────────────────────────────────── */
         tr.date-subtotal td {
@@ -298,7 +298,7 @@ $purchases = mysqli_query($conn, "
         }
         .searchable-select-input:focus {
             outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+            box-shadow: 0 0 0 3px rgba(16,48,96, 0.15);
         }
         .searchable-select-dropdown {
             display: none; position: absolute; top: 100%; left: 0; right: 0;

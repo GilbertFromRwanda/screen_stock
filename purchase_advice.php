@@ -221,9 +221,9 @@ foreach ($products as $p) {
         .adv-card.out    { border-top-color:#7c3aed; }
         .adv-card.urgent { border-top-color:#ef4444; }
         .adv-card.soon   { border-top-color:#f59e0b; }
-        .adv-card.monitor{ border-top-color:#3b82f6; }
+        .adv-card.monitor{ border-top-color:#1a4280; }
         .adv-card.ok     { border-top-color:#10b981; }
-        .adv-card.invest { border-top-color:#6366f1; }
+        .adv-card.invest { border-top-color:#0a2148; }
         .adv-card-num  { font-size:26px; font-weight:800; color:var(--dark); line-height:1.1; }
         .adv-card-lbl  { font-size:10px; font-weight:700; text-transform:uppercase;
                          letter-spacing:.6px; color:var(--secondary); margin-top:4px; }
@@ -240,7 +240,7 @@ foreach ($products as $p) {
         .badge-out     { background:#f3e8ff; color:#7c3aed; }
         .badge-urgent  { background:#fee2e2; color:#dc2626; }
         .badge-soon    { background:#fef3c7; color:#b45309; }
-        .badge-monitor { background:#dbeafe; color:#1d4ed8; }
+        .badge-monitor { background:#e8edf5; color:#0a2148; }
         .badge-ok      { background:#d1fae5; color:#065f46; }
 
         /* ── Advice column ── */
@@ -250,7 +250,7 @@ foreach ($products as $p) {
         .when-out     { color:#7c3aed; }
         .when-urgent  { color:#dc2626; }
         .when-soon    { color:#b45309; }
-        .when-monitor { color:#1d4ed8; }
+        .when-monitor { color:#0a2148; }
         .when-ok      { color:#065f46; }
 
         /* ── Days bar ── */
@@ -262,7 +262,7 @@ foreach ($products as $p) {
         .fill-out      { background:#7c3aed; width:100%; }
         .fill-urgent   { background:#ef4444; }
         .fill-soon     { background:#f59e0b; }
-        .fill-monitor  { background:#3b82f6; }
+        .fill-monitor  { background:#1a4280; }
         .fill-ok       { background:#10b981; width:100%; }
         .days-label    { font-size:11px; font-weight:700; white-space:nowrap; min-width:36px; text-align:right; }
 
@@ -288,9 +288,9 @@ foreach ($products as $p) {
             font-size:13px; transition:border-color .15s, background .15s;
         }
         .priority-opt:has(input:checked) {
-            border-color:var(--primary,#3b82f6); background:#eff6ff;
+            border-color:var(--primary,#1a4280); background:#e8edf5;
         }
-        .priority-opt input { accent-color:var(--primary,#3b82f6); }
+        .priority-opt input { accent-color:var(--primary,#1a4280); }
 
         /* ── Budget planner ── */
         .budget-box {
@@ -313,18 +313,18 @@ foreach ($products as $p) {
         .budget-pill {
             padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700;
         }
-        .pill-spend  { background:#dbeafe; color:#1d4ed8; }
+        .pill-spend  { background:#e8edf5; color:#0a2148; }
         .pill-left   { background:#d1fae5; color:#065f46; }
         .pill-count  { background:#f3f4f6; color:#374151; }
 
         .plan-table td, .plan-table th { font-size:12px; padding:8px 10px; }
         .plan-row-full    { background:#f0fdf4; }
         .plan-row-partial { background:#fffbeb; }
-        .plan-row-extra   { background:#eff6ff; }
+        .plan-row-extra   { background:#e8edf5; }
         .plan-row-skip    { background:#fafafa; opacity:.55; }
         .qty-full    { color:#065f46; font-weight:700; }
         .qty-partial { color:#b45309; font-weight:700; }
-        .qty-extra   { color:#1d4ed8; font-weight:700; }
+        .qty-extra   { color:#0a2148; font-weight:700; }
         .qty-skip    { color:#9ca3af; }
         .skip-reason { font-size:10px; color:#9ca3af; }
         .extras-banner {
@@ -556,7 +556,7 @@ foreach ($products as $p) {
                                     'out'     => '#7c3aed',
                                     'urgent'  => '#dc2626',
                                     'soon'    => '#b45309',
-                                    'monitor' => '#1d4ed8',
+                                    'monitor' => '#0a2148',
                                     default   => '#065f46',
                                 };
                             ?>"><?php echo $days_lbl; ?></span>

@@ -284,7 +284,7 @@ $inactive_users = count(array_filter($all_users, fn($u) => $u['status'] === 'ina
 $admin_users    = count(array_filter($all_users, fn($u) => $u['role'] === 'admin'));
 
 function avatarColor($name) {
-    $colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6'];
+    $colors = ['#1a4280','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6'];
     return $colors[ord($name[0]) % count($colors)];
 }
 
@@ -330,7 +330,7 @@ function avatarColor($name) {
         <!-- Stats Row -->
         <div class="um-stats-row">
             <div class="um-stat-card">
-                <div class="um-stat-icon" style="background:#dbeafe;color:#2563eb;">
+                <div class="um-stat-icon" style="background:#e8edf5;color:#103060;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </div>
                 <div class="um-stat-body">
@@ -723,7 +723,7 @@ function avatarColor($name) {
     <div class="modal-content" style="max-width:420px;">
         <div class="modal-header">
             <div class="modal-title-group">
-                <div class="modal-form-icon" style="background:#eff6ff;color:#2563eb;">
+                <div class="modal-form-icon" style="background:#e8edf5;color:#103060;">
                     <i class="fas fa-building"></i>
                 </div>
                 <h3>Company Access — <span id="accessUserName"></span></h3>
@@ -812,8 +812,8 @@ function setModalMode(mode) {
 
     // icon colour
     const icon = document.getElementById('modalIcon');
-    icon.style.background = isEdit ? '#fef3c7' : '#dbeafe';
-    icon.style.color      = isEdit ? '#d97706'  : '#2563eb';
+    icon.style.background = isEdit ? '#fef3c7' : '#e8edf5';
+    icon.style.color      = isEdit ? '#d97706'  : '#103060';
     icon.innerHTML = isEdit
         ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
         : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';

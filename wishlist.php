@@ -115,8 +115,8 @@ while ($p = mysqli_fetch_assoc($pq)) $products_list[] = $p;
 
         .client-count-badge {
             display: inline-flex; align-items: center; gap: 5px;
-            background: #eff6ff; color: #2563eb;
-            border: 1px solid #bfdbfe;
+            background: #e8edf5; color: #103060;
+            border: 1px solid #c9d6ea;
             border-radius: 99px; padding: 3px 10px;
             font-size: 12px; font-weight: 700;
         }
@@ -159,7 +159,7 @@ while ($p = mysqli_fetch_assoc($pq)) $products_list[] = $p;
         }
         .searchable-select-input:focus {
             outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+            box-shadow: 0 0 0 3px rgba(16,48,96,.15);
         }
         .searchable-select-dropdown {
             display: none; position: absolute; top: 100%; left: 0; right: 0;

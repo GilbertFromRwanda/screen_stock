@@ -137,7 +137,7 @@ while ($row = mysqli_fetch_assoc($losses_q)) $losses[] = $row;
             </thead>
             <tbody>
             <?php foreach ($losses as $i => $l):
-                $type_colors = ['bulk'=>'#3b82f6','retail'=>'#10b981','external'=>'#f59e0b'];
+                $type_colors = ['bulk'=>'#1a4280','retail'=>'#10b981','external'=>'#f59e0b'];
                 $type_color  = $type_colors[$l['sale_type']] ?? '#64748b';
             ?>
             <tr>

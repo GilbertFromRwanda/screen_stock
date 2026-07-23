@@ -511,7 +511,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
 }
 .stk-price {
     font-size: 10px;
-    color: #3b82f6;
+    color: #1a4280;
     font-weight: 500;
     margin-top: 1px;
 }

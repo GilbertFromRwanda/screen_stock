@@ -198,16 +198,16 @@ $can_financials = hasPermission('financials');
                             </div>
                             <div id="coll-cash-pct" style="font-size:11px;color:#15803d;font-weight:600;">0% of total</div>
                         </div>
-                        <div style="background:#eff6ff;border-radius:12px;padding:16px;border-left:4px solid #3b82f6;">
+                        <div style="background:#e8edf5;border-radius:12px;padding:16px;border-left:4px solid #1a4280;">
                             <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
                                 <span style="font-size:18px;">📱</span>
-                                <span style="font-size:12px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;">Momo</span>
+                                <span style="font-size:12px;font-weight:700;color:#0a2148;text-transform:uppercase;letter-spacing:.5px;">Momo</span>
                             </div>
                             <div id="coll-momo-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">RWF 0</div>
-                            <div style="background:#dbeafe;border-radius:99px;height:6px;margin-bottom:5px;">
-                                <div id="coll-momo-bar" style="background:#3b82f6;height:6px;border-radius:99px;width:0%;transition:width .4s;"></div>
+                            <div style="background:#e8edf5;border-radius:99px;height:6px;margin-bottom:5px;">
+                                <div id="coll-momo-bar" style="background:#1a4280;height:6px;border-radius:99px;width:0%;transition:width .4s;"></div>
                             </div>
-                            <div id="coll-momo-pct" style="font-size:11px;color:#1d4ed8;font-weight:600;">0% of total</div>
+                            <div id="coll-momo-pct" style="font-size:11px;color:#0a2148;font-weight:600;">0% of total</div>
                         </div>
                         <div style="background:#fffbeb;border-radius:12px;padding:16px;border-left:4px solid #f59e0b;">
                             <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
@@ -408,7 +408,7 @@ function populate(d) {
         'Bulk: RWF '+moneySpan(d.today_bulk)+' | Retail: RWF '+moneySpan(d.today_rt)+
         '<div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">'+
         '<span style="color:#16a34a;">💵 '+moneySpan(d.today_cash)+'</span>'+
-        '<span style="color:#2563eb;">📱 '+moneySpan(d.today_momo)+'</span>'+
+        '<span style="color:#103060;">📱 '+moneySpan(d.today_momo)+'</span>'+
         '<span style="color:#d97706;">🔖 '+moneySpan(d.today_loan)+'</span>'+
         '</div>');
 

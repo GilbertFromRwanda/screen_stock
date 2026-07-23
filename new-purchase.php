@@ -245,7 +245,7 @@ $suppliers   = [];
         }
         .form-group input:focus, .form-group select:focus {
             outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+            box-shadow: 0 0 0 3px rgba(16,48,96,.12);
         }
 
         /* Searchable product select */
@@ -307,8 +307,8 @@ $suppliers   = [];
         /* Summary box */
         .summary-box {
             grid-column: 1 / -1;
-            background: linear-gradient(135deg, #eff6ff, #f0fdf4);
-            border: 1px solid #bfdbfe; border-radius: 12px; padding: 20px 24px;
+            background: linear-gradient(135deg, #e8edf5, #f0fdf4);
+            border: 1px solid #c9d6ea; border-radius: 12px; padding: 20px 24px;
         }
         .summary-title {
             font-size: 12px; font-weight: 700; text-transform: uppercase;
@@ -327,7 +327,7 @@ $suppliers   = [];
         .summary-node .unit { color: var(--dark); }
         .summary-arrow { color: var(--gray-300); font-size: 20px; }
         .summary-total {
-            margin-top: 14px; padding-top: 12px; border-top: 1px solid #bfdbfe;
+            margin-top: 14px; padding-top: 12px; border-top: 1px solid #c9d6ea;
             font-size: 13px; color: var(--secondary);
         }
         .summary-total strong { color: var(--dark); }
@@ -386,17 +386,17 @@ $suppliers   = [];
             transition: border-color .15s, background .15s;
             display: flex; flex-direction: column; gap: 3px;
         }
-        .preset-card:hover { border-color: var(--primary); background: #eff6ff; }
-        .preset-card.recommended { border-color: #bfdbfe; background: #eff6ff; }
+        .preset-card:hover { border-color: var(--primary); background: #e8edf5; }
+        .preset-card.recommended { border-color: #c9d6ea; background: #e8edf5; }
         .pc-title { font-size: 12px; font-weight: 700; color: var(--dark); }
         .pc-chain { font-size: 11px; color: var(--secondary); }
         .preset-card:hover .pc-title,
         .preset-card.recommended .pc-title { color: var(--primary); }
         .preset-card.active {
-            border-color: var(--primary); background: #dbeafe;
+            border-color: var(--primary); background: #e8edf5;
         }
         .preset-card.active .pc-title { color: var(--primary); }
-        .preset-card.active .pc-chain { color: var(--primary-dark, #1d4ed8); }
+        .preset-card.active .pc-chain { color: var(--primary-dark, #0a2148); }
 
         /* Toast */
         .toast {
@@ -432,7 +432,7 @@ $suppliers   = [];
             background: var(--primary); color: #fff; border: none;
             border-radius: var(--radius); cursor: pointer; transition: background .15s;
         }
-        .btn-save-rates:hover { background: #1d4ed8; }
+        .btn-save-rates:hover { background: #0a2148; }
         .btn-save-rates:disabled { opacity: .6; cursor: not-allowed; }
         .rates-row {
             display: flex; align-items: center; gap: 7px; margin-bottom: 7px; font-size: 13px;
@@ -442,7 +442,7 @@ $suppliers   = [];
             padding: 5px 8px; border: 1px solid var(--gray-300);
             border-radius: var(--radius); font-size: 13px; background: var(--white);
         }
-        .rates-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+        .rates-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(16,48,96,.1); }
         .rates-row .r-name { width: 62px; font-weight: 600; }
         .rates-row .r-val  { width: 90px; }
 
@@ -473,7 +473,7 @@ $suppliers   = [];
             border-radius: var(--radius); font-size: 14px; background: var(--white);
         }
         .cost-expense-row input:focus {
-            outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.1);
+            outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(16,48,96,.1);
         }
         .cost-final-row input {
             flex: 1; padding: 7px 10px; border: 1px solid #6ee7b7;
@@ -488,7 +488,7 @@ $suppliers   = [];
             color: var(--primary); border-top: 1px solid var(--gray-200);
             display: flex; align-items: center; gap: 6px;
         }
-        .sd-new-product:hover { background: #eff6ff; }
+        .sd-new-product:hover { background: #e8edf5; }
 
         /* New-product modal */
         .np-overlay {

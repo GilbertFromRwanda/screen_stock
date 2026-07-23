@@ -123,7 +123,7 @@ $DELIVERY_STAGES = ['placed', 'packed', 'ready', 'delivered', 'received'];
 <title><?php echo htmlspecialchars($t['page_title']); ?></title>
 <style>
 :root {
-    --primary:#2563eb; --primary-dark:#1d4ed8; --dark:#0f172a; --secondary:#64748b;
+    --primary:#103060; --primary-dark:#0a2148; --dark:#0f172a; --secondary:#64748b;
     --gray-50:#f8fafc; --gray-100:#f1f5f9; --gray-200:#e2e8f0; --gray-300:#cbd5e1;
     --radius:8px; --radius-lg:14px; --white:#fff;
 }
@@ -140,7 +140,7 @@ h1 { font-size:19px; margin:0 0 4px; }
 .form-group { margin-bottom:12px; }
 .form-group label { display:block; font-size:12px; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; }
 .form-group input { width:100%; padding:10px 12px; border:1px solid var(--gray-300); border-radius:var(--radius); font-size:14px; box-sizing:border-box; }
-.form-group input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+.form-group input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(16,48,96,.12); }
 
 .track-btn { width:100%; padding:13px; background:var(--primary); color:#fff; border:none; border-radius:var(--radius); font-size:15px; font-weight:700; cursor:pointer; margin-top:6px; }
 .track-btn:hover { background:var(--primary-dark); }

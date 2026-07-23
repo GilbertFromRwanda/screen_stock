@@ -62,11 +62,11 @@ if (!$show_form) {
             font-family: system-ui, sans-serif;
         }
         .fg input.mono { font-family: monospace; font-size: 15px; }
-        .fg input:focus, .fg select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
+        .fg input:focus, .fg select:focus { border-color: #1a4280; box-shadow: 0 0 0 3px rgba(26,66,128,.12); }
 
         /* ── USSD row ── */
         .ussd-row { display: flex; align-items: stretch; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; transition: border .15s, box-shadow .15s; }
-        .ussd-row:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
+        .ussd-row:focus-within { border-color: #1a4280; box-shadow: 0 0 0 3px rgba(26,66,128,.12); }
         .ussd-prefix {
             background: #f1f5f9; border: none; border-right: 1px solid #e2e8f0;
             padding: 10px 10px; font-family: monospace; font-size: 13px;
@@ -93,8 +93,8 @@ if (!$show_form) {
             border: 1.5px solid #e2e8f0; background: #f8fafc; color: #475569;
             transition: all .12s; line-height: 1.3; text-align: left;
         }
-        .chip:hover { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
-        .chip.sel   { background: #2563eb; border-color: #2563eb; color: #fff; }
+        .chip:hover { background: #e8edf5; border-color: #93c5fd; color: #0a2148; }
+        .chip.sel   { background: #103060; border-color: #103060; color: #fff; }
         .chip-name  { display: block; font-family: system-ui, sans-serif; font-size: 10px; font-weight: 600; opacity: .7; margin-top: 1px; }
 
         /* ── Preview ── */
@@ -107,11 +107,11 @@ if (!$show_form) {
 
         /* ── Generate button ── */
         .gen-btn {
-            width: 100%; padding: 11px; background: #2563eb; color: #fff;
+            width: 100%; padding: 11px; background: #103060; color: #fff;
             border: none; border-radius: 8px; font-size: 14px; font-weight: 700;
             cursor: pointer; transition: background .15s; margin-top: 6px;
         }
-        .gen-btn:hover { background: #1d4ed8; }
+        .gen-btn:hover { background: #0a2148; }
 
         /* ── Result view ── */
         .result-wrap { display: flex; gap: 36px; align-items: flex-start; flex-wrap: wrap; }
@@ -124,11 +124,11 @@ if (!$show_form) {
         .res-hint  { font-size: 12px; color: #94a3b8; margin-bottom: 20px; line-height: 1.5; }
         .print-btn {
             display: inline-flex; align-items: center; gap: 8px;
-            background: #2563eb; color: #fff; border: none; border-radius: 8px;
+            background: #103060; color: #fff; border: none; border-radius: 8px;
             padding: 11px 22px; font-size: 14px; font-weight: 700;
             cursor: pointer; text-decoration: none; transition: background .15s;
         }
-        .print-btn:hover { background: #1d4ed8; }
+        .print-btn:hover { background: #0a2148; }
 
         @media (max-width: 600px) {
             .qr-card { padding: 22px 18px; }

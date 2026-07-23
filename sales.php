@@ -1068,7 +1068,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         .searchable-select-input:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+            box-shadow: 0 0 0 3px rgba(16,48,96, 0.15);
         }
         .searchable-select-dropdown {
             display: none;
@@ -1140,8 +1140,8 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             border-radius: var(--radius); cursor: pointer; background: var(--white);
             transition: all .15s; min-width: 100px; gap: 2px;
         }
-        .lvl-btn:hover { border-color: var(--primary); background: #eff6ff; }
-        .lvl-btn.active { border-color: var(--primary); background: #eff6ff; }
+        .lvl-btn:hover { border-color: var(--primary); background: #e8edf5; }
+        .lvl-btn.active { border-color: var(--primary); background: #e8edf5; }
         .lvl-btn-name  { font-size: 13px; font-weight: 700; color: var(--dark); }
         .lvl-btn-stock { font-size: 11px; color: var(--secondary); }
         .lvl-btn-price { font-size: 14px; font-weight: 700; color: var(--primary); }

@@ -76,7 +76,7 @@ $sql_file = __DIR__ . '/db/updates.sql';
         .ru-icon       { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center;
                          justify-content: center; font-size: 18px; flex-shrink: 0; }
         .ru-icon.green { background: #dcfce7; }
-        .ru-icon.blue  { background: #dbeafe; }
+        .ru-icon.blue  { background: #e8edf5; }
         .ru-card-title { font-size: 16px; font-weight: 700; color: var(--text, #1e293b); }
         .ru-card-sub   { font-size: 13px; color: #64748b; margin-bottom: 20px; margin-left: 52px; }
 
@@ -90,8 +90,8 @@ $sql_file = __DIR__ . '/db/updates.sql';
         .ru-btn:disabled { opacity: .55; cursor: not-allowed; }
         .ru-btn.green { background: #16a34a; color: #fff; }
         .ru-btn.green:hover:not(:disabled) { background: #15803d; }
-        .ru-btn.blue  { background: #2563eb; color: #fff; }
-        .ru-btn.blue:hover:not(:disabled)  { background: #1d4ed8; }
+        .ru-btn.blue  { background: #103060; color: #fff; }
+        .ru-btn.blue:hover:not(:disabled)  { background: #0a2148; }
 
         .ru-output { background: #0f172a; color: #94a3b8; font-family: monospace; font-size: 12.5px;
                      padding: 14px 16px; border-radius: 8px; white-space: pre-wrap; word-break: break-all;

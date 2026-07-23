@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             min-height: 100vh;
             display: flex;
-            background: #f0f4ff;
+            background: #f4f6f9;
         }
 
         /* ── Left branding panel ── */
@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             justify-content: center;
             align-items: flex-start;
             padding: 48px 52px;
-            background: #0f172a;
+            background: #103060;
             position: relative;
             overflow: hidden;
         }
@@ -105,8 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             position: absolute;
             inset: 0;
             background:
-                radial-gradient(circle at 15% 75%, rgba(59,130,246,0.12) 0%, transparent 55%),
-                radial-gradient(circle at 80% 15%, rgba(99,102,241,0.10) 0%, transparent 50%);
+                radial-gradient(circle at 15% 75%, rgba(255,255,255,0.08) 0%, transparent 55%),
+                radial-gradient(circle at 80% 15%, rgba(255,255,255,0.06) 0%, transparent 50%);
         }
 
         .brand-logo {
@@ -121,12 +121,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
         .brand-logo-icon {
             width: 48px;
             height: 48px;
-            background: linear-gradient(135deg, #3b82f6, #6366f1);
-            border-radius: 14px;
+            background: rgba(255,255,255,.12);
+            border: 1px solid rgba(255,255,255,.2);
+            border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 16px rgba(59,130,246,0.35);
         }
 
         .brand-logo-icon svg {
@@ -184,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             width: 7px;
             height: 7px;
             border-radius: 50%;
-            background: #3b82f6;
+            background: #1a4280;
             flex-shrink: 0;
         }
 
@@ -194,7 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             right: -60px;
             width: 320px;
             height: 320px;
-            border: 1px solid rgba(59,130,246,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
             border-radius: 50%;
         }
 
@@ -202,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             content: '';
             position: absolute;
             inset: 40px;
-            border: 1px solid rgba(99,102,241,0.07);
+            border: 1px solid rgba(255,255,255,0.07);
             border-radius: 50%;
         }
 
@@ -230,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
         .form-header h2 {
             font-size: 26px;
             font-weight: 700;
-            color: #0f172a;
+            color: #1a1a2e;
             letter-spacing: -0.4px;
             margin-bottom: 8px;
         }
@@ -244,11 +244,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 12px 16px;
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            border-radius: 10px;
-            color: #991b1b;
+            padding: 10px 14px;
+            background: #fee2e2;
+            border-left: 3px solid #dc2626;
+            border-radius: 4px;
+            color: #7f1d1d;
             font-size: 14px;
             margin-bottom: 24px;
         }
@@ -257,7 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             width: 16px;
             height: 16px;
             flex-shrink: 0;
-            fill: #ef4444;
+            fill: #dc2626;
         }
 
         .field {
@@ -290,22 +290,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
         .input-wrap input {
             width: 100%;
             padding: 11px 14px 11px 42px;
-            border: 1.5px solid #e2e8f0;
-            border-radius: 10px;
+            border: 1.5px solid #d0d7e3;
+            border-radius: 4px;
             font-size: 14px;
             font-family: inherit;
-            color: #0f172a;
-            background: #f8fafc;
+            color: #1a1a2e;
+            background: #f4f6f9;
             transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
             outline: none;
         }
 
-        .input-wrap input::placeholder { color: #cbd5e1; }
+        .input-wrap input::placeholder { color: #9aa5b8; }
 
         .input-wrap input:focus {
-            border-color: #3b82f6;
+            border-color: #103060;
             background: #fff;
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+            box-shadow: 0 0 0 3px rgba(16,48,96,0.12);
         }
 
         .input-wrap input[type="password"] { padding-right: 42px; }
@@ -335,22 +335,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
         .btn-signin {
             width: 100%;
             padding: 12px;
-            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            background: #103060;
             color: #fff;
             border: none;
-            border-radius: 10px;
+            border-radius: 4px;
             font-size: 15px;
             font-weight: 600;
             font-family: inherit;
             cursor: pointer;
-            transition: opacity 0.2s, box-shadow 0.2s, transform 0.1s;
+            transition: background 0.2s, transform 0.1s;
             margin-top: 8px;
             letter-spacing: 0.1px;
         }
 
         .btn-signin:hover {
-            opacity: 0.9;
-            box-shadow: 0 4px 16px rgba(59,130,246,0.35);
+            background: #1a4280;
         }
 
         .btn-signin:active { transform: scale(0.99); }
@@ -384,11 +383,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
 
         .powered-by span {
             font-weight: 600;
-            color: #3b82f6;
+            color: #1a4280;
         }
 
         .powered-by a {
-            color: #3b82f6;
+            color: #1a4280;
             text-decoration: none;
         }
 

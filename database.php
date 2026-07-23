@@ -317,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
         }
         .tbl-pill:hover { background: var(--gray-200); color: var(--dark); }
         .tbl-pill.active {
-            background: #1e40af; color: #fff; border-color: #1e40af;
+            background: #103060; color: #fff; border-color: #103060;
         }
         .tbl-pill .cnt {
             font-size: 11px; padding: 1px 6px; border-radius: 10px;
@@ -336,7 +336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
         }
         .db-toolbar input[type=text]:focus {
             outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+            box-shadow: 0 0 0 3px rgba(16,48,96,.12);
         }
 
         /* Updates panel */
@@ -377,7 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
             border: 1px solid var(--gray-200); color: var(--dark);
         }
         .pagination a:hover { background: var(--gray-100); }
-        .pagination .cur { background: #1e40af; color: #fff; border-color: #1e40af; }
+        .pagination .cur { background: #103060; color: #fff; border-color: #103060; }
         .pagination .disabled { color: var(--gray-300); pointer-events: none; }
 
         /* Slow queries panel */
@@ -408,14 +408,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_db']) && $is_su
         .sq-table tr:last-child td { border-bottom:none; }
         .sq-table tr:hover td { background:var(--gray-100); }
         .sq-query {
-            font-family:monospace; font-size:11.5px; color:#1e40af;
+            font-family:monospace; font-size:11.5px; color:#103060;
             word-break:break-all; max-width:380px; line-height:1.5;
         }
         .sq-slow  { color:#dc2626; font-weight:700; }
         .sq-med   { color:#d97706; font-weight:600; }
         .sq-fast  { color:#16a34a; }
         .sq-bar-wrap { background:var(--gray-100); border-radius:3px; height:6px; width:80px; margin-top:3px; }
-        .sq-bar { height:6px; border-radius:3px; background:#3b82f6; }
+        .sq-bar { height:6px; border-radius:3px; background:#1a4280; }
         .explain-rows { font-size:11.5px; margin-top:6px; padding:10px; background:#f8fafc;
             border-radius:6px; border:1px solid var(--gray-200); overflow-x:auto; }
 
@@ -691,7 +691,7 @@ function renderFallback(d) {
     html += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;">';
     var statusItems = [
         { icon:'⚡', label:'Slow Queries', val: slowQ.toLocaleString(), color: slowQ > 0 ? '#dc2626' : '#16a34a' },
-        { icon:'📊', label:'Total Queries', val: totalQ.toLocaleString(), color:'#1e40af' },
+        { icon:'📊', label:'Total Queries', val: totalQ.toLocaleString(), color:'#103060' },
         { icon:'⏱', label:'Uptime', val: uptimeStr, color:'#6b7280' },
         { icon:'🔗', label:'Connections', val: threads.toLocaleString(), color:'#7c3aed' },
     ];
@@ -771,7 +771,7 @@ function explainQuery(idx, query) {
                     var v = row[k] != null ? row[k] : '—';
                     var tdStyle = '';
                     if (k === 'type' && ['ALL', 'index'].includes(String(v))) tdStyle = 'color:#dc2626;font-weight:700;';
-                    if (k === 'rows') tdStyle = 'color:#1e40af;font-weight:600;';
+                    if (k === 'rows') tdStyle = 'color:#103060;font-weight:600;';
                     return '<td style="padding:4px 8px;border:1px solid #e2e8f0;' + tdStyle + '">' + esc(String(v)) + '</td>';
                 }).join('') + '</tr>';
             });

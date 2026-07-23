@@ -93,11 +93,11 @@ function action_badge(string $action): string {
         .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight:600; }
         .badge-red   { background:#fee2e2; color:#b91c1c; }
         .badge-amber { background:#fef3c7; color:#b45309; }
-        .badge-blue  { background:#dbeafe; color:#1d4ed8; }
+        .badge-blue  { background:#e8edf5; color:#0a2148; }
 
         .al-vals { font-size:11.5px; line-height:1.7; color:#374151; }
         .al-key  { font-weight:600; color:#6b7280; }
-        details summary { cursor:pointer; font-size:11.5px; color:#3b82f6; user-select:none; }
+        details summary { cursor:pointer; font-size:11.5px; color:#1a4280; user-select:none; }
         details[open] summary { margin-bottom:4px; }
 
         .al-empty { text-align:center; padding:48px; color:var(--secondary); }
@@ -109,7 +109,7 @@ function action_badge(string $action): string {
             border:1px solid var(--gray-300); text-decoration:none; color:var(--dark);
         }
         .pager a:hover { background:#f1f5f9; }
-        .pager .cur { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+        .pager .cur { background:#1a4280; color:#fff; border-color:#1a4280; }
         .pager .disabled { opacity:.4; pointer-events:none; }
     </style>
 </head>

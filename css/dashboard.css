@@ -2,17 +2,16 @@
 
 /* ── Welcome banner ──────────────────────────────────────────────────────── */
 .welcome-message {
-    background: linear-gradient(120deg, #1e3a5f 0%, #2563eb 55%, #4f46e5 100%);
+    background: var(--primary);
     color: #fff;
     padding: 28px 32px;
-    border-radius: 18px;
+    border-radius: var(--radius);
     margin-bottom: 28px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 16px;
-    box-shadow: 0 8px 32px rgba(37,99,235,.28);
-    border: none;
+    border: 1px solid var(--primary-light);
     position: relative;
     overflow: hidden;
 }
@@ -47,9 +46,8 @@
 
 .stat-card {
     background: var(--white);
-    border-radius: 16px;
+    border-radius: var(--radius);
     padding: 22px 20px 18px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.06);
     border: 1px solid var(--gray-200);
     border-top: 4px solid var(--primary);
     position: relative;
@@ -58,11 +56,10 @@
 }
 .stat-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(0,0,0,.10);
 }
 
 /* Each card a distinct colour */
-.stat-card:nth-child(1) { border-top-color: #3b82f6; }
+.stat-card:nth-child(1) { border-top-color: #1a4280; }
 .stat-card:nth-child(2) { border-top-color: #8b5cf6; }
 .stat-card:nth-child(3) { border-top-color: #10b981; }
 .stat-card:nth-child(4) { border-top-color: #f59e0b; }
@@ -107,16 +104,15 @@
 }
 .section-title .badge-count {
     font-size: 11px; font-weight: 700;
-    background: #eff6ff; color: var(--primary);
-    border: 1px solid #bfdbfe;
+    background: var(--primary-dim); color: var(--primary);
+    border: 1px solid #c9d6ea;
     padding: 2px 10px; border-radius: 99px;
 }
 
 /* ── Alerts ───────────────────────────────────────────────────────────────── */
 .alerts-container {
     background: var(--white);
-    border-radius: 16px; padding: 22px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    border-radius: var(--radius); padding: 22px;
     border: 1px solid var(--gray-200);
     margin-bottom: 28px;
 }
@@ -127,15 +123,15 @@
 
 .alert-item {
     display: flex; align-items: flex-start; gap: 14px;
-    padding: 13px 16px; border-radius: 12px; margin-bottom: 10px;
+    padding: 13px 16px; border-radius: var(--radius); margin-bottom: 10px;
     border-left: 4px solid transparent;
     transition: box-shadow .15s;
 }
 .alert-item:last-child { margin-bottom: 0; }
-.alert-item:hover { box-shadow: 0 4px 12px rgba(0,0,0,.07); }
+.alert-item:hover { border-color: var(--primary); }
 .alert-item.warning { background: #fffbeb; border-left-color: #f59e0b; }
-.alert-item.info    { background: #eff6ff; border-left-color: #3b82f6; }
-.alert-item.success { background: #f0fdf4; border-left-color: #10b981; }
+.alert-item.info    { background: var(--primary-dim); border-left-color: var(--primary); }
+.alert-item.success { background: #d1fae5; border-left-color: var(--success); }
 
 .alert-icon { font-size: 22px; line-height: 1; flex-shrink: 0; margin-top: 1px; }
 .alert-content { flex: 1; }
@@ -156,8 +152,7 @@
 /* ── Cards (chart containers) ─────────────────────────────────────────────── */
 .chart-container {
     background: var(--white);
-    border-radius: 16px; padding: 22px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    border-radius: var(--radius); padding: 22px;
     border: 1px solid var(--gray-200);
 }
 .chart-container h3 {
@@ -180,7 +175,7 @@
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 8px;
     padding: 16px 10px;
-    border-radius: 12px; text-decoration: none;
+    border-radius: var(--radius); text-decoration: none;
     font-size: 13px; font-weight: 600;
     color: var(--dark);
     background: var(--gray-50);
@@ -190,7 +185,6 @@
 }
 .quick-action-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0,0,0,.09);
     background: var(--white);
     border-color: var(--primary);
     color: var(--primary);
@@ -212,8 +206,7 @@
 /* ── Recent activities ────────────────────────────────────────────────────── */
 .recent-activities {
     background: var(--white);
-    border-radius: 16px; padding: 22px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    border-radius: var(--radius); padding: 22px;
     border: 1px solid var(--gray-200);
     margin-bottom: 24px;
 }
@@ -232,10 +225,10 @@
 
 .activity-badge {
     width: 40px; height: 40px; flex-shrink: 0;
-    border-radius: 12px; display: flex; align-items: center;
+    border-radius: var(--radius); display: flex; align-items: center;
     justify-content: center; font-size: 18px;
 }
-.badge-bulk     { background: #eff6ff; }
+.badge-bulk     { background: var(--primary-dim); }
 .badge-retail   { background: #f0fdf4; }
 .badge-purchase { background: #fdf4ff; }
 
@@ -256,8 +249,7 @@
 
 /* ── Performance / Insights boxes ────────────────────────────────────────── */
 .perf-box {
-    background: var(--white); border-radius: 16px;
-    padding: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    background: var(--white); border-radius: var(--radius);
     border: 1px solid var(--gray-200);
 }
 .perf-box h4 {
@@ -266,7 +258,7 @@
 .perf-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
 }
-.perf-item { background: var(--gray-50); border-radius: 10px; padding: 14px; }
+.perf-item { background: var(--gray-50); border-radius: var(--radius); padding: 14px; }
 .perf-item-label { font-size: 11px; color: var(--secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
 .perf-item-value { font-size: 20px; font-weight: 800; color: var(--dark); }
 
@@ -281,7 +273,7 @@
 /* ── Low stock list ───────────────────────────────────────────────────────── */
 .low-stock-item {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 12px; border-radius: 10px; margin-bottom: 8px;
+    padding: 10px 12px; border-radius: var(--radius); margin-bottom: 8px;
     background: var(--gray-50); border: 1px solid var(--gray-100);
 }
 .low-stock-item:last-child { margin-bottom: 0; }
@@ -295,7 +287,7 @@
 /* ── Mini stats inside stock health ──────────────────────────────────────── */
 .mini-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
 .mini-stat {
-    background: var(--gray-50); border-radius: 10px; padding: 14px;
+    background: var(--gray-50); border-radius: var(--radius); padding: 14px;
     text-align: center; border: 1px solid var(--gray-100);
 }
 .mini-stat-value { font-size: 22px; font-weight: 800; color: var(--primary); }
@@ -322,7 +314,7 @@
 .customer-item:last-child { border-bottom: none; }
 .customer-avatar {
     width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-    background: linear-gradient(135deg,#3b82f6,#6366f1);
+    background: var(--primary);
     display: flex; align-items: center; justify-content: center;
     font-size: 13px; font-weight: 700; color: #fff;
 }

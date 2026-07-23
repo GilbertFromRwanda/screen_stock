@@ -154,7 +154,7 @@ $active   = count(array_filter($companies, fn($c) => $c['status'] === 'active'))
 $inactive = $total - $active;
 
 function companyColor($name) {
-    $colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6'];
+    $colors = ['#1a4280','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6'];
     return $colors[ord($name[0]) % count($colors)];
 }
 ?>
@@ -197,7 +197,7 @@ function companyColor($name) {
         <!-- Stats -->
         <div class="um-stats-row">
             <div class="um-stat-card">
-                <div class="um-stat-icon" style="background:#dbeafe;color:#2563eb;">
+                <div class="um-stat-icon" style="background:#e8edf5;color:#103060;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2Z"/></svg>
                 </div>
                 <div class="um-stat-body">
@@ -354,7 +354,7 @@ function companyColor($name) {
     <div class="modal-content modal-form">
         <div class="modal-header">
             <div class="modal-title-group">
-                <div class="modal-form-icon" id="modalIcon" style="background:#dbeafe;color:#2563eb;">
+                <div class="modal-form-icon" id="modalIcon" style="background:#e8edf5;color:#103060;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </div>
                 <h3 id="modalTitle">New Company</h3>
@@ -448,8 +448,8 @@ function openModal() {
     document.getElementById('modalAction').value = 'add_company';
     document.getElementById('modalTitle').textContent = 'New Company';
     document.getElementById('modalSubmitBtn').textContent = 'Create Company';
-    document.getElementById('modalIcon').style.background = '#dbeafe';
-    document.getElementById('modalIcon').style.color = '#2563eb';
+    document.getElementById('modalIcon').style.background = '#e8edf5';
+    document.getElementById('modalIcon').style.color = '#103060';
     document.getElementById('companyForm').reset();
     document.getElementById('modalId').value = '';
     document.getElementById('ownerSection').style.display = '';

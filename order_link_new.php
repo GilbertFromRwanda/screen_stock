@@ -140,7 +140,7 @@ $baseUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['SCRIPT_NA
     width:100%; padding:10px 12px; border:1px solid var(--gray-300);
     border-radius:var(--radius); font-size:14px; background:var(--white); box-sizing:border-box;
 }
-.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.15); }
+.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(16,48,96,.15); }
 .ss-drop {
     display:none; position:absolute; top:100%; left:0; right:0;
     max-height:230px; overflow-y:auto; background:var(--white);
@@ -154,12 +154,12 @@ $baseUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['SCRIPT_NA
 .ss-sub { font-size:11px; color:var(--secondary); }
 
 .owner-card {
-    display:none; background:#eff6ff; border:1px solid #bfdbfe;
+    display:none; background:#e8edf5; border:1px solid #c9d6ea;
     border-radius:var(--radius); padding:12px 16px;
     align-items:center; justify-content:space-between; gap:10px;
 }
 .owner-card.show { display:flex; }
-.owner-card-name { font-weight:700; color:#1e40af; font-size:15px; }
+.owner-card-name { font-weight:700; color:#103060; font-size:15px; }
 .owner-card-meta { color:var(--secondary); font-size:12px; margin-top:3px; }
 .owner-card-clear { background:none; border:none; color:#94a3b8; cursor:pointer; font-size:20px; line-height:1; padding:0 4px; flex-shrink:0; }
 .owner-card-clear:hover { color:#dc2626; }

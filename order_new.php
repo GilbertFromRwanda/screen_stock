@@ -164,7 +164,7 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
 }
 .ms-step.active .ms-bubble {
     background:var(--primary); color:#fff; border-color:var(--primary);
-    box-shadow:0 0 0 4px rgba(37,99,235,.12);
+    box-shadow:0 0 0 4px rgba(16,48,96,.12);
 }
 .ms-step.done .ms-bubble { background:#10b981; color:#fff; border-color:#10b981; }
 .ms-label { font-size:12px; font-weight:600; color:var(--secondary); white-space:nowrap; }
@@ -195,7 +195,7 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
     width:100%; padding:10px 12px; border:1px solid var(--gray-300);
     border-radius:var(--radius); font-size:14px; background:var(--white); box-sizing:border-box;
 }
-.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.15); }
+.ss-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(16,48,96,.15); }
 .ss-drop {
     display:none; position:absolute; top:100%; left:0; right:0;
     max-height:230px; overflow-y:auto; background:var(--white);
@@ -212,12 +212,12 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
 @keyframes sd-spin { to { transform:rotate(360deg); } }
 
 .owner-card {
-    display:none; background:#eff6ff; border:1px solid #bfdbfe;
+    display:none; background:#e8edf5; border:1px solid #c9d6ea;
     border-radius:var(--radius); padding:12px 16px;
     align-items:center; justify-content:space-between; gap:10px;
 }
 .owner-card.show { display:flex; }
-.owner-card-name { font-weight:700; color:#1e40af; font-size:15px; }
+.owner-card-name { font-weight:700; color:#103060; font-size:15px; }
 .owner-card-meta { color:var(--secondary); font-size:12px; margin-top:3px; }
 .owner-card-clear { background:none; border:none; color:#94a3b8; cursor:pointer; font-size:20px; line-height:1; padding:0 4px; flex-shrink:0; }
 .owner-card-clear:hover { color:#dc2626; }
@@ -255,7 +255,7 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
     transition:.15s; text-align:center; line-height:1.3;
 }
 .stype-btn:hover:not(.active):not(:disabled) { border-color:var(--gray-300); background:var(--gray-100); }
-.stype-btn.active { border-color:var(--primary); background:#eff6ff; color:var(--primary); }
+.stype-btn.active { border-color:var(--primary); background:#e8edf5; color:var(--primary); }
 .stype-btn:disabled { opacity:.35; cursor:not-allowed; }
 .stype-avail { display:block; font-size:11px; font-weight:500; margin-top:3px; color:var(--secondary); }
 .stype-btn.active .stype-avail { color:var(--primary); }
@@ -282,15 +282,15 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
 .cart-item-total { font-size:13px; font-weight:700; }
 .cart-rm { background:none; border:none; color:#cbd5e1; cursor:pointer; font-size:15px; padding:0; line-height:1; }
 .cart-rm:hover { color:#ef4444; }
-.cart-foot { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; background:#eff6ff; border-top:1px solid #bfdbfe; }
-.cart-foot-lbl { font-size:12px; font-weight:700; color:#1e40af; }
-.cart-foot-val { font-size:20px; font-weight:800; color:#1d4ed8; }
+.cart-foot { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; background:#e8edf5; border-top:1px solid #c9d6ea; }
+.cart-foot-lbl { font-size:12px; font-weight:700; color:#103060; }
+.cart-foot-val { font-size:20px; font-weight:800; color:#0a2148; }
 
 /* ── Step 3: review ───────────────────────────────────────────────────────── */
 .review-block { margin-bottom:20px; }
 .review-lbl { font-size:12px; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
-.review-owner { background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius); padding:11px 16px; }
-.review-owner-name { font-weight:700; color:#1e40af; font-size:14px; }
+.review-owner { background:#e8edf5; border:1px solid #c9d6ea; border-radius:var(--radius); padding:11px 16px; }
+.review-owner-name { font-weight:700; color:#103060; font-size:14px; }
 .review-owner-meta { font-size:12px; color:var(--secondary); margin-top:2px; }
 .review-items { border:1px solid var(--gray-200); border-radius:var(--radius); overflow:hidden; }
 .review-items-head { padding:8px 14px; background:var(--gray-50); border-bottom:1px solid var(--gray-200); font-size:11px; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:.5px; }
@@ -299,7 +299,7 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
 .review-row-name { font-weight:600; }
 .review-row-sub { font-size:11px; color:var(--secondary); margin-top:1px; }
 .review-row-amt { font-weight:700; flex-shrink:0; margin-left:12px; }
-.review-total { display:flex; justify-content:space-between; padding:12px 14px; background:#eff6ff; border-top:2px solid #bfdbfe; font-size:15px; font-weight:800; color:#1d4ed8; }
+.review-total { display:flex; justify-content:space-between; padding:12px 14px; background:#e8edf5; border-top:2px solid #c9d6ea; font-size:15px; font-weight:800; color:#0a2148; }
 
 /* ── Prepaid ──────────────────────────────────────────────────────────────── */
 .pay-lbl-row { font-size:12px; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:.5px; margin:22px 0 10px; }
@@ -310,7 +310,7 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
     border-radius:var(--radius); background:var(--gray-50);
     transition:border-color .15s, background .15s;
 }
-.pay-shortcut-lbl:has(input:checked) { border-color:var(--primary); background:#eff6ff; }
+.pay-shortcut-lbl:has(input:checked) { border-color:var(--primary); background:#e8edf5; }
 .pay-shortcut-lbl input[type="checkbox"] { width:17px; height:17px; cursor:pointer; accent-color:var(--primary); flex-shrink:0; }
 .pay-shortcut-name { font-weight:700; font-size:14px; color:var(--dark); }
 .pay-shortcut-desc { font-size:12px; color:var(--secondary); }
@@ -1015,7 +1015,7 @@ function renderCart() {
             var unit   = item.unit || 'pkg';
             var badge  = item.type === 'rt'
                 ? '<span style="font-size:10px;background:#fef3c7;color:#854d0e;border:1px solid #fde68a;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">RT</span>'
-                : '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">WH</span>';
+                : '<span style="font-size:10px;background:#e8edf5;color:#103060;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">WH</span>';
             return '<div class="cart-item">'+
                 '<div class="cart-item-info">'+
                     '<div class="cart-item-name">'+escH(item.name)+badge+'</div>'+
@@ -1048,7 +1048,7 @@ function renderReview() {
         var unit  = item.unit || 'pkg';
         var badge = item.type === 'rt'
             ? '<span style="font-size:10px;background:#fef3c7;color:#854d0e;border:1px solid #fde68a;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">RT</span>'
-            : '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">WH</span>';
+            : '<span style="font-size:10px;background:#e8edf5;color:#103060;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">WH</span>';
         return '<div class="review-row">'+
             '<div><div class="review-row-name">'+escH(item.name)+badge+'</div>'+
             '<div class="review-row-sub">'+item.qty.toLocaleString()+' '+unit+' &times; RWF '+item.price.toLocaleString()+'</div></div>'+

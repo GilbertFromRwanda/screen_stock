@@ -922,7 +922,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <p id="shareModalSubtitle" style="color:var(--secondary);font-size:13px;margin:0 0 14px;"></p>
         <div id="shareTablePreview" style="overflow-x:auto;max-height:340px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:16px;"></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button onclick="printSharePDF()" style="background:#2563eb;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;">
+            <button onclick="printSharePDF()" style="background:#103060;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;">
                 &#128438; Save as PDF
             </button>
             <button onclick="shareToWhatsApp()" style="background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;">
@@ -978,7 +978,7 @@ function openShareModal(pdfData, waText) {
     var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<thead><tr>';
     pdfData.headers.forEach(function(h) {
-        html += '<th style="padding:9px 12px;background:#1e40af;color:#fff;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">' + h + '</th>';
+        html += '<th style="padding:9px 12px;background:#103060;color:#fff;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">' + h + '</th>';
     });
     html += '</tr></thead><tbody>';
     pdfData.rows.forEach(function(row, ri) {
@@ -1012,7 +1012,7 @@ function printSharePDF() {
         '.sub{color:#64748b;font-size:12px;margin-bottom:6px;}' +
         '.meta{text-align:right;font-size:11px;color:#94a3b8;margin-bottom:18px;}' +
         'table{width:100%;border-collapse:collapse;}' +
-        'th{background:#1e40af;color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}' +
+        'th{background:#103060;color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}' +
         'td{padding:8px 12px;border-bottom:1px solid #e2e8f0;}' +
         'tr:nth-child(even) td{background:#f8fafc;}' +
         'tfoot td{background:#f1f5f9;font-weight:700;border-top:2px solid #cbd5e1;border-bottom:none;}' +
@@ -1021,7 +1021,7 @@ function printSharePDF() {
         '</style></head><body>';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">' +
         '<div class="meta" style="margin:0;">Generated: ' + new Date().toLocaleString() + '</div>' +
-        '<button class="print-btn" onclick="window.print()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Print / Save PDF</button>' +
+        '<button class="print-btn" onclick="window.print()" style="background:#103060;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Print / Save PDF</button>' +
         '</div>';
     html += '<h1>' + d.title + '</h1>';
     if (d.subtitle) html += '<div class="sub">' + d.subtitle + '</div>';
