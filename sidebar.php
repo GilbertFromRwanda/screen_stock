@@ -273,7 +273,9 @@ try {
         &#128187; <span id="qb-ip-text"><?= htmlspecialchars($_nav_server_ip) ?></span>
         <button class="qb-ip-copy" onclick="qbCopyIP()" title="Copy IP">&#128203;</button>
     </span>
-    
+
+    <a href="logout.php" class="qb-btn qb-logout" title="Logout">&#9211; Logout</a>
+
 </div>
 
 <style>
@@ -464,6 +466,7 @@ try {
 .qb-loan { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
 .qb-stock { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
 .qb-order { background: #e8edf5; color: #1a4280; border-color: #c9d6ea; }
+.qb-logout { background: #fee2e2; color: #dc2626; border-color: #fecaca; margin-left: 4px; }
 
 /* Active (current page) state — solid fill of the button's own accent colour */
 .qb-btn.active { color: #fff; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); opacity: 1; }

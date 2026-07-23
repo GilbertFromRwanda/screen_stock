@@ -76,239 +76,272 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Screen Stock Management — Sign In</title>
     <link href="fonts/inter.css" rel="stylesheet">
+    <link href="css/all.min.css" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+        html, body { height: 100%; overflow: hidden; }
+
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            min-height: 100vh;
+            height: 100vh;
             display: flex;
-            background: #f4f6f9;
         }
 
-        /* ── Left branding panel ── */
-        .auth-brand {
-            width: 420px;
-            flex-shrink: 0;
+        /* ══ LEFT PANEL ══ */
+        .auth-left {
+            width: 44%;
+            height: 100vh;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 15% 15%, rgba(56,128,255,0.18), transparent 45%),
+                radial-gradient(circle at 85% 85%, rgba(99,102,241,0.16), transparent 50%),
+                linear-gradient(160deg, #0d2754 0%, #103060 50%, #0a1f44 100%);
             display: flex;
             flex-direction: column;
-            justify-content: center;
-            align-items: flex-start;
-            padding: 48px 52px;
-            background: #103060;
+            padding: 24px 36px;
+            color: #fff;
             position: relative;
-            overflow: hidden;
         }
 
-        .auth-brand::before {
+        .auth-left::before {
             content: '';
             position: absolute;
             inset: 0;
-            background:
-                radial-gradient(circle at 15% 75%, rgba(255,255,255,0.08) 0%, transparent 55%),
-                radial-gradient(circle at 80% 15%, rgba(255,255,255,0.06) 0%, transparent 50%);
+            background-image:
+                linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+            background-size: 40px 40px;
+            mask-image: radial-gradient(ellipse at center, #000 40%, transparent 80%);
+            -webkit-mask-image: radial-gradient(ellipse at center, #000 40%, transparent 80%);
+            pointer-events: none;
         }
 
-        .brand-logo {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            margin-bottom: 56px;
-            position: relative;
-            z-index: 1;
-        }
+        .auth-left > * { position: relative; z-index: 1; }
 
-        .brand-logo-icon {
-            width: 48px;
-            height: 48px;
-            background: rgba(255,255,255,.12);
-            border: 1px solid rgba(255,255,255,.2);
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .brand-logo-icon svg {
-            width: 26px;
-            height: 26px;
-            fill: #fff;
-        }
-
-        .brand-logo-text {
-            font-size: 20px;
-            font-weight: 700;
-            color: #f1f5f9;
-            letter-spacing: -0.3px;
-        }
-
-        .brand-headline {
-            position: relative;
-            z-index: 1;
-        }
-
-        .brand-headline h1 {
-            font-size: 40px;
-            font-weight: 700;
-            color: #f1f5f9;
-            line-height: 1.2;
-            letter-spacing: -0.8px;
-            margin-bottom: 20px;
-        }
-
-        .brand-headline p {
-            font-size: 17px;
-            color: #64748b;
-            line-height: 1.65;
-            max-width: 380px;
-        }
-
-        .brand-features {
-            position: relative;
-            z-index: 1;
-            margin-top: 56px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .feature-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            color: #94a3b8;
-            font-size: 15px;
-        }
-
-        .feature-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #1a4280;
-            flex-shrink: 0;
-        }
-
-        .brand-decor {
-            position: absolute;
-            bottom: -60px;
-            right: -60px;
-            width: 320px;
-            height: 320px;
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 50%;
-        }
-
-        .brand-decor::before {
+        .auth-left::after {
             content: '';
             position: absolute;
-            inset: 40px;
-            border: 1px solid rgba(255,255,255,0.07);
-            border-radius: 50%;
+            right: 0;
+            top: 10%;
+            height: 80%;
+            width: 1px;
+            background: rgba(255,255,255,0.08);
+            z-index: 1;
         }
 
-        /* ── Right form panel ── */
-        .auth-form-panel {
+        .auth-logo { display: flex; align-items: center; gap: 12px; }
+
+        .auth-logo-icon {
+            width: 48px; height: 48px; flex-shrink: 0;
+            background: rgba(255,255,255,.12);
+            border: 1px solid rgba(255,255,255,.2);
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .auth-logo-icon svg { width: 26px; height: 26px; fill: #fff; }
+        .auth-logo-text { font-size: 16px; font-weight: 700; color: #f1f5f9; letter-spacing: 0.2px; }
+
+        .auth-copy {
             flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 20px 0 16px;
+        }
+
+        .auth-copy h2 {
+            font-size: 28px;
+            font-weight: 800;
+            line-height: 1.22;
+            margin-bottom: 10px;
+            letter-spacing: -0.6px;
+            background: linear-gradient(135deg, #ffffff 0%, #cfe0ff 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .auth-copy .tagline {
+            font-size: 13px;
+            color: rgba(255,255,255,0.6);
+            line-height: 1.6;
+            margin-bottom: 22px;
+            max-width: 320px;
+        }
+
+        .auth-features {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            opacity: 0;
+            animation: fadeUp 0.6s ease-out 0.15s forwards;
+        }
+        .auth-features li {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 0;
+            opacity: 0;
+            transform: translateY(8px);
+            animation: fadeUp 0.5s ease-out forwards;
+        }
+        .auth-features li:nth-child(1) { animation-delay: 0.20s; }
+        .auth-features li:nth-child(2) { animation-delay: 0.30s; }
+        .auth-features li:nth-child(3) { animation-delay: 0.40s; }
+
+        .auth-features li .feat-icon {
+            width: 34px;
+            height: 34px;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 48px 40px;
-            background: #fff;
-            min-width: 0;
-        }
-
-        .auth-form-wrap {
-            width: 100%;
-            max-width: 380px;
-            animation: fadeUp 0.4s ease both;
-        }
-
-        .form-header {
-            margin-bottom: 40px;
-        }
-
-        .form-header h2 {
-            font-size: 26px;
-            font-weight: 700;
-            color: #1a1a2e;
-            letter-spacing: -0.4px;
-            margin-bottom: 8px;
-        }
-
-        .form-header p {
             font-size: 14px;
-            color: #64748b;
+            flex-shrink: 0;
+            color: #cfe0ff;
+            background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03));
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 9px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+            transition: transform 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
         }
+        .auth-features li:hover .feat-icon {
+            transform: translateY(-2px) scale(1.04);
+            color: #ffffff;
+            border-color: rgba(255,255,255,0.22);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 4px 14px rgba(16,48,96,0.5);
+        }
+        .feat-text strong {
+            display: block;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: rgba(255,255,255,0.95);
+            margin-bottom: 3px;
+            letter-spacing: 0.1px;
+        }
+        .feat-text span {
+            font-size: 12px;
+            color: rgba(255,255,255,0.5);
+            line-height: 1.45;
+        }
+
+        @keyframes fadeUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .auth-features,
+            .auth-features li { animation: none; opacity: 1; transform: none; }
+            .auth-features li .feat-icon { transition: none; }
+        }
+        .auth-left-footer { font-size: 11.5px; color: rgba(255,255,255,0.22); }
+
+        /* ══ RIGHT PANEL ══ */
+        .auth-right {
+            flex: 1;
+            height: 100vh;
+            overflow: hidden;
+            background: #ffffff;
+            border-radius: 12px 0 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 36px;
+        }
+
+        .login-box { width: 100%; max-width: 380px; }
+
+        .mobile-logo { display: none; align-items: center; gap: 10px; margin-bottom: 32px; }
+        .mobile-logo-icon {
+            width: 36px; height: 36px; flex-shrink: 0;
+            background: #103060; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .mobile-logo-icon svg { width: 20px; height: 20px; fill: #fff; }
+        .mobile-logo strong { font-size: 16px; font-weight: 700; color: #103060; letter-spacing: 0.3px; }
+
+        .login-box {
+            opacity: 0;
+            transform: translateY(8px);
+            animation: fadeUp 0.5s ease-out 0.1s forwards;
+        }
+
+        .login-box h1 {
+            font-size: 26px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 6px;
+            letter-spacing: -0.4px;
+        }
+
+        .login-box .subtitle { font-size: 13.5px; color: #94a3b8; margin-bottom: 22px; }
 
         .alert-error {
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 14px;
+            padding: 12px 14px;
             background: #fee2e2;
-            border-left: 3px solid #dc2626;
-            border-radius: 4px;
+            border: 1.5px solid #fca5a5;
+            border-radius: 6px;
             color: #7f1d1d;
-            font-size: 14px;
-            margin-bottom: 24px;
-        }
-
-        .alert-error svg {
-            width: 16px;
-            height: 16px;
-            flex-shrink: 0;
-            fill: #dc2626;
-        }
-
-        .field {
+            font-size: 13px;
+            font-weight: 500;
             margin-bottom: 20px;
         }
+        .alert-error i { color: #dc2626; font-size: 14px; flex-shrink: 0; }
+
+        .field { margin-bottom: 14px; }
 
         .field label {
             display: block;
-            font-size: 13px;
+            font-size: 12.5px;
             font-weight: 600;
-            color: #374151;
+            color: #475569;
             margin-bottom: 7px;
+            letter-spacing: 0.2px;
         }
 
-        .input-wrap {
-            position: relative;
-        }
+        .input-wrap { position: relative; }
 
         .input-icon {
             position: absolute;
             left: 14px;
             top: 50%;
             transform: translateY(-50%);
-            width: 16px;
-            height: 16px;
-            fill: #94a3b8;
+            color: #94a3b8;
+            font-size: 14px;
             pointer-events: none;
+            transition: color 0.15s;
         }
 
         .input-wrap input {
             width: 100%;
-            padding: 11px 14px 11px 42px;
-            border: 1.5px solid #d0d7e3;
-            border-radius: 4px;
+            height: 48px;
+            padding: 0 14px 0 42px;
             font-size: 14px;
             font-family: inherit;
-            color: #1a1a2e;
-            background: #f4f6f9;
-            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+            color: #0f172a;
+            background: #f8fafc;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
             outline: none;
+            transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
         }
 
-        .input-wrap input::placeholder { color: #9aa5b8; }
+        .input-wrap input:hover:not(:focus) { border-color: #cbd5e1; background: #fff; }
+        .input-wrap input::placeholder { color: #cbd5e1; }
 
         .input-wrap input:focus {
-            border-color: #103060;
             background: #fff;
-            box-shadow: 0 0 0 3px rgba(16,48,96,0.12);
+            border-color: #103060;
+            box-shadow: 0 0 0 4px rgba(16,48,96,0.10);
         }
 
-        .input-wrap input[type="password"] { padding-right: 42px; }
+        .input-wrap:focus-within .input-icon { color: #103060; }
+
+        .input-wrap input[type="password"] { padding-right: 46px; }
 
         .toggle-pw {
             position: absolute;
@@ -318,47 +351,63 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             background: none;
             border: none;
             cursor: pointer;
-            padding: 2px;
+            color: #94a3b8;
+            font-size: 14px;
+            padding: 0;
             display: flex;
             align-items: center;
+            transition: color 0.15s;
         }
 
-        .toggle-pw svg {
-            width: 17px;
-            height: 17px;
-            fill: #94a3b8;
-            transition: fill 0.2s;
-        }
+        .toggle-pw:hover { color: #475569; }
 
-        .toggle-pw:hover svg { fill: #475569; }
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus {
+            -webkit-box-shadow: 0 0 0 40px #f8fafc inset !important;
+            -webkit-text-fill-color: #0f172a !important;
+        }
 
         .btn-signin {
             width: 100%;
-            padding: 12px;
-            background: #103060;
+            height: 48px;
+            background: linear-gradient(135deg, #143873 0%, #103060 60%, #0c2550 100%);
             color: #fff;
+            font-size: 14px;
+            font-weight: 700;
             border: none;
-            border-radius: 4px;
-            font-size: 15px;
-            font-weight: 600;
-            font-family: inherit;
+            border-radius: 8px;
             cursor: pointer;
-            transition: background 0.2s, transform 0.1s;
-            margin-top: 8px;
-            letter-spacing: 0.1px;
+            letter-spacing: 0.3px;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 4px 14px rgba(16,48,96,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
+            position: relative;
+            overflow: hidden;
+            margin-top: 6px;
         }
 
-        .btn-signin:hover {
-            background: #1a4280;
+        .btn-signin::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -120%;
+            width: 60%;
+            height: 100%;
+            background: linear-gradient(120deg, transparent, rgba(255,255,255,0.18), transparent);
+            transform: skewX(-20deg);
+            transition: left 0.6s ease;
         }
+        .btn-signin:hover::after { left: 130%; }
 
-        .btn-signin:active { transform: scale(0.99); }
-
-        .btn-signin:disabled {
-            opacity: 0.7;
-            cursor: not-allowed;
-            transform: none;
-        }
+        .btn-signin:hover { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 6px 18px rgba(16,48,96,0.32), inset 0 1px 0 rgba(255,255,255,0.1); }
+        .btn-signin:active { transform: translateY(0); filter: brightness(0.98); }
+        .btn-signin:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        .btn-signin > i, .btn-signin > span { position: relative; z-index: 1; }
 
         .btn-spinner {
             display: inline-block;
@@ -369,88 +418,123 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             border-radius: 50%;
             animation: spin 0.6s linear infinite;
             vertical-align: middle;
-            margin-right: 8px;
+            margin-right: 2px;
         }
 
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .powered-by {
-            margin-top: 32px;
+            margin-top: 24px;
             text-align: center;
             font-size: 12px;
             color: #94a3b8;
         }
+        .powered-by span { font-weight: 600; color: #103060; }
+        .powered-by a { color: #103060; text-decoration: none; }
+        .powered-by a:hover { text-decoration: underline; }
 
-        .powered-by span {
-            font-weight: 600;
-            color: #1a4280;
+        /* ── Tablet (landscape & portrait) ── */
+        @media (max-width: 1024px) {
+            .auth-left { width: 42%; padding: 20px 28px; }
+            .auth-right { padding: 20px 28px; }
+            .auth-copy h2 { font-size: 23px; }
         }
 
-        .powered-by a {
-            color: #1a4280;
-            text-decoration: none;
+        @media (max-width: 860px) {
+            .auth-left { width: 46%; padding: 16px 20px; }
+            .auth-copy { padding: 14px 0 10px; }
+            .auth-copy h2 { font-size: 20px; }
+            .auth-right { padding: 16px 20px; }
         }
 
-        .powered-by a:hover {
-            text-decoration: underline;
+        /* ── Mobile ── */
+        @media (max-width: 768px) {
+            body { background: #fff; display: block; overflow-y: auto; }
+            .auth-left { display: none; }
+            .auth-right {
+                width: 100%;
+                min-height: 100vh;
+                height: auto;
+                border-radius: 0;
+                padding: 48px 24px 40px;
+                align-items: flex-start;
+            }
+            .mobile-logo { display: flex; }
+            .login-box { max-width: 100%; }
         }
 
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(16px); }
-            to   { opacity: 1; transform: translateY(0); }
-        }
-
-        @media (max-width: 900px) {
-            .auth-brand { display: none; }
-            .auth-form-panel { width: 100%; }
-        }
-
-        @media (max-width: 480px) {
-            .auth-form-panel { padding: 32px 24px; }
+        @media (max-width: 400px) {
+            .auth-right { padding: 40px 18px 32px; }
+            .input-wrap input { height: 44px; font-size: 13.5px; }
+            .btn-signin { height: 44px; font-size: 13.5px; }
         }
     </style>
 </head>
 <body>
 
-    <!-- Branding panel -->
-    <div class="auth-brand">
-        <div class="brand-logo">
-            <div class="brand-logo-icon">
+    <!-- LEFT -->
+    <div class="auth-left">
+        <div class="auth-logo">
+            <div class="auth-logo-icon">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/>
                     <path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2Z" opacity=".6"/>
                 </svg>
             </div>
-            <span class="brand-logo-text">Screen System</span>
+            <span class="auth-logo-text">Screen Stock</span>
         </div>
 
-        <div class="brand-headline">
-            <h1>Manage your<br>stock with ease.</h1>
-            <p>A unified platform for inventory control, sales tracking, and financial reporting — all in one place.</p>
+        <div class="auth-copy">
+            <h2>Manage your<br>stock with ease.</h2>
+            <p class="tagline">A unified platform for inventory control, sales tracking, and financial reporting — all in one place.</p>
+
+            <ul class="auth-features">
+                <li>
+                    <span class="feat-icon"><i class="fas fa-boxes-stacked"></i></span>
+                    <div class="feat-text">
+                        <strong>Real-Time Inventory</strong>
+                        <span>Track stock levels across every product line</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="feat-icon"><i class="fas fa-chart-line"></i></span>
+                    <div class="feat-text">
+                        <strong>Sales &amp; Purchase Analytics</strong>
+                        <span>Revenue, profit and trends at a glance</span>
+                    </div>
+                </li>
+                <li>
+                    <span class="feat-icon"><i class="fas fa-truck-fast"></i></span>
+                    <div class="feat-text">
+                        <strong>Supplier &amp; Expense Management</strong>
+                        <span>Keep purchases, loans and costs in one place</span>
+                    </div>
+                </li>
+            </ul>
         </div>
 
-        <div class="brand-features">
-            <div class="feature-item"><span class="feature-dot"></span>Real-time inventory tracking</div>
-            <div class="feature-item"><span class="feature-dot"></span>Sales &amp; purchase analytics</div>
-            <div class="feature-item"><span class="feature-dot"></span>Supplier &amp; expense management</div>
-        </div>
-
-        <div class="brand-decor"></div>
+        <p class="auth-left-footer">&copy; <?= date('Y') ?> Screen Stock Management. All rights reserved.</p>
     </div>
 
-    <!-- Form panel -->
-    <div class="auth-form-panel">
-        <div class="auth-form-wrap">
+    <!-- RIGHT -->
+    <div class="auth-right">
+        <div class="login-box">
 
-            <div class="form-header">
-                <h2>Welcome back</h2>
-                <p>Sign in to your account to continue</p>
+            <div class="mobile-logo">
+                <div class="mobile-logo-icon">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/>
+                        <path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2Z" opacity=".6"/>
+                    </svg>
+                </div>
+                <strong>Screen Stock</strong>
             </div>
 
+            <h1>Welcome back</h1>
+            <p class="subtitle">Sign in to your account to continue</p>
+
             <div class="alert-error" id="login-error" style="display:none" aria-live="polite">
-                <svg viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/>
-                </svg>
+                <i class="fas fa-circle-exclamation"></i>
                 <span id="login-error-text"></span>
             </div>
 
@@ -459,9 +543,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                 <div class="field">
                     <label for="username">Username</label>
                     <div class="input-wrap">
-                        <svg class="input-icon" viewBox="0 0 20 20">
-                            <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z"/>
-                        </svg>
+                        <i class="fas fa-user input-icon"></i>
                         <input type="text" id="username" name="username" placeholder="Enter your username" required autocomplete="username">
                     </div>
                 </div>
@@ -469,20 +551,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                 <div class="field">
                     <label for="password">Password</label>
                     <div class="input-wrap">
-                        <svg class="input-icon" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"/>
-                        </svg>
+                        <i class="fas fa-lock input-icon"></i>
                         <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
                         <button type="button" class="toggle-pw" aria-label="Toggle password visibility" onclick="togglePassword()">
-                            <svg id="eye-icon" viewBox="0 0 20 20">
-                                <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/>
-                                <path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clip-rule="evenodd"/>
-                            </svg>
+                            <i class="fas fa-eye" id="eye-icon"></i>
                         </button>
                     </div>
                 </div>
 
-                <button type="submit" id="submit-btn" class="btn-signin">Sign In</button>
+                <button type="submit" id="submit-btn" class="btn-signin"><i class="fas fa-arrow-right-to-bracket"></i><span>Sign In</span></button>
             </form>
 
             <div class="powered-by">
@@ -499,9 +576,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             const icon  = document.getElementById('eye-icon');
             const show  = input.type === 'password';
             input.type  = show ? 'text' : 'password';
-            icon.innerHTML = show
-                ? '<path fill-rule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clip-rule="evenodd"/><path d="m10.748 13.93 2.523 2.524a10.065 10.065 0 0 1-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 2.839 6.02L6.07 9.252a4 4 0 0 0 4.678 4.678Z"/>'
-                : '<path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clip-rule="evenodd"/>';
+            icon.className = show ? 'fas fa-eye-slash' : 'fas fa-eye';
         }
 
         document.getElementById('login-form').addEventListener('submit', async function (e) {
@@ -513,7 +588,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
 
             // Loading state
             btn.disabled = true;
-            btn.innerHTML = '<span class="btn-spinner"></span>Signing in…';
+            btn.innerHTML = '<span class="btn-spinner"></span><span>Signing in…</span>';
             errorBox.style.display = 'none';
 
             try {
@@ -526,13 +601,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                 const data = await res.json();
 
                 if (data.success) {
-                    btn.innerHTML = 'Redirecting…';
+                    btn.innerHTML = '<span>Redirecting…</span>';
                     window.location.href = data.redirect;
                 } else {
                     errorText.textContent = data.error;
                     errorBox.style.display = 'flex';
                     btn.disabled = false;
-                    btn.innerHTML = 'Sign In';
+                    btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i><span>Sign In</span>';
                     document.getElementById('password').value = '';
                     document.getElementById('password').focus();
                 }
@@ -540,7 +615,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                 errorText.textContent = 'Network error — please try again.';
                 errorBox.style.display = 'flex';
                 btn.disabled = false;
-                btn.innerHTML = 'Sign In';
+                btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i><span>Sign In</span>';
             }
         });
     </script>
