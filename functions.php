@@ -87,6 +87,15 @@ function grantCompanyAccess($conn, int $user_id, int $company_id, ?int $granted_
     mysqli_query($conn, "INSERT IGNORE INTO user_company_access (user_id, company_id, granted_by)
         VALUES ($user_id, $company_id, $granted_by_sql)");
 }
+// Returns the current company's display name (for receipts/print headers), falling
+// back to $fallback when no company is scoped (superadmin, aggregate "All Companies" view).
+function companyName(mysqli $conn, string $fallback = 'Smart Stock'): string {
+    $id = cid();
+    if ($id === null) return $fallback;
+    $r = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM companies WHERE id=$id"));
+    return ($r && $r['name'] !== '') ? $r['name'] : $fallback;
+}
+
 // Returns company_id for SQL INSERT values ("5" or "NULL"). Throws when viewing
 // the "All Companies" aggregate — a new row can't belong to several companies
 // at once, so writes are blocked until the user picks one specific company.

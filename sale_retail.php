@@ -4,6 +4,7 @@ if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't have permission to record retail sales."; redirect('dashboard.php'); }
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
+$company_name = companyName($conn);
 
 // Product search/categories and the loan-client picker are loaded
 // client-side from DataCache (js/data-cache.js) instead of these per-page
@@ -470,9 +471,14 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                         </div>
                                     </div>
                                 </div>
-                                <button type="button" id="retail_submit_btn" class="btn btn-success" disabled onclick="handleRetailSubmit()" style="width:100%;padding:12px;">
-                                    Save Sale
-                                </button>
+                                <div style="display:flex;gap:8px;">
+                                    <button type="button" id="retail_print_btn" class="btn btn-secondary" disabled onclick="printRetailCartPreview()" style="flex:1;padding:12px;">
+                                        <i class="fas fa-print"></i> Print
+                                    </button>
+                                    <button type="button" id="retail_submit_btn" class="btn btn-success" disabled onclick="handleRetailSubmit()" style="flex:2;padding:12px;">
+                                        Save Sale
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -483,7 +489,10 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
     </div>
 </div>
 
-<script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
+<script>
+    window.APP_COMPANY_ID   = <?php echo json_encode(cid()); ?>;
+    window.APP_COMPANY_NAME = <?php echo json_encode($company_name); ?>;
+</script>
 <script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script src="js/sale-queue.js?v=<?php echo filemtime(__DIR__ . '/js/sale-queue.js'); ?>"></script>
 <script src="script.js"></script>
@@ -938,13 +947,82 @@ function renderRetailCart() {
 
     document.getElementById('retail_items_json').value = JSON.stringify(
         retailCart.map(function(i){
-            return { product_id: i.pid, pieces_sold: i.qty, selling_price: i.price, level_multiplier: i.multiplier };
+            return { product_id: i.pid, pieces_sold: i.qty, selling_price: i.price, level_multiplier: i.multiplier, name: i.name, level_name: i.levelName };
         })
     );
+    document.getElementById('retail_print_btn').disabled = retailCart.length === 0;
     updateRetailPaymentDefaults();
 }
 
 function escRetailHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Print the current cart as a pre-sale quote (nothing saved yet) ─────────
+function printRetailCartPreview() {
+    if (retailCart.length === 0) return;
+
+    var customer = document.getElementById('retail_customer').value.trim() || 'client';
+    var cash = parseFloat(document.getElementById('retail_cash').value) || 0;
+    var momo = parseFloat(document.getElementById('retail_momo').value) || 0;
+    var loan = parseFloat(document.getElementById('retail_loan_split').value) || 0;
+    var total = retailCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0);
+
+    var h = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+        '<style>' +
+        'body{font-family:monospace;font-size:11px;width:76mm;margin:0;padding:3mm 4mm;color:#000;}' +
+        'h2{text-align:center;font-size:13px;margin:0 0 2px;letter-spacing:1px;}' +
+        '.sub{text-align:center;font-size:10px;margin-bottom:4px;}' +
+        'hr{border:none;border-top:1px dashed #000;margin:5px 0;}' +
+        'table{width:100%;border-collapse:collapse;}' +
+        'td{padding:1px 0;vertical-align:top;font-size:10px;}' +
+        '.r{text-align:right;}' +
+        '.b{font-weight:bold;}' +
+        '.item-name{font-weight:bold;font-size:10px;}' +
+        '.grand td{font-weight:bold;border-top:1px solid #000;padding-top:3px;font-size:11px;}' +
+        '.footer{text-align:center;font-size:9px;margin-top:4px;}' +
+        '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
+        '</style></head><body>';
+
+    h += '<h2>' + escRetailHtml((window.APP_COMPANY_NAME || 'Smart Stock').toUpperCase()) + '</h2>';
+    h += '<div class="sub">Retail Sale &mdash; QUOTE (not yet saved)</div>';
+    h += '<hr>';
+
+    h += '<table>';
+    h += '<tr><td>Date</td><td class="r">' + new Date().toLocaleString() + '</td></tr>';
+    h += '<tr><td>Customer</td><td class="r">' + escRetailHtml(customer) + '</td></tr>';
+    h += '</table>';
+    h += '<hr>';
+
+    h += '<table>';
+    retailCart.forEach(function(item){
+        var sub = item.qty * item.price;
+        h += '<tr><td colspan="2" class="item-name">' + escRetailHtml(item.name) + '</td></tr>';
+        h += '<tr><td>' + item.qty.toLocaleString() + ' ' + escRetailHtml(item.levelName) + ' &times; RWF ' + item.price.toLocaleString() + '</td>' +
+             '<td class="r b">RWF ' + Math.round(sub).toLocaleString() + '</td></tr>';
+    });
+    h += '<tr class="grand"><td>TOTAL</td><td class="r">RWF ' + Math.round(total).toLocaleString() + '</td></tr>';
+    h += '</table>';
+
+    if (cash > 0 || momo > 0 || loan > 0) {
+        h += '<hr>';
+        h += '<table>';
+        h += '<tr><td colspan="2" class="b">Payment Breakdown</td></tr>';
+        if (cash > 0) h += '<tr><td style="padding-left:6px">Cash</td><td class="r">RWF ' + Math.round(cash).toLocaleString() + '</td></tr>';
+        if (momo > 0) h += '<tr><td style="padding-left:6px">Momo</td><td class="r">RWF ' + Math.round(momo).toLocaleString() + '</td></tr>';
+        if (loan > 0) h += '<tr><td style="padding-left:6px">Loan</td><td class="r">RWF ' + Math.round(loan).toLocaleString() + '</td></tr>';
+        h += '</table>';
+    }
+
+    h += '<hr>';
+    h += '<div class="footer">This is a quote only &mdash; not a receipt.</div>';
+    h += '</body></html>';
+
+    var w = window.open('', '_blank', 'width=340,height=520,toolbar=0,menubar=0,scrollbars=1,resizable=1');
+    if (!w) { alert('Allow popups to print.'); return; }
+    w.document.write(h);
+    w.document.close();
+    w.focus();
+    setTimeout(function() { w.print(); }, 350);
+}
 
 // ── Recent Sales panel, backed by DataCache (instant from IndexedDB, refreshed
 // in the background when the server reports newer data) ────────────────────

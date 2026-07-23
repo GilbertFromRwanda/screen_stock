@@ -6,6 +6,14 @@
 ALTER TABLE consumption ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'retail' AFTER qty;
 
 
+-- ── cart_json columns (sales_bulk / sales_retail / sales_external) ─────────────
+-- Stores the full cart (all items) as JSON on the sale's first row, so the whole
+-- checkout can be reconstructed/reprinted from a single row.
+ALTER TABLE sales_bulk     ADD COLUMN IF NOT EXISTS cart_json LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(cart_json)) AFTER refunded;
+ALTER TABLE sales_retail   ADD COLUMN IF NOT EXISTS cart_json LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(cart_json)) AFTER refunded;
+ALTER TABLE sales_external ADD COLUMN IF NOT EXISTS cart_json LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(cart_json)) AFTER my_revenue;
+
+
 -- ── Seed: initial company ─────────────────────────────────────────────────────
 -- Safe to re-run; INSERT IGNORE skips if id=1 already exists.
 INSERT IGNORE INTO `companies` (`id`, `name`, `email`, `phone`, `address`, `status`, `created_at`)

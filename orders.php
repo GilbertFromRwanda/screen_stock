@@ -7,6 +7,7 @@ if (!hasPermission('orders')) { $_SESSION['flash_error'] = "You don't have permi
 global $conn;
 $user_id = (int)$_SESSION['user_id'];
 $role    = $_SESSION['role'] ?? 'staff';
+$company_name = companyName($conn);
 
 // ── AJAX: Delete ──────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_order'])) {
@@ -1509,6 +1510,7 @@ $stats = fetchOrderStats($conn);
 </div>
 
 <script src="script.js"></script>
+<script>window.APP_COMPANY_NAME = <?php echo json_encode($company_name); ?>;</script>
 <script>
 function escH(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -2246,7 +2248,7 @@ function printReceipt(o) {
         '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
         '</style></head><body>';
 
-    h += '<h2>SMART STOCK</h2>';
+    h += '<h2>' + escH((window.APP_COMPANY_NAME || 'Smart Stock').toUpperCase()) + '</h2>';
     h += '<div class="sub">Order Receipt</div>';
     h += '<hr>';
 

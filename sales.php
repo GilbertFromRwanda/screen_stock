@@ -6,6 +6,7 @@ if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('sales')) { $_SESSION['flash_error'] = "You don't have permission to access Sales."; redirect('dashboard.php'); }
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
+$company_name = companyName($conn);
 
 // ── DELETE Bulk Sale ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
@@ -318,6 +319,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         }
     }
 
+    // Full cart snapshot, stored once on the sale's first row — see identical
+    // comment in the bulk_sale handler above.
+    $cart_json_sql = "'" . mysqli_real_escape_string($conn, json_encode($cart)) . "'";
+
     mysqli_begin_transaction($conn);
     $ok = true;
     $new_loan_ids = [];
@@ -336,6 +341,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         $row_momo        = $i === 0 ? $momo_amount : 0;
         $row_loan        = $i === 0 ? $loan_amount : 0;
         $row_client_ref  = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
+        $row_cart_json   = $i === 0 ? $cart_json_sql : 'NULL';
 
         // Resolve owner for this item
         $owner_id_val   = 'NULL';
@@ -354,8 +360,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         }
         if (!$ok) break;
 
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by, client_ref)
-                       VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $item_total, $row_cash, $row_momo, $row_loan, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by, $row_client_ref)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by, client_ref, cart_json)
+                       VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $item_total, $row_cash, $row_momo, $row_loan, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by, $row_client_ref, $row_cart_json)");
         if (!$ok) break;
         $ext_sale_id = (int)mysqli_insert_id($conn);
 
@@ -479,7 +485,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $qty   = (int)($it['quantity'] ?? 0);
         $price = (float)($it['selling_price'] ?? 0);
         if ($pid > 0 && $qty > 0 && $price > 0) {
-            $cart[] = ['product_id' => $pid, 'quantity' => $qty, 'selling_price' => $price, 'level_divisor' => max(1, (int)($it['level_divisor'] ?? 1))];
+            $cart[] = [
+                'product_id'    => $pid,
+                'name'          => trim((string)($it['name'] ?? '')),
+                'quantity'      => $qty,
+                'selling_price' => $price,
+                'level_divisor' => max(1, (int)($it['level_divisor'] ?? 1)),
+                'level_name'    => trim((string)($it['level_name'] ?? '')),
+            ];
         }
     }
     if (empty($cart)) saleResp(false, "Add at least one product to the sale.", 'bulk');
@@ -534,6 +547,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         }
     }
 
+    // Full cart snapshot, stored once on the sale's first row so the whole
+    // checkout (all items, not just this row's single product) can be
+    // reconstructed/reprinted later from a single sales_bulk row.
+    $cart_json_sql = "'" . mysqli_real_escape_string($conn, json_encode($cart)) . "'";
+
     mysqli_begin_transaction($conn);
     $ok = true;
     $touched_products = [];
@@ -554,9 +572,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
         $row_client_ref = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
+        $row_cart_json = $i === 0 ? $cart_json_sql : 'NULL';
 
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref)
-                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref, cart_json)
+                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref, $row_cart_json)");
         if (!$ok) break;
         $bulk_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;
@@ -647,7 +666,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $qty   = (int)($it['pieces_sold'] ?? 0);
         $price = (float)($it['selling_price'] ?? 0);
         if ($pid > 0 && $qty > 0 && $price > 0) {
-            $cart[] = ['product_id' => $pid, 'qty_sold' => $qty, 'selling_price' => $price, 'level_multiplier' => max(1, (int)($it['level_multiplier'] ?? 1))];
+            $cart[] = [
+                'product_id'       => $pid,
+                'name'             => trim((string)($it['name'] ?? '')),
+                'qty_sold'         => $qty,
+                'selling_price'    => $price,
+                'level_multiplier' => max(1, (int)($it['level_multiplier'] ?? 1)),
+                'level_name'       => trim((string)($it['level_name'] ?? '')),
+            ];
         }
     }
     if (empty($cart)) saleResp(false, "Add at least one product to the sale.", 'retail');
@@ -702,6 +728,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         }
     }
 
+    // Full cart snapshot, stored once on the sale's first row — see identical
+    // comment in the bulk_sale handler above.
+    $cart_json_sql = "'" . mysqli_real_escape_string($conn, json_encode($cart)) . "'";
+
     mysqli_begin_transaction($conn);
     $ok = true;
     $touched_products = [];
@@ -722,10 +752,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
         $row_client_ref = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
+        $row_cart_json = $i === 0 ? $cart_json_sql : 'NULL';
 
         // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref)
-                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref, cart_json)
+                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref, $row_cart_json)");
         if (!$ok) break;
         $retail_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;
@@ -1336,6 +1367,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditBulk(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['package_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
                                         <button class="act-item" onclick="printSaleReceipt('bulk',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,'pkg',<?php echo $row['package_price']; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','');closeActMenus()"><i class="fas fa-print"></i> Print</button>
+                                        <?php if (!empty($row['cart_json'])): ?>
+                                        <button class="act-item" data-cart="<?php echo htmlspecialchars($row['cart_json'], ENT_QUOTES); ?>" onclick="printCartReceipt('bulk',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',this.dataset.cart,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-receipt"></i> Print Cart</button>
+                                        <?php endif; ?>
                                         <button class="act-item" onclick="openRefundModal('bulk',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this bulk sale and restore stock?')">
@@ -1402,6 +1436,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditRetail(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['retail_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
                                         <button class="act-item" onclick="printSaleReceipt('retail',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,'pcs',<?php echo $actual_per_piece; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','');closeActMenus()"><i class="fas fa-print"></i> Print</button>
+                                        <?php if (!empty($row['cart_json'])): ?>
+                                        <button class="act-item" data-cart="<?php echo htmlspecialchars($row['cart_json'], ENT_QUOTES); ?>" onclick="printCartReceipt('retail',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',this.dataset.cart,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-receipt"></i> Print Cart</button>
+                                        <?php endif; ?>
                                         <button class="act-item" onclick="openRefundModal('retail',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this retail sale and restore stock?')">
@@ -1462,6 +1499,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,<?php echo (float)($row['my_revenue'] ?? 0); ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
                                         <button class="act-item" onclick="printSaleReceipt('external',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,'pkg',<?php echo $row['unit_price']; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['owner_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-print"></i> Print</button>
+                                        <?php if (!empty($row['cart_json'])): ?>
+                                        <button class="act-item" data-cart="<?php echo htmlspecialchars($row['cart_json'], ENT_QUOTES); ?>" onclick="printCartReceipt('external',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',this.dataset.cart,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-receipt"></i> Print Cart</button>
+                                        <?php endif; ?>
                                         <button class="act-item" onclick="openRefundModal('external',<?php echo $row['id']; ?>,0,'<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this external sale?')">
@@ -1681,6 +1721,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
     </div>
 
     <script src="script.js"></script>
+    <script>window.APP_COMPANY_NAME = <?php echo json_encode($company_name); ?>;</script>
     <script>
         // --- Searchable Select Init ---
         function initSearchableSelect(wrapperId, searchInputId, dropdownId, hiddenSelectId) {
@@ -2571,7 +2612,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
                 '</style></head><body>';
 
-            h += '<h2>SMART STOCK</h2>';
+            h += '<h2>' + escH((window.APP_COMPANY_NAME || 'Smart Stock').toUpperCase()) + '</h2>';
             h += '<div class="sub">' + typeLabel + ' Receipt</div>';
             h += '<hr>';
 
@@ -2588,6 +2629,81 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             h += '<tr><td>' + Number(qty).toLocaleString() + ' ' + qtyUnit + ' &times; RWF ' + Number(unitPrice).toLocaleString() + '</td>' +
                  '<td class="r b">RWF ' + Number(total).toLocaleString() + '</td></tr>';
             h += '<tr class="grand"><td>TOTAL</td><td class="r">RWF ' + Number(total).toLocaleString() + '</td></tr>';
+            h += '</table>';
+
+            if (cash > 0 || momo > 0 || loan > 0) {
+                h += '<hr>';
+                h += '<table>';
+                h += '<tr><td colspan="2" class="b">Payment Received</td></tr>';
+                if (cash > 0) h += '<tr><td style="padding-left:6px">Cash</td><td class="r">RWF ' + Number(cash).toLocaleString() + '</td></tr>';
+                if (momo > 0) h += '<tr><td style="padding-left:6px">Momo</td><td class="r">RWF ' + Number(momo).toLocaleString() + '</td></tr>';
+                if (loan > 0) h += '<tr><td style="padding-left:6px">Loan</td><td class="r">RWF ' + Number(loan).toLocaleString() + '</td></tr>';
+                h += '</table>';
+            }
+
+            h += '<hr>';
+            if (seller) h += '<div class="footer">Sold by ' + escH(seller) + '</div>';
+            h += '<div class="footer">Thank you for your business!</div>';
+            h += '</body></html>';
+
+            var w = window.open('', '_blank', 'width=340,height=520,toolbar=0,menubar=0,scrollbars=1,resizable=1');
+            if (!w) { alert('Allow popups to print receipts.'); return; }
+            w.document.write(h);
+            w.document.close();
+            w.focus();
+            setTimeout(function() { w.print(); }, 350);
+        }
+
+        // ── Thermal receipt print (whole cart, from the sales_bulk/retail/external
+        // .cart_json column stored on the sale's first row) ─────────────────────
+        function printCartReceipt(type, id, date, customer, cartJsonStr, cash, momo, loan, seller) {
+            var items;
+            try { items = JSON.parse(cartJsonStr) || []; } catch (e) { items = []; }
+            if (!items.length) { alert('No cart data stored for this sale.'); return; }
+
+            var typeLabel = type === 'bulk' ? 'Wholesale Sale' : type === 'retail' ? 'Retail Sale' : 'External Sale';
+            var total = 0;
+
+            var h = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+                '<style>' +
+                'body{font-family:monospace;font-size:11px;width:76mm;margin:0;padding:3mm 4mm;color:#000;}' +
+                'h2{text-align:center;font-size:13px;margin:0 0 2px;letter-spacing:1px;}' +
+                '.sub{text-align:center;font-size:10px;margin-bottom:4px;}' +
+                'hr{border:none;border-top:1px dashed #000;margin:5px 0;}' +
+                'table{width:100%;border-collapse:collapse;}' +
+                'td{padding:1px 0;vertical-align:top;font-size:10px;}' +
+                '.r{text-align:right;}' +
+                '.b{font-weight:bold;}' +
+                '.item-name{font-weight:bold;font-size:10px;}' +
+                '.grand td{font-weight:bold;border-top:1px solid #000;padding-top:3px;font-size:11px;}' +
+                '.footer{text-align:center;font-size:9px;margin-top:4px;}' +
+                '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
+                '</style></head><body>';
+
+            h += '<h2>' + escH((window.APP_COMPANY_NAME || 'Smart Stock').toUpperCase()) + '</h2>';
+            h += '<div class="sub">' + typeLabel + ' Receipt</div>';
+            h += '<hr>';
+
+            h += '<table>';
+            h += '<tr><td class="b">Sale #</td><td class="r b">' + id + '</td></tr>';
+            h += '<tr><td>Date</td><td class="r">' + escH(date) + '</td></tr>';
+            h += '<tr><td>Customer</td><td class="r">' + escH(customer || 'N/A') + '</td></tr>';
+            h += '</table>';
+            h += '<hr>';
+
+            h += '<table>';
+            items.forEach(function(it) {
+                var name  = it.name || it.product_name || 'Item';
+                var qty   = it.quantity != null ? it.quantity : (it.qty_sold != null ? it.qty_sold : 0);
+                var price = it.selling_price != null ? it.selling_price : (it.unit_price != null ? it.unit_price : 0);
+                var unit  = it.level_name || (type === 'retail' ? 'pcs' : '');
+                var sub   = qty * price;
+                total += sub;
+                h += '<tr><td colspan="2" class="item-name">' + escH(name) + '</td></tr>';
+                h += '<tr><td>' + Number(qty).toLocaleString() + (unit ? ' ' + escH(unit) : '') + ' &times; RWF ' + Number(price).toLocaleString() + '</td>' +
+                     '<td class="r b">RWF ' + Math.round(sub).toLocaleString() + '</td></tr>';
+            });
+            h += '<tr class="grand"><td>TOTAL</td><td class="r">RWF ' + Math.round(total).toLocaleString() + '</td></tr>';
             h += '</table>';
 
             if (cash > 0 || momo > 0 || loan > 0) {

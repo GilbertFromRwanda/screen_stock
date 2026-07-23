@@ -490,7 +490,8 @@ CREATE TABLE `sales_bulk` (
   `loan_amount` decimal(12,2) DEFAULT 0.00,
   `has_loan` tinyint(1) NOT NULL DEFAULT 0,
   `amount` decimal(12,2) DEFAULT 0.00,
-  `refunded` tinyint(1) NOT NULL DEFAULT 0
+  `refunded` tinyint(1) NOT NULL DEFAULT 0,
+  `cart_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart_json`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -517,7 +518,8 @@ CREATE TABLE `sales_external` (
   `sale_date` date NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `refunded` tinyint(1) NOT NULL DEFAULT 0,
-  `my_revenue` decimal(12,2) NOT NULL DEFAULT 0.00
+  `my_revenue` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `cart_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart_json`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -546,7 +548,8 @@ CREATE TABLE `sales_retail` (
   `loan_amount` decimal(12,2) DEFAULT 0.00,
   `has_loan` tinyint(1) NOT NULL DEFAULT 0,
   `amount` decimal(12,2) DEFAULT 0.00,
-  `refunded` tinyint(1) NOT NULL DEFAULT 0
+  `refunded` tinyint(1) NOT NULL DEFAULT 0,
+  `cart_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart_json`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
