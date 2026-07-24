@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('loans')) { $_SESSION['flash_error'] = "You don't have permission to access Loans."; redirect('dashboard.php'); }
@@ -45,8 +45,8 @@ $total_balance = $total_amt - $total_paid;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>All Loans</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/loans.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/loans.css?v=<?php echo filemtime(__DIR__ . '/css/loans.css'); ?>">
 </head>
 <body>
 <div class="dashboard-container">

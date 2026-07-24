@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 
@@ -33,7 +33,7 @@ if (!$show_form) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QR Call<?php echo !$show_form ? ' — ' . htmlspecialchars($name ?: $phone) : ''; ?></title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <link rel="stylesheet" href="css/all.min.css">
     <script src="js/qrcode.min.js"></script>
     <style>

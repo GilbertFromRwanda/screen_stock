@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
@@ -164,8 +164,8 @@ function companyColor($name) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Companies - Screen Stock</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/user.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/user.css?v=<?php echo filemtime(__DIR__ . '/css/user.css'); ?>">
 </head>
 <body>
 <div class="dashboard-container">

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 require_once __DIR__ . '/stock_value.php';
 if (!isLoggedIn()) redirect('login.php');
@@ -1011,7 +1011,7 @@ $stats = fetchOrderStats($conn);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Orders – Smart Stock</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
 <link rel="stylesheet" href="css/all.min.css">
 <style>
 .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:700; }

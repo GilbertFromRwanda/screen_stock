@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('reports')) { $_SESSION['flash_error'] = "You don't have permission to access Reports."; redirect('dashboard.php'); }
@@ -111,8 +111,8 @@ $all_dates = [];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Revenue Summary</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/revenue.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/revenue.css?v=<?php echo filemtime(__DIR__ . '/css/revenue.css'); ?>">
     <style>
         .summary-cards {
             display: grid;

@@ -20,8 +20,8 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kuranguza - Bulk Sale</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/sales.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/sales.css?v=<?php echo filemtime(__DIR__ . '/css/sales.css'); ?>">
     <style>
         .sale-page-card {
             background: var(--white);
@@ -82,7 +82,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         }
         @keyframes sd-spin { to { transform: rotate(360deg); } }
         .split-payment-box { border: 1px solid var(--gray-300); border-radius: var(--radius); overflow: hidden; }
-        .split-row { display: flex; align-items: center; padding: 8px 12px; gap: 10px; border-bottom: 1px solid var(--gray-100); }
+        .split-row { display: flex; align-items: center; padding: 6px 12px; gap: 10px; border-bottom: 1px solid var(--gray-100); }
         .split-row:last-child { border-bottom: none; }
         .split-label { width: 70px; font-size: 13px; font-weight: 500; flex-shrink: 0; }
         .split-row input[type="text"] { flex: 1; padding: 6px 10px; border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 14px; }
@@ -113,6 +113,13 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
             padding: 4px 8px; cursor: pointer; white-space: nowrap;
         }
         .default-price-badge:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .cat-filter-toggle {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 12px; color: var(--secondary); background: var(--gray-100);
+            border: 1px solid var(--gray-300); border-radius: 4px;
+            padding: 6px 10px; cursor: pointer; margin-bottom: 16px; user-select: none;
+        }
+        .cat-filter-toggle:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 
         /* Step indicator */
         .steps-indicator {
@@ -201,7 +208,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .client-card-clear:hover { color: #dc2626; }
 
         /* ── Payment shortcut chips (compact) ─────────────────────────────────── */
-        .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
         .shortcut-chip {
             display: inline-flex; align-items: center; gap: 6px;
             padding: 6px 12px; border: 1.5px solid var(--gray-300); border-radius: 999px;
@@ -231,7 +238,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .cart-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); font-size: 13px; font-weight: 700; }
         .cart-badge { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; }
         .cart-badge.zero { background: var(--gray-300); }
-        .cart-body { min-height: 80px; max-height: 380px; overflow-y: auto; }
+        .cart-body { min-height: 80px; max-height: 260px; overflow-y: auto; }
         .cart-empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--secondary); line-height: 1.6; }
         .cart-item { display: flex; align-items: flex-start; padding: 10px 14px; gap: 8px; border-bottom: 1px solid var(--gray-100); }
         .cart-item:last-child { border-bottom: none; }
@@ -335,9 +342,9 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                             placeholder="Search registered client..." autocomplete="off">
                                         <div class="searchable-select-dropdown" id="bulk_client_picker_dropdown"></div>
                                     </div>
-                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a name that isn't found to add a new client.</small>
                                 </div>
-                                <div id="bulk_client_fields">
+                                <div id="bulk_client_fields" style="display:none;">
                                     <div class="form-group">
                                         <label>Client Name</label>
                                          <input type="text" id="bulk_customer" name="customer_name" placeholder="Enter customer name (defaults to &quot;client&quot;)">
@@ -350,12 +357,25 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                             </div>
                         </div>
 
+                        <div class="recent-sales-panel" id="bulk_drafts_panel">
+                            <div class="recent-sales-header" onclick="toggleDraftsPanel('bulk')">
+                                <span class="recent-sales-header-lbl">Saved Drafts <span id="bulk_drafts_badge" class="cart-badge zero">0</span></span>
+                                <span class="recent-toggle-icon" id="bulk_drafts_toggle_icon">&#9660;</span>
+                            </div>
+                            <div class="recent-sales-body" id="bulk_drafts_body" style="display:none;">
+                                <input type="text" class="searchable-select-input" id="bulk_drafts_search" placeholder="Search drafts (customer)...">
+                                <div id="bulk_drafts_list" class="recent-sales-list" style="margin-top:10px;">
+                                    <div class="cart-empty">No saved drafts.</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="recent-sales-panel" id="bulk_recent_panel">
                             <div class="recent-sales-header" onclick="toggleRecentSales('bulk')">
                                 <span class="recent-sales-header-lbl">Recent Sales <span id="bulk_recent_badge" class="cart-badge zero">0</span></span>
-                                <span class="recent-toggle-icon" id="bulk_recent_toggle_icon">&#9650;</span>
+                                <span class="recent-toggle-icon" id="bulk_recent_toggle_icon">&#9660;</span>
                             </div>
-                            <div class="recent-sales-body" id="bulk_recent_body">
+                            <div class="recent-sales-body" id="bulk_recent_body" style="display:none;">
                                 <input type="text" class="searchable-select-input" id="bulk_recent_search" placeholder="Search recent sales (product or customer)...">
                                 <div id="bulk_recent_list" class="recent-sales-list" style="margin-top:10px;">
                                     <div class="cart-empty">Loading&hellip;</div>
@@ -367,7 +387,10 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                     <!-- ═══════════ Column 2: Sale Details ═══════════ -->
                     <div class="sale-col-details">
                         <div id="bulk_step_panel_2">
-                            <div class="form-group">
+                            <div class="cat-filter-toggle" id="bulk_cat_toggle" onclick="showBulkCatFilter()">
+                                <i class="fas fa-filter"></i> Filter by category
+                            </div>
+                            <div class="form-group" id="bulkCatGroup" style="display:none;">
                                 <label>Category</label>
                                 <div class="searchable-select" id="bulkCatWrap">
                                     <input type="text" class="searchable-select-input" id="bulk_cat_search"
@@ -434,15 +457,15 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                             <div class="shortcut-chips">
                                 <label class="shortcut-chip" title="Full amount goes to loan">
                                     <input type="checkbox" id="bulk_is_loan" onchange="toggleBulkShortcut('loan')" style="accent-color:var(--primary);">
-                                    Is Loan?
+                                    Loan?
                                 </label>
                                 <label class="shortcut-chip" title="Full amount goes to cash">
                                     <input type="checkbox" id="bulk_is_cash" onchange="toggleBulkShortcut('cash')" style="accent-color:#16a34a;">
-                                    Is Cash?
+                                    Cash?
                                 </label>
                                 <label class="shortcut-chip" title="Full amount goes to momo">
                                     <input type="checkbox" id="bulk_is_momo" onchange="toggleBulkShortcut('momo')" style="accent-color:#103060;">
-                                    Is Momo?
+                                    Momo?
                                 </label>
                             </div>
 
@@ -473,6 +496,9 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                     </div>
                                 </div>
                                 <div style="display:flex;gap:8px;">
+                                    <button type="button" id="bulk_draft_btn" class="btn btn-secondary" disabled onclick="saveBulkDraft()" style="flex:1;padding:12px;">
+                                        <i class="fas fa-save"></i> Draft
+                                    </button>
                                     <button type="button" id="bulk_print_btn" class="btn btn-secondary" disabled onclick="printBulkCartPreview()" style="flex:1;padding:12px;">
                                         <i class="fas fa-print"></i> Print
                                     </button>
@@ -496,6 +522,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 </script>
 <script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script src="js/sale-queue.js?v=<?php echo filemtime(__DIR__ . '/js/sale-queue.js'); ?>"></script>
+<script src="js/cart-drafts.js?v=<?php echo filemtime(__DIR__ . '/js/cart-drafts.js'); ?>"></script>
 <script src="script.js"></script>
 <script>
 // ── Product picker, backed by DataCache (js/data-cache.js) ─────────────────────
@@ -503,8 +530,9 @@ var bulkSelectedProduct = null;
 var bulkSelectedCat     = '';
 var bulkAllCategories   = [];
 var bulkCart            = [];
+var currentBulkDraftRef = null;
 SaleQueue.init();
-if (window.matchMedia('(max-width: 640px)').matches) toggleRecentSales('bulk');
+CartDrafts.init();
 
 // ── Bulk category searchable select ──────────────────────────────────────────
 (function() {
@@ -562,6 +590,14 @@ if (window.matchMedia('(max-width: 640px)').matches) toggleRecentSales('bulk');
         }
     });
 })();
+
+// Category filter starts hidden behind a small toggle to keep the form compact —
+// most sales don't need it since the product search already matches by name.
+function showBulkCatFilter() {
+    document.getElementById('bulk_cat_toggle').style.display = 'none';
+    document.getElementById('bulkCatGroup').style.display = '';
+    document.getElementById('bulk_cat_search').focus();
+}
 
 function loadBulkCategories() {
     DataCache.getCategoriesList().then(function(cats) { bulkAllCategories = cats.map(function(c) { return c.name; }); });
@@ -669,7 +705,7 @@ loadBulkCategories();
     }
 })();
 
-function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick) {
+function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick, fieldsId) {
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
     var search   = document.getElementById(searchId);
@@ -691,9 +727,26 @@ function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phone
     });
     options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
+    // Reveals the manual Name/Phone fields on demand — as soon as the typed
+    // search term matches none of the registered clients, not just once "Add
+    // new" is explicitly clicked. Prefills the name so the cashier doesn't
+    // have to retype what they already searched for.
     function filter() {
         var term = search.value.toLowerCase();
-        options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1); });
+        var anyVisible = false;
+        options.forEach(function(o) {
+            var match = o.textContent.trim().toLowerCase().indexOf(term) !== -1;
+            o.classList.toggle('hidden', !match);
+            if (match) anyVisible = true;
+        });
+        if (fieldsId && term.trim().length > 0 && !anyVisible) {
+            var fields = document.getElementById(fieldsId);
+            if (fields && fields.style.display === 'none') {
+                fields.style.display = '';
+                var nameEl = document.getElementById(clientInputId);
+                if (nameEl && !nameEl.value) nameEl.value = search.value.trim();
+            }
+        }
     }
     function hl(vis) {
         options.forEach(function(o) { o.classList.remove('highlighted'); });
@@ -730,16 +783,22 @@ function showClientCard(prefix, opt) {
     document.getElementById(prefix + '_client_card_name').textContent = name;
     document.getElementById(prefix + '_client_card_meta').textContent = meta.join(' · ');
     document.getElementById(prefix + '_client_card').classList.add('show');
-    // Only collapse the "Existing Client" search box — the name/phone inputs
-    // below it stay visible (and now hold the picked client's values) even
-    // after a client is selected.
+    // Collapse the "Existing Client" search box and reveal the name/phone
+    // fields (now holding the picked client's values, still editable — e.g.
+    // to add a phone number a walk-in client didn't have on file yet).
     var pickerGroup = document.getElementById(prefix + 'ClientPickerGroup');
     if (pickerGroup) pickerGroup.style.display = 'none';
+    var fields = document.getElementById(prefix + '_client_fields');
+    if (fields) fields.style.display = '';
 }
 function _escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 DataCache.getClients().then(function(list) {
-    if (!list.length) return;
+    if (!list.length) {
+        // No registered clients to search against — go straight to manual entry.
+        document.getElementById('bulk_client_fields').style.display = '';
+        return;
+    }
     document.getElementById('bulkClientPickerGroup').style.display = '';
     document.getElementById('bulk_client_picker_dropdown').innerHTML = list.map(function(c) {
         var visits = parseInt(c.total_loans) || 0;
@@ -752,7 +811,7 @@ DataCache.getClients().then(function(list) {
             '</div>';
     }).join('');
     initLoanClientPicker('bulkClientPickerWrap', 'bulk_client_picker_search', 'bulk_client_picker_dropdown', 'bulk_customer', 'bulk_phone',
-        function(opt) { showClientCard('bulk', opt); });
+        function(opt) { showClientCard('bulk', opt); }, 'bulk_client_fields');
 });
 
 
@@ -761,7 +820,10 @@ function clearBulkClient() {
     document.getElementById('bulk_phone').value = '';
     document.getElementById('bulk_client_card').classList.remove('show');
     var pickerGroup = document.getElementById('bulkClientPickerGroup');
-    if (pickerGroup) pickerGroup.style.display = '';
+    if (pickerGroup) {
+        pickerGroup.style.display = '';
+        document.getElementById('bulk_client_fields').style.display = 'none';
+    }
     document.getElementById('bulk_client_picker_search') && (document.getElementById('bulk_client_picker_search').value = '');
 }
 
@@ -946,6 +1008,7 @@ function renderBulkCart() {
         })
     );
     document.getElementById('bulk_print_btn').disabled = bulkCart.length === 0;
+    document.getElementById('bulk_draft_btn').disabled = bulkCart.length === 0;
     updateBulkPaymentDefaults();
 }
 
@@ -1118,6 +1181,144 @@ function reuseBulkSale(r) {
     });
 }
 
+// ── Cart drafts (js/cart-drafts.js): save the in-progress cart so it can be
+// resumed later — from this device or, once synced, from another one. The
+// draft is kept around after being resumed (not deleted on load) and is only
+// removed once its sale actually goes through (see handleBulkSubmit) or the
+// cashier deletes it manually. ───────────────────────────────────────────────
+function toggleDraftsPanel(prefix) {
+    var body = document.getElementById(prefix + '_drafts_body');
+    var icon = document.getElementById(prefix + '_drafts_toggle_icon');
+    var open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    icon.innerHTML = open ? '&#9660;' : '&#9650;';
+}
+
+function relDraftTime(ms) {
+    var diff = Math.floor((Date.now() - ms) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    if (diff < 172800) return 'Yesterday';
+    return new Date(ms).toLocaleDateString();
+}
+
+function buildBulkDraftSnapshot() {
+    return {
+        customerName: document.getElementById('bulk_customer').value.trim(),
+        itemsCount: bulkCart.length,
+        totalAmount: bulkCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0),
+        fields: {
+            customer_name: document.getElementById('bulk_customer').value,
+            phone: document.getElementById('bulk_phone').value,
+            cash_amount: document.getElementById('bulk_cash').value,
+            momo_amount: document.getElementById('bulk_momo').value,
+            loan_amount: document.getElementById('bulk_loan_split').value,
+            is_loan: document.getElementById('bulk_is_loan').checked,
+            is_cash: document.getElementById('bulk_is_cash').checked,
+            is_momo: document.getElementById('bulk_is_momo').checked
+        },
+        cart: bulkCart
+    };
+}
+
+function saveBulkDraft() {
+    if (bulkCart.length === 0) return;
+    var btn = document.getElementById('bulk_draft_btn');
+    btn.disabled = true;
+    CartDrafts.save('bulk', buildBulkDraftSnapshot(), currentBulkDraftRef).then(function() {
+        showSaleToast('Draft saved.', true);
+        // Cart is safely saved — clear the form so the cashier can move
+        // straight on to the next customer. Resume it later from Saved Drafts.
+        currentBulkDraftRef = null;
+        bulkCart = [];
+        document.getElementById('bulkSaleForm').reset();
+        clearBulkClient();
+        renderBulkCart();
+        loadBulkDrafts();
+    });
+}
+
+var bulkDrafts = [];
+
+function loadBulkDrafts() {
+    CartDrafts.list('bulk').then(function(drafts) {
+        bulkDrafts = drafts;
+        renderBulkDrafts(document.getElementById('bulk_drafts_search').value.trim());
+    });
+}
+loadBulkDrafts();
+
+document.getElementById('bulk_drafts_search').addEventListener('input', function() {
+    renderBulkDrafts(this.value.trim());
+});
+
+function renderBulkDrafts(filter) {
+    var term = (filter || '').toLowerCase();
+    var rows = bulkDrafts.filter(function(d) {
+        if (!term) return true;
+        return (d.customer_name || '').toLowerCase().indexOf(term) !== -1;
+    });
+
+    var badge = document.getElementById('bulk_drafts_badge');
+    badge.textContent = bulkDrafts.length;
+    badge.className = 'cart-badge' + (bulkDrafts.length === 0 ? ' zero' : '');
+
+    var list = document.getElementById('bulk_drafts_list');
+    if (!rows.length) {
+        list.innerHTML = '<div class="cart-empty">' + (bulkDrafts.length ? 'No matches.' : 'No saved drafts.') + '</div>';
+        return;
+    }
+    list.innerHTML = rows.map(function(d, i) {
+        return '<div class="recent-sale-row">' +
+            '<div class="recent-sale-main" data-idx="' + i + '" style="cursor:pointer;" title="Click to resume this draft">' +
+                '<div class="recent-sale-name">' + escBulkHtml(d.customer_name || 'client') + '</div>' +
+                '<div class="recent-sale-sub">' + (d.items_count||0) + ' item(s) &middot; RWF ' + Math.round(d.total_amount||0).toLocaleString() + '</div>' +
+            '</div>' +
+            '<div class="recent-sale-right">' +
+                '<div class="recent-sale-time">' + relDraftTime(d.updatedAt) + '</div>' +
+                '<button type="button" class="cart-rm" data-del-idx="' + i + '" title="Delete draft">&times;</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+    list.querySelectorAll('[data-idx]').forEach(function(el) {
+        el.addEventListener('click', function() { resumeBulkDraft(rows[parseInt(this.dataset.idx)]); });
+    });
+    list.querySelectorAll('[data-del-idx]').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var d = rows[parseInt(this.dataset.delIdx)];
+            if (!confirm('Delete this saved draft?')) return;
+            CartDrafts.remove(d.draft_ref).then(function() {
+                if (currentBulkDraftRef === d.draft_ref) currentBulkDraftRef = null;
+                loadBulkDrafts();
+            });
+        });
+    });
+}
+
+function resumeBulkDraft(d) {
+    var snap = d.snapshot || {};
+    bulkCart = snap.cart || [];
+    currentBulkDraftRef = d.draft_ref;
+
+    var f = snap.fields || {};
+    document.getElementById('bulk_client_fields').style.display = '';
+    document.getElementById('bulk_customer').value    = f.customer_name || '';
+    document.getElementById('bulk_phone').value        = f.phone || '';
+    document.getElementById('bulk_is_loan').checked    = !!f.is_loan;
+    document.getElementById('bulk_is_cash').checked    = !!f.is_cash;
+    document.getElementById('bulk_is_momo').checked    = !!f.is_momo;
+    document.getElementById('bulk_cash').value          = f.cash_amount || 0;
+    document.getElementById('bulk_momo').value          = f.momo_amount || 0;
+    document.getElementById('bulk_loan_split').value    = f.loan_amount || 0;
+
+    renderBulkCart();
+    calcBulkSplit();
+    showSaleToast('Draft resumed.', true);
+    document.getElementById('bulk_cart_body').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 // Applies the Is Loan/Cash/Momo shortcut defaults against the current cart
 // total. Runs on every cart change (not just once on a step transition) so
 // the split stays correct as items are added or removed.
@@ -1223,7 +1424,8 @@ function handleBulkSubmit() {
                 // cached data. Products are left cached: ajax_levels.php re-checks the
                 // real stock level for a product at selection time, so a stale wh_qty in
                 // the cached search list is only cosmetic.
-                Promise.all([DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_bulk')])
+                var draftCleanup = currentBulkDraftRef ? CartDrafts.remove(currentBulkDraftRef) : Promise.resolve();
+                Promise.all([DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_bulk'), draftCleanup])
                     .then(function() { location.reload(); });
             } else {
                 btn.textContent = 'Save Sale';
@@ -1234,6 +1436,7 @@ function handleBulkSubmit() {
             // IndexedDB and will sync automatically. Clear the cart so the
             // cashier can move straight on to the next customer.
             showSaleToast(res.message, true);
+            if (currentBulkDraftRef) { CartDrafts.remove(currentBulkDraftRef); currentBulkDraftRef = null; }
             bulkCart = [];
             form.reset();
             renderBulkCart();

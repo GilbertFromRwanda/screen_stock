@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('orders', 'create')) { $_SESSION['flash_error'] = "You don't have permission to create orders."; redirect('dashboard.php'); }
@@ -137,8 +137,8 @@ while ($row = mysqli_fetch_assoc($r)) $owners_arr[] = $row;
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>New Order</title>
-<link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/sales.css">
+<link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+<link rel="stylesheet" href="css/sales.css?v=<?php echo filemtime(__DIR__ . '/css/sales.css'); ?>">
 <style>
 .order-wrap {
     background:var(--white); border-radius:var(--radius-lg);

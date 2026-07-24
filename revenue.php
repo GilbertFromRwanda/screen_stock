@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
@@ -243,8 +243,8 @@ $today_margin = $today_sales > 0 ? ($today_profit / $today_sales) * 100 : 0;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profit & Revenue Analysis - Small Stock Management</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/revenue.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/revenue.css?v=<?php echo filemtime(__DIR__ . '/css/revenue.css'); ?>">
    
 </head>
 <body>

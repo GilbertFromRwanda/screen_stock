@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
@@ -29,6 +29,52 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_new_client'])) {
     } else {
         $err = mysqli_error($conn);
         $msg = strpos($err, 'Duplicate') !== false ? 'A client with this name and phone already exists.' : $err;
+        echo json_encode(['success' => false, 'message' => $msg]);
+    }
+    exit;
+}
+
+// ── AJAX: Edit Client (name & phone only) ──────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_client'])) {
+    $client_id = (int)$_POST['client_id'];
+    $name      = mysqli_real_escape_string($conn, trim($_POST['client_name']));
+    $phone     = mysqli_real_escape_string($conn, trim($_POST['client_phone']));
+
+    if ($client_id <= 0 || $name === '') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Client name is required.']);
+        exit;
+    }
+
+    $cid_and = cidAnd();
+    $old = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name, phone FROM loan_clients WHERE id = $client_id $cid_and"));
+    if (!$old) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Client not found.']);
+        exit;
+    }
+
+    $ph = $phone !== '' ? "'$phone'" : 'NULL';
+
+    mysqli_begin_transaction($conn);
+    $ok = (bool)mysqli_query($conn, "UPDATE loan_clients SET name = '$name', phone = $ph WHERE id = $client_id $cid_and");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client = '$name', phone = $ph WHERE client_id = $client_id");
+
+    if ($ok) {
+        mysqli_commit($conn);
+        touchCacheStore($conn, 'clients');
+        logActivity($conn, (int)$_SESSION['user_id'], 'Edit Client', "Updated client #{$client_id}",
+            'loan_clients', $client_id,
+            ['name' => $old['name'], 'phone' => $old['phone']],
+            ['name' => $name, 'phone' => $phone]
+        );
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true]);
+    } else {
+        mysqli_rollback($conn);
+        $err = mysqli_error($conn);
+        $msg = strpos($err, 'Duplicate') !== false ? 'A client with this name and phone already exists.' : $err;
+        header('Content-Type: application/json');
         echo json_encode(['success' => false, 'message' => $msg]);
     }
     exit;
@@ -587,8 +633,8 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Loans</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/loans.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/loans.css?v=<?php echo filemtime(__DIR__ . '/css/loans.css'); ?>">
     <link rel="stylesheet" href="css/all.min.css">
 </head>
 <body>
@@ -695,8 +741,9 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
 
                             <div class="act-menu-sep"></div>
+                            <button class="act-item" onclick="openEditClient(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo htmlspecialchars(json_encode($c['phone']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
                             <button class="act-item info" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
-                          
+
                         </div>
                     </div>
                 </td>
@@ -950,6 +997,27 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 <input type="text" id="new_client_phone" name="client_phone" placeholder="e.g. 07XXXXXXXX">
             </div>
             <button type="submit" name="add_new_client" class="btn btn-primary">Save Client</button>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Client Modal -->
+<div id="editClientModal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <span class="close" onclick="closeModal('editClientModal')">&times;</span>
+        <h2>Edit Client</h2>
+        <div id="editClientAlert" class="alert" style="display:none;"></div>
+        <form id="editClientForm">
+            <input type="hidden" id="edit_client_id" name="client_id">
+            <div class="form-group">
+                <label>Client Name*</label>
+                <input type="text" id="edit_client_name" name="client_name" required placeholder="Full name">
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="edit_client_phone" name="client_phone" placeholder="e.g. 07XXXXXXXX">
+            </div>
+            <button type="submit" name="edit_client" class="btn btn-primary">Save Changes</button>
         </form>
     </div>
 </div>
@@ -1339,6 +1407,19 @@ ajaxForm('addClientForm', 'addClientAlert', 'add_new_client', function() {
     document.getElementById('addClientForm').reset();
     var allBtn = document.querySelector('.filter-status-btn[data-status="all"]');
     if (allBtn) setStatusFilter(allBtn);
+    reloadClientsTable();
+});
+
+function openEditClient(clientId, name, phone) {
+    document.getElementById('edit_client_id').value = clientId;
+    document.getElementById('edit_client_name').value = name || '';
+    document.getElementById('edit_client_phone').value = phone || '';
+    document.getElementById('editClientAlert').style.display = 'none';
+    openModal('editClientModal');
+}
+
+ajaxForm('editClientForm', 'editClientAlert', 'edit_client', function() {
+    closeModal('editClientModal');
     reloadClientsTable();
 });
 
@@ -1950,6 +2031,7 @@ function _renderClientsTable(clients) {
             '<button class="act-item" onclick="viewClientLoans(' + _escHtml(JSON.stringify(c.name)) + ',' + parseInt(c.client_id) + ');closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>' +
             '<button class="act-item" onclick="viewClientPayments(' + parseInt(c.client_id) + ',' + _escHtml(JSON.stringify(c.name)) + ');closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>' +
             '<div class="act-menu-sep"></div>' +
+            '<button class="act-item" onclick="openEditClient(' + parseInt(c.client_id) + ',' + _escHtml(JSON.stringify(c.name)) + ',' + _escHtml(JSON.stringify(c.phone || '')) + ');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>' +
             '<button class="act-item info" onclick="recalcClientBalance(' + parseInt(c.client_id) + ',this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>' +
             '</div></div></td>' +
             '<td style="color:var(--secondary);">' + (i + 1) + '</td>' +

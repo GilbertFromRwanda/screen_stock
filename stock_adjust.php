@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 require_once __DIR__ . '/stock_value.php';
 if (!isLoggedIn()) redirect('login.php');
@@ -90,7 +90,7 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Adjust</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <style>
         .val-block { font-size:11px; color:var(--secondary); }
         .val-cost  { color:#059669; font-weight:600; }

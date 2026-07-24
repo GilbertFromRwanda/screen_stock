@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't have permission to record retail sales."; redirect('dashboard.php'); }
@@ -19,8 +19,8 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gucuruza Detaye - Retail Sale</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/sales.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/sales.css?v=<?php echo filemtime(__DIR__ . '/css/sales.css'); ?>">
     <style>
         .sale-page-card {
             background: var(--white);
@@ -81,7 +81,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         }
         @keyframes sd-spin { to { transform: rotate(360deg); } }
         .split-payment-box { border: 1px solid var(--gray-300); border-radius: var(--radius); overflow: hidden; }
-        .split-row { display: flex; align-items: center; padding: 8px 12px; gap: 10px; border-bottom: 1px solid var(--gray-100); }
+        .split-row { display: flex; align-items: center; padding: 6px 12px; gap: 10px; border-bottom: 1px solid var(--gray-100); }
         .split-row:last-child { border-bottom: none; }
         .split-label { width: 70px; font-size: 13px; font-weight: 500; flex-shrink: 0; }
         .split-row input[type="text"] { flex: 1; padding: 6px 10px; border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 14px; }
@@ -112,6 +112,13 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
             padding: 4px 8px; cursor: pointer; white-space: nowrap;
         }
         .default-price-badge:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .cat-filter-toggle {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 12px; color: var(--secondary); background: var(--gray-100);
+            border: 1px solid var(--gray-300); border-radius: 4px;
+            padding: 6px 10px; cursor: pointer; margin-bottom: 16px; user-select: none;
+        }
+        .cat-filter-toggle:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 
         /* Step indicator */
         .steps-indicator {
@@ -200,7 +207,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .client-card-clear:hover { color: #dc2626; }
 
         /* ── Payment shortcut chips (compact) ─────────────────────────────────── */
-        .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .shortcut-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
         .shortcut-chip {
             display: inline-flex; align-items: center; gap: 6px;
             padding: 6px 12px; border: 1.5px solid var(--gray-300); border-radius: 999px;
@@ -230,7 +237,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
         .cart-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); font-size: 13px; font-weight: 700; }
         .cart-badge { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; }
         .cart-badge.zero { background: var(--gray-300); }
-        .cart-body { min-height: 80px; max-height: 380px; overflow-y: auto; }
+        .cart-body { min-height: 80px; max-height: 260px; overflow-y: auto; }
         .cart-empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--secondary); line-height: 1.6; }
         .cart-item { display: flex; align-items: flex-start; padding: 10px 14px; gap: 8px; border-bottom: 1px solid var(--gray-100); }
         .cart-item:last-child { border-bottom: none; }
@@ -334,9 +341,9 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                             placeholder="Search registered client..." autocomplete="off">
                                         <div class="searchable-select-dropdown" id="retail_client_picker_dropdown"></div>
                                     </div>
-                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
+                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a name that isn't found to add a new client.</small>
                                 </div>
-                                <div id="retail_client_fields">
+                                <div id="retail_client_fields" style="display:none;">
                                     <div class="form-group">
                                         <label>Client Name</label>
                                         <input type="text" id="retail_customer" name="customer_name" placeholder="Enter customer name (defaults to &quot;client&quot;)">
@@ -349,12 +356,25 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                             </div>
                         </div>
 
+                        <div class="recent-sales-panel" id="retail_drafts_panel">
+                            <div class="recent-sales-header" onclick="toggleDraftsPanel('retail')">
+                                <span class="recent-sales-header-lbl">Saved Drafts <span id="retail_drafts_badge" class="cart-badge zero">0</span></span>
+                                <span class="recent-toggle-icon" id="retail_drafts_toggle_icon">&#9660;</span>
+                            </div>
+                            <div class="recent-sales-body" id="retail_drafts_body" style="display:none;">
+                                <input type="text" class="searchable-select-input" id="retail_drafts_search" placeholder="Search drafts (customer)...">
+                                <div id="retail_drafts_list" class="recent-sales-list" style="margin-top:10px;">
+                                    <div class="cart-empty">No saved drafts.</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="recent-sales-panel" id="retail_recent_panel">
                             <div class="recent-sales-header" onclick="toggleRecentSales('retail')">
                                 <span class="recent-sales-header-lbl">Recent Sales <span id="retail_recent_badge" class="cart-badge zero">0</span></span>
-                                <span class="recent-toggle-icon" id="retail_recent_toggle_icon">&#9650;</span>
+                                <span class="recent-toggle-icon" id="retail_recent_toggle_icon">&#9660;</span>
                             </div>
-                            <div class="recent-sales-body" id="retail_recent_body">
+                            <div class="recent-sales-body" id="retail_recent_body" style="display:none;">
                                 <input type="text" class="searchable-select-input" id="retail_recent_search" placeholder="Search recent sales (product or customer)...">
                                 <div id="retail_recent_list" class="recent-sales-list" style="margin-top:10px;">
                                     <div class="cart-empty">Loading&hellip;</div>
@@ -366,7 +386,10 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                     <!-- ═══════════ Column 2: Sale Details ═══════════ -->
                     <div class="sale-col-details">
                         <div id="retail_step_panel_2">
-                            <div class="form-group">
+                            <div class="cat-filter-toggle" id="retail_cat_toggle" onclick="showRetailCatFilter()">
+                                <i class="fas fa-filter"></i> Filter by category
+                            </div>
+                            <div class="form-group" id="retailCatGroup" style="display:none;">
                                 <label>Category</label>
                                 <div class="searchable-select" id="retailCatWrap">
                                     <input type="text" class="searchable-select-input" id="retail_cat_search"
@@ -433,15 +456,15 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                             <div class="shortcut-chips">
                                 <label class="shortcut-chip" title="Full amount goes to loan">
                                     <input type="checkbox" id="retail_is_loan" onchange="toggleRetailShortcut('loan')" style="accent-color:var(--primary);">
-                                    Is Loan?
+                                    Loan?
                                 </label>
                                 <label class="shortcut-chip" title="Full amount goes to cash">
                                     <input type="checkbox" id="retail_is_cash" onchange="toggleRetailShortcut('cash')" style="accent-color:#16a34a;">
-                                    Is Cash?
+                                    Cash?
                                 </label>
                                 <label class="shortcut-chip" title="Full amount goes to momo">
                                     <input type="checkbox" id="retail_is_momo" onchange="toggleRetailShortcut('momo')" style="accent-color:#103060;">
-                                    Is Momo?
+                                    Momo?
                                 </label>
                             </div>
 
@@ -472,6 +495,9 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                     </div>
                                 </div>
                                 <div style="display:flex;gap:8px;">
+                                    <button type="button" id="retail_draft_btn" class="btn btn-secondary" disabled onclick="saveRetailDraft()" style="flex:1;padding:12px;">
+                                        <i class="fas fa-save"></i> Draft
+                                    </button>
                                     <button type="button" id="retail_print_btn" class="btn btn-secondary" disabled onclick="printRetailCartPreview()" style="flex:1;padding:12px;">
                                         <i class="fas fa-print"></i> Print
                                     </button>
@@ -495,15 +521,17 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 </script>
 <script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script src="js/sale-queue.js?v=<?php echo filemtime(__DIR__ . '/js/sale-queue.js'); ?>"></script>
+<script src="js/cart-drafts.js?v=<?php echo filemtime(__DIR__ . '/js/cart-drafts.js'); ?>"></script>
 <script src="script.js"></script>
 <script>
 SaleQueue.init();
-if (window.matchMedia('(max-width: 640px)').matches) toggleRecentSales('retail');
+CartDrafts.init();
 // ── Product picker, backed by DataCache (js/data-cache.js) ─────────────────────
 var retailSelectedProduct = null;
 var retailSelectedCat     = '';
 var retailAllCategories   = [];
 var retailCart            = [];
+var currentRetailDraftRef = null;
 
 // ── Retail category searchable select ────────────────────────────────────────
 (function() {
@@ -561,6 +589,14 @@ var retailCart            = [];
         }
     });
 })();
+
+// Category filter starts hidden behind a small toggle to keep the form compact —
+// most sales don't need it since the product search already matches by name.
+function showRetailCatFilter() {
+    document.getElementById('retail_cat_toggle').style.display = 'none';
+    document.getElementById('retailCatGroup').style.display = '';
+    document.getElementById('retail_cat_search').focus();
+}
 
 function loadRetailCategories() {
     DataCache.getCategoriesList().then(function(cats) { retailAllCategories = cats.map(function(c) { return c.name; }); });
@@ -668,7 +704,7 @@ loadRetailCategories();
     }
 })();
 
-function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick) {
+function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick, fieldsId) {
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
     var search   = document.getElementById(searchId);
@@ -690,9 +726,26 @@ function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phone
     });
     options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
+    // Reveals the manual Name/Phone fields on demand — as soon as the typed
+    // search term matches none of the registered clients, not just once "Add
+    // new" is explicitly clicked. Prefills the name so the cashier doesn't
+    // have to retype what they already searched for.
     function filter() {
         var term = search.value.toLowerCase();
-        options.forEach(function(o) { o.classList.toggle('hidden', o.textContent.trim().toLowerCase().indexOf(term)===-1); });
+        var anyVisible = false;
+        options.forEach(function(o) {
+            var match = o.textContent.trim().toLowerCase().indexOf(term) !== -1;
+            o.classList.toggle('hidden', !match);
+            if (match) anyVisible = true;
+        });
+        if (fieldsId && term.trim().length > 0 && !anyVisible) {
+            var fields = document.getElementById(fieldsId);
+            if (fields && fields.style.display === 'none') {
+                fields.style.display = '';
+                var nameEl = document.getElementById(clientInputId);
+                if (nameEl && !nameEl.value) nameEl.value = search.value.trim();
+            }
+        }
     }
     function hl(vis) {
         options.forEach(function(o) { o.classList.remove('highlighted'); });
@@ -729,17 +782,23 @@ function showClientCard(prefix, opt) {
     document.getElementById(prefix + '_client_card_name').textContent = name;
     document.getElementById(prefix + '_client_card_meta').textContent = meta.join(' · ');
     document.getElementById(prefix + '_client_card').classList.add('show');
-    // Only collapse the "Existing Client" search box — the name/phone inputs
-    // below it stay visible (and now hold the picked client's values) even
-    // after a client is selected.
+    // Collapse the "Existing Client" search box and reveal the name/phone
+    // fields (now holding the picked client's values, still editable — e.g.
+    // to add a phone number a walk-in client didn't have on file yet).
     var pickerGroup = document.getElementById(prefix + 'ClientPickerGroup');
     if (pickerGroup) pickerGroup.style.display = 'none';
+    var fields = document.getElementById(prefix + '_client_fields');
+    if (fields) fields.style.display = '';
 }
 
 function _escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 DataCache.getClients().then(function(list) {
-    if (!list.length) return;
+    if (!list.length) {
+        // No registered clients to search against — go straight to manual entry.
+        document.getElementById('retail_client_fields').style.display = '';
+        return;
+    }
     document.getElementById('retailClientPickerGroup').style.display = '';
     document.getElementById('retail_client_picker_dropdown').innerHTML = list.map(function(c) {
         var visits = parseInt(c.total_loans) || 0;
@@ -752,7 +811,7 @@ DataCache.getClients().then(function(list) {
             '</div>';
     }).join('');
     initLoanClientPicker('retailClientPickerWrap', 'retail_client_picker_search', 'retail_client_picker_dropdown', 'retail_customer', 'retail_phone',
-        function(opt) { showClientCard('retail', opt); });
+        function(opt) { showClientCard('retail', opt); }, 'retail_client_fields');
 });
 
 
@@ -762,7 +821,10 @@ function clearRetailClient() {
     document.getElementById('retail_phone').value = '';
     document.getElementById('retail_client_card').classList.remove('show');
     var pickerGroup = document.getElementById('retailClientPickerGroup');
-    if (pickerGroup) pickerGroup.style.display = '';
+    if (pickerGroup) {
+        pickerGroup.style.display = '';
+        document.getElementById('retail_client_fields').style.display = 'none';
+    }
     document.getElementById('retail_client_picker_search') && (document.getElementById('retail_client_picker_search').value = '');
 }
 
@@ -951,6 +1013,7 @@ function renderRetailCart() {
         })
     );
     document.getElementById('retail_print_btn').disabled = retailCart.length === 0;
+    document.getElementById('retail_draft_btn').disabled = retailCart.length === 0;
     updateRetailPaymentDefaults();
 }
 
@@ -1123,6 +1186,144 @@ function reuseRetailSale(r) {
     });
 }
 
+// ── Cart drafts (js/cart-drafts.js): save the in-progress cart so it can be
+// resumed later — from this device or, once synced, from another one. The
+// draft is kept around after being resumed (not deleted on load) and is only
+// removed once its sale actually goes through (see handleRetailSubmit) or the
+// cashier deletes it manually. ───────────────────────────────────────────────
+function toggleDraftsPanel(prefix) {
+    var body = document.getElementById(prefix + '_drafts_body');
+    var icon = document.getElementById(prefix + '_drafts_toggle_icon');
+    var open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    icon.innerHTML = open ? '&#9660;' : '&#9650;';
+}
+
+function relDraftTime(ms) {
+    var diff = Math.floor((Date.now() - ms) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    if (diff < 172800) return 'Yesterday';
+    return new Date(ms).toLocaleDateString();
+}
+
+function buildRetailDraftSnapshot() {
+    return {
+        customerName: document.getElementById('retail_customer').value.trim(),
+        itemsCount: retailCart.length,
+        totalAmount: retailCart.reduce(function(s,i){ return s + i.qty*i.price; }, 0),
+        fields: {
+            customer_name: document.getElementById('retail_customer').value,
+            phone: document.getElementById('retail_phone').value,
+            cash_amount: document.getElementById('retail_cash').value,
+            momo_amount: document.getElementById('retail_momo').value,
+            loan_amount: document.getElementById('retail_loan_split').value,
+            is_loan: document.getElementById('retail_is_loan').checked,
+            is_cash: document.getElementById('retail_is_cash').checked,
+            is_momo: document.getElementById('retail_is_momo').checked
+        },
+        cart: retailCart
+    };
+}
+
+function saveRetailDraft() {
+    if (retailCart.length === 0) return;
+    var btn = document.getElementById('retail_draft_btn');
+    btn.disabled = true;
+    CartDrafts.save('retail', buildRetailDraftSnapshot(), currentRetailDraftRef).then(function() {
+        showSaleToast('Draft saved.', true);
+        // Cart is safely saved — clear the form so the cashier can move
+        // straight on to the next customer. Resume it later from Saved Drafts.
+        currentRetailDraftRef = null;
+        retailCart = [];
+        document.getElementById('retailSaleForm').reset();
+        clearRetailClient();
+        renderRetailCart();
+        loadRetailDrafts();
+    });
+}
+
+var retailDrafts = [];
+
+function loadRetailDrafts() {
+    CartDrafts.list('retail').then(function(drafts) {
+        retailDrafts = drafts;
+        renderRetailDrafts(document.getElementById('retail_drafts_search').value.trim());
+    });
+}
+loadRetailDrafts();
+
+document.getElementById('retail_drafts_search').addEventListener('input', function() {
+    renderRetailDrafts(this.value.trim());
+});
+
+function renderRetailDrafts(filter) {
+    var term = (filter || '').toLowerCase();
+    var rows = retailDrafts.filter(function(d) {
+        if (!term) return true;
+        return (d.customer_name || '').toLowerCase().indexOf(term) !== -1;
+    });
+
+    var badge = document.getElementById('retail_drafts_badge');
+    badge.textContent = retailDrafts.length;
+    badge.className = 'cart-badge' + (retailDrafts.length === 0 ? ' zero' : '');
+
+    var list = document.getElementById('retail_drafts_list');
+    if (!rows.length) {
+        list.innerHTML = '<div class="cart-empty">' + (retailDrafts.length ? 'No matches.' : 'No saved drafts.') + '</div>';
+        return;
+    }
+    list.innerHTML = rows.map(function(d, i) {
+        return '<div class="recent-sale-row">' +
+            '<div class="recent-sale-main" data-idx="' + i + '" style="cursor:pointer;" title="Click to resume this draft">' +
+                '<div class="recent-sale-name">' + escRetailHtml(d.customer_name || 'client') + '</div>' +
+                '<div class="recent-sale-sub">' + (d.items_count||0) + ' item(s) &middot; RWF ' + Math.round(d.total_amount||0).toLocaleString() + '</div>' +
+            '</div>' +
+            '<div class="recent-sale-right">' +
+                '<div class="recent-sale-time">' + relDraftTime(d.updatedAt) + '</div>' +
+                '<button type="button" class="cart-rm" data-del-idx="' + i + '" title="Delete draft">&times;</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+    list.querySelectorAll('[data-idx]').forEach(function(el) {
+        el.addEventListener('click', function() { resumeRetailDraft(rows[parseInt(this.dataset.idx)]); });
+    });
+    list.querySelectorAll('[data-del-idx]').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var d = rows[parseInt(this.dataset.delIdx)];
+            if (!confirm('Delete this saved draft?')) return;
+            CartDrafts.remove(d.draft_ref).then(function() {
+                if (currentRetailDraftRef === d.draft_ref) currentRetailDraftRef = null;
+                loadRetailDrafts();
+            });
+        });
+    });
+}
+
+function resumeRetailDraft(d) {
+    var snap = d.snapshot || {};
+    retailCart = snap.cart || [];
+    currentRetailDraftRef = d.draft_ref;
+
+    var f = snap.fields || {};
+    document.getElementById('retail_client_fields').style.display = '';
+    document.getElementById('retail_customer').value    = f.customer_name || '';
+    document.getElementById('retail_phone').value        = f.phone || '';
+    document.getElementById('retail_is_loan').checked    = !!f.is_loan;
+    document.getElementById('retail_is_cash').checked    = !!f.is_cash;
+    document.getElementById('retail_is_momo').checked    = !!f.is_momo;
+    document.getElementById('retail_cash').value          = f.cash_amount || 0;
+    document.getElementById('retail_momo').value          = f.momo_amount || 0;
+    document.getElementById('retail_loan_split').value    = f.loan_amount || 0;
+
+    renderRetailCart();
+    calcRetailSplit();
+    showSaleToast('Draft resumed.', true);
+    document.getElementById('retail_cart_body').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 // Applies the Is Loan/Cash/Momo shortcut defaults against the current cart
 // total. Runs on every cart change (not just once on a step transition) so
 // the split stays correct as items are added or removed.
@@ -1226,7 +1427,8 @@ function handleRetailSubmit() {
                 // Products are left cached: ajax_levels.php re-checks the real stock
                 // level for a product at selection time, so a stale wh_qty in the
                 // cached search list is only cosmetic.
-                Promise.all([DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_retail')])
+                var draftCleanup = currentRetailDraftRef ? CartDrafts.remove(currentRetailDraftRef) : Promise.resolve();
+                Promise.all([DataCache.invalidate('clients'), DataCache.invalidate('recent_sales_retail'), draftCleanup])
                     .then(function() { location.reload(); });
             } else {
                 btn.textContent = 'Save Sale';
@@ -1237,6 +1439,7 @@ function handleRetailSubmit() {
             // IndexedDB and will sync automatically. Clear the cart so the
             // cashier can move straight on to the next customer.
             showSaleToast(res.message, true);
+            if (currentRetailDraftRef) { CartDrafts.remove(currentRetailDraftRef); currentRetailDraftRef = null; }
             retailCart = [];
             form.reset();
             renderRetailCart();

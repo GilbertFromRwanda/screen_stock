@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('purchases')) { $_SESSION['flash_error'] = "You don't have permission to access Purchase Advice."; redirect('dashboard.php'); }
@@ -194,7 +194,7 @@ foreach ($products as $p) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Purchase Advice</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <style>
         /* ── Period tabs ── */
         .period-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:24px; }

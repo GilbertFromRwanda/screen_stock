@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 
 if (!isLoggedIn()) { redirect('login.php'); }
@@ -64,7 +64,7 @@ $sql_file = __DIR__ . '/db/updates.sql';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Run Updates</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <style>
         .ru-wrap       { max-width: 820px; margin: 0 auto; padding: 32px 24px; }
         .ru-page-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; color: var(--text, #1e293b); }
