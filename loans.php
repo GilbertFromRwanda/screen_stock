@@ -1,5 +1,6 @@
 ﻿<?php
 require_once 'config.php';
+date_default_timezone_set('Africa/Kigali');
 
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('loans')) { $_SESSION['flash_error'] = "You don't have permission to access Loans."; redirect('dashboard.php'); }
