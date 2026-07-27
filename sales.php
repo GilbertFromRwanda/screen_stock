@@ -7,6 +7,7 @@ if (!hasPermission('sales')) { $_SESSION['flash_error'] = "You don't have permis
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 $company_name = companyName($conn);
+$now=date('Y-m-d H:i:s');
 
 // ── DELETE Bulk Sale ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
@@ -385,13 +386,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     // Client-level aggregates (loan_clients balance, the payment already collected)
     // apply once to the whole sale, not per product row.
     if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount, updated_at)
+            VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount, '$now')
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
+                unpaid_amount = unpaid_amount + $loan_amount,
+                updated_at    = '$now'
         ");
         $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) {
@@ -595,13 +598,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     // Client-level aggregates (loan_clients balance, the payment already collected)
     // apply once to the whole sale, not per product row.
     if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount, updated_at)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount, '$now')
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
+                unpaid_amount = unpaid_amount + $loan_amount,
+                updated_at    = '$now'
         ");
         $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) {
@@ -776,13 +781,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     // Client-level aggregates (loan_clients balance, the payment already collected)
     // apply once to the whole sale, not per product row.
     if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount, updated_at)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount, '$now')
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
+                unpaid_amount = unpaid_amount + $loan_amount,
+                updated_at    = '$now'
         ");
         $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) {

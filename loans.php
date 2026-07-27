@@ -1,6 +1,6 @@
 ﻿<?php
 require_once 'config.php';
-date_default_timezone_set('Africa/Kigali');
+
 
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('loans')) { $_SESSION['flash_error'] = "You don't have permission to access Loans."; redirect('dashboard.php'); }
@@ -18,9 +18,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_new_client'])) {
 
     $cid_sql = cidSql();
     $ph = $phone !== '' ? "'$phone'" : 'NULL';
+    $now = date('Y-m-d H:i:s');
     $ok = (bool)mysqli_query($conn, "
-        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount, paid_amount)
-        VALUES ($cid_sql, '$name', $ph, 0, 0, 0)
+        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount, paid_amount, updated_at)
+        VALUES ($cid_sql, '$name', $ph, 0, 0, 0, '$now')
     ");
 
     header('Content-Type: application/json');
@@ -56,9 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_client'])) {
     }
 
     $ph = $phone !== '' ? "'$phone'" : 'NULL';
+    $now = date('Y-m-d H:i:s');
 
     mysqli_begin_transaction($conn);
-    $ok = (bool)mysqli_query($conn, "UPDATE loan_clients SET name = '$name', phone = $ph WHERE id = $client_id $cid_and");
+    $ok = (bool)mysqli_query($conn, "UPDATE loan_clients SET name = '$name', phone = $ph, updated_at = '$now' WHERE id = $client_id $cid_and");
     if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client = '$name', phone = $ph WHERE client_id = $client_id");
 
     if ($ok) {
@@ -110,13 +112,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
 
     if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id $cid_and");
 
+    $now = date('Y-m-d H:i:s');
     if ($ok) $ok = (bool)mysqli_query($conn, "
-        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount)
-        VALUES ($cid_sql, '$client', $ph, 1, '$amount')
+        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount, updated_at)
+        VALUES ($cid_sql, '$client', $ph, 1, '$amount', '$now')
         ON DUPLICATE KEY UPDATE
             id            = LAST_INSERT_ID(id),
             total_loans   = total_loans + 1,
-            unpaid_amount = unpaid_amount + '$amount'
+            unpaid_amount = unpaid_amount + '$amount',
+            updated_at    = '$now'
     ");
     $client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
@@ -193,6 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
         }
 
     if ($ok && $lc_id > 0) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
             UPDATE loan_clients lc
             JOIN (
@@ -206,7 +211,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
             ) agg
             SET lc.paid_amount   = agg.total_paid_sum,
                 lc.unpaid_amount = agg.total_loaned - agg.total_paid_sum,
-                lc.total_loans   = agg.cnt
+                lc.total_loans   = agg.cnt,
+                lc.updated_at    = '$now'
             WHERE lc.id = $lc_id
         ");
     }
@@ -499,6 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_payments_di
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['recalc_client_balance'])) {
     $client_id = (int)$_POST['client_id'];
     if ($client_id <= 0) { header('Content-Type: application/json'); echo json_encode(['success'=>false,'message'=>'Invalid client.']); exit; }
+    $now = date('Y-m-d H:i:s');
     $ok = (bool)mysqli_query($conn, "
         UPDATE loan_clients lc
         JOIN (
@@ -512,7 +519,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['recalc_client_balance'
         ) agg
         SET lc.total_loans   = agg.cnt,
             lc.paid_amount   = agg.paid_sum,
-            lc.unpaid_amount = agg.loaned - agg.paid_sum
+            lc.unpaid_amount = agg.loaned - agg.paid_sum,
+            lc.updated_at    = '$now'
         WHERE lc.id = $client_id
     ");
     if ($ok) touchCacheStore($conn, 'clients');
@@ -557,6 +565,7 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
         }
         if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loan_payments WHERE loan_id = $del_id");
         if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loans WHERE id = $del_id");
+        $now = date('Y-m-d H:i:s');
         if ($ok) $ok = (bool)mysqli_query($conn, "
             UPDATE loan_clients lc
             JOIN (
@@ -570,7 +579,8 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
             ) agg
             SET lc.total_loans   = agg.cnt,
                 lc.paid_amount   = agg.paid_sum,
-                lc.unpaid_amount = agg.loaned - agg.paid_sum
+                lc.unpaid_amount = agg.loaned - agg.paid_sum,
+                lc.updated_at    = '$now'
             WHERE lc.id = $del_client_id
         ");
 
