@@ -276,6 +276,152 @@ function get_categories(mysqli $conn): array {
     return $rows;
 }
 
+// Returns the current company's loan_settings row (payment_period_days,
+// growth_rate_percent, zero_payment_floor), falling back to defaults when no
+// row has been saved yet. Never writes — save_loan_settings creates the row.
+function getLoanSettings(mysqli $conn): array {
+    $defaults = ['payment_period_days' => 7, 'growth_rate_percent' => 20.00, 'zero_payment_floor' => 0.00];
+    $cid_check = cid() !== null ? "company_id = " . cid() : "company_id IS NULL";
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT payment_period_days, growth_rate_percent, zero_payment_floor
+        FROM loan_settings WHERE $cid_check LIMIT 1
+    "));
+    return $row ?: $defaults;
+}
+
+// Returns the loan-settings that actually apply to one borrower: the general
+// (company-wide) row from getLoanSettings(), with any of the three fields the
+// client has personally overridden (loan_clients.payment_period_days /
+// growth_rate_percent / zero_payment_floor — all NULL by default, meaning
+// "inherit") substituted in. Also reports which fields are overridden so the
+// UI can flag it. A trusted client can be given a longer period, a richer
+// growth rate, or a higher zero-payment floor than everyone else this way.
+function getEffectiveLoanSettings(mysqli $conn, ?int $client_id): array {
+    $settings = getLoanSettings($conn);
+    $settings['overrides'] = ['payment_period_days' => false, 'growth_rate_percent' => false, 'zero_payment_floor' => false];
+    if (!$client_id) return $settings;
+
+    $cid_and = cidAnd();
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT payment_period_days, growth_rate_percent, zero_payment_floor
+        FROM loan_clients WHERE id = $client_id $cid_and
+    "));
+    if (!$row) return $settings;
+
+    foreach (['payment_period_days', 'growth_rate_percent', 'zero_payment_floor'] as $field) {
+        if ($row[$field] !== null) {
+            $settings[$field] = $row[$field];
+            $settings['overrides'][$field] = true;
+        }
+    }
+    return $settings;
+}
+
+// Computes the amount a client should be eligible for on their NEXT loan.
+// Judges behavior against ALL of the client's currently outstanding debt
+// (loan_clients.unpaid_amount), not just their single most recent loan — a
+// client who stacks new loans while old ones sit unpaid should score worse,
+// not better, so "did they clear everything they owed" is what's scored.
+//
+// The "period" is anchored to their last UNPAID loan (the most recent loan
+// that still carries a balance) — its loan_date..due_date window is what
+// we're checking repayment against. Only payments recorded on/before the due
+// date, and on/after that loan's date, count as "during the period" — a
+// payment toward ancient debt from years ago doesn't count as this cycle's
+// behavior, and paying late doesn't count as on-time even if eventually paid
+// in full. If every loan is already fully paid off, the client's most recent
+// loan overall is used instead (nothing currently pending to score).
+//
+// total_owed (what's being judged) is reconstructed as:
+//   current unpaid_amount + payments made during the period
+// i.e. "what they owed at the start of the period", assuming (as this gate
+// is meant to enforce) no further credit was extended mid-period.
+//
+// Settings (period/growth/floor) are the borrower's personal overrides where
+// set, otherwise the general company settings — see getEffectiveLoanSettings().
+//   ratio >= 1   → paid in full on time  → total_owed + growth_rate_percent
+//   0 < ratio<1  → partial               → total_owed * ratio
+//   ratio == 0   → nothing paid          → zero_payment_floor
+// Returns ['has_history' => false] when the client has no prior loan at all
+// (no score can be computed yet — caller should treat as "no limit set").
+function computeLoanEligibility(mysqli $conn, int $client_id): array {
+    if ($client_id <= 0) return ['has_history' => false];
+
+    $settings = getEffectiveLoanSettings($conn, $client_id);
+    $cid_and  = cidAndFor('l');
+
+    // Last unpaid loan — the debt whose period we're judging. Falls back to
+    // the most recent loan overall when the client has nothing outstanding.
+    $ref_loan = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT l.id, l.loan_date, l.due_date,
+               (l.amount - COALESCE(SUM(lp.amount_paid),0)) AS balance
+        FROM loans l
+        LEFT JOIN loan_payments lp ON lp.loan_id = l.id
+        WHERE l.client_id = $client_id $cid_and
+        GROUP BY l.id
+        HAVING balance > 0.009
+        ORDER BY l.loan_date DESC, l.id DESC
+        LIMIT 1
+    "));
+    if (!$ref_loan) {
+        $ref_loan = mysqli_fetch_assoc(mysqli_query($conn, "
+            SELECT l.id, l.loan_date, l.due_date
+            FROM loans l
+            WHERE l.client_id = $client_id $cid_and
+            ORDER BY l.loan_date DESC, l.id DESC
+            LIMIT 1
+        "));
+    }
+    if (!$ref_loan) return ['has_history' => false];
+
+    $due_date = $ref_loan['due_date'] ?: date('Y-m-d', strtotime($ref_loan['loan_date'] . ' +' . (int)$settings['payment_period_days'] . ' days'));
+    $due_esc  = mysqli_real_escape_string($conn, $due_date);
+    $ref_date_esc = mysqli_real_escape_string($conn, $ref_loan['loan_date']);
+
+    // Payments toward ANY of this client's loans, made during this loan's
+    // window — we're checking whether their whole debt got cleared in time,
+    // not just this one loan.
+    $paid = (float)mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT COALESCE(SUM(lp.amount_paid),0) AS paid
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        WHERE l.client_id = $client_id $cid_and
+          AND lp.payment_date >= '$ref_date_esc' AND lp.payment_date <= '$due_esc'
+    "))['paid'];
+
+    $cid_and_client = cidAnd();
+    $current_unpaid = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT unpaid_amount FROM loan_clients WHERE id = $client_id $cid_and_client
+    "))['unpaid_amount'] ?? 0);
+
+    $total_owed = $current_unpaid + $paid;
+    $ratio = $total_owed > 0 ? min(1.0, $paid / $total_owed) : 1.0;
+
+    if ($ratio >= 1.0) {
+        $eligible = $total_owed * (1 + (float)$settings['growth_rate_percent'] / 100);
+        $tier = 'full';
+    } elseif ($ratio > 0) {
+        $eligible = $total_owed * $ratio;
+        $tier = 'partial';
+    } else {
+        $eligible = (float)$settings['zero_payment_floor'];
+        $tier = 'none';
+    }
+
+    return [
+        'has_history'        => true,
+        'eligible_amount'    => round($eligible, 2),
+        'tier'                => $tier,
+        'ratio'               => $ratio,
+        'total_owed'          => $total_owed,
+        'paid_within_period'  => $paid,
+        'due_date'            => $due_date,
+        'period_active'       => strtotime($due_date) >= strtotime(date('Y-m-d')),
+        'payment_period_days' => (int)$settings['payment_period_days'],
+        'has_custom_settings' => in_array(true, $settings['overrides'], true),
+    ];
+}
+
 // Marks $store ('products' or 'clients') as changed for the current company so
 // js/data-cache.js (via data_api.php?action=meta) knows to refetch instead of
 // serving its IndexedDB copy. Call this right after any write to products,
