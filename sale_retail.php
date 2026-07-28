@@ -332,6 +332,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                 </div>
                                 <button type="button" class="client-card-clear" onclick="clearRetailClient()" title="Change client">&times;</button>
                             </div>
+                            <div id="retail_eligibility_hint" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5;"></div>
 
                             <div id="retail_client_select_area">
                                 <div class="form-group" id="retailClientPickerGroup" style="display:none;">
@@ -341,7 +342,8 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
                                             placeholder="Search registered client..." autocomplete="off">
                                         <div class="searchable-select-dropdown" id="retail_client_picker_dropdown"></div>
                                     </div>
-                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a name that isn't found to add a new client.</small>
+                                    <button type="button" class="btn btn-secondary btn-sm btn-block" id="retail_new_client_btn" style="display:none;margin-top:6px;">+ New Client</button>
+                                    <small style="color:var(--secondary);margin-top:3px;display:block;">Pick a client above, or tap "+ New Client" to add one that isn't listed.</small>
                                 </div>
                                 <div id="retail_client_fields" style="display:none;">
                                     <div class="form-group">
@@ -704,13 +706,28 @@ loadRetailCategories();
     }
 })();
 
-function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick, fieldsId) {
+function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phoneInputId, afterPick, fieldsId, newBtnId) {
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
     var search   = document.getElementById(searchId);
     var dropdown = document.getElementById(dropdownId);
     var options  = dropdown.querySelectorAll('.searchable-select-option');
+    var newBtn   = newBtnId ? document.getElementById(newBtnId) : null;
     var hi = -1;
+
+    if (newBtn) {
+        newBtn.addEventListener('click', function() {
+            var fields = document.getElementById(fieldsId);
+            if (fields) fields.style.display = '';
+            var nameEl = document.getElementById(clientInputId);
+            if (nameEl) {
+                nameEl.value = search.value.trim();
+                nameEl.focus();
+            }
+            dropdown.classList.remove('open');
+            newBtn.style.display = 'none';
+        });
+    }
 
     search.addEventListener('focus', function() { dropdown.classList.add('open'); filter(); });
     search.addEventListener('input', function() { dropdown.classList.add('open'); hi = -1; filter(); });
@@ -726,10 +743,9 @@ function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phone
     });
     options.forEach(function(o) { o.addEventListener('click', function() { pick(o); }); });
 
-    // Reveals the manual Name/Phone fields on demand — as soon as the typed
-    // search term matches none of the registered clients, not just once "Add
-    // new" is explicitly clicked. Prefills the name so the cashier doesn't
-    // have to retype what they already searched for.
+    // Shows the "+ New Client" button once the typed search term matches
+    // none of the registered clients, so the cashier has an explicit action
+    // to take instead of fields appearing on their own.
     function filter() {
         var term = search.value.toLowerCase();
         var anyVisible = false;
@@ -738,14 +754,7 @@ function initLoanClientPicker(wrapId, searchId, dropdownId, clientInputId, phone
             o.classList.toggle('hidden', !match);
             if (match) anyVisible = true;
         });
-        if (fieldsId && term.trim().length > 0 && !anyVisible) {
-            var fields = document.getElementById(fieldsId);
-            if (fields && fields.style.display === 'none') {
-                fields.style.display = '';
-                var nameEl = document.getElementById(clientInputId);
-                if (nameEl && !nameEl.value) nameEl.value = search.value.trim();
-            }
-        }
+        if (newBtn) newBtn.style.display = (term.trim().length > 0 && !anyVisible) ? '' : 'none';
     }
     function hl(vis) {
         options.forEach(function(o) { o.classList.remove('highlighted'); });
@@ -789,9 +798,53 @@ function showClientCard(prefix, opt) {
     if (pickerGroup) pickerGroup.style.display = 'none';
     var fields = document.getElementById(prefix + '_client_fields');
     if (fields) fields.style.display = '';
+
+    showSaleEligibilityHint(prefix, parseInt(opt.getAttribute('data-client-id')) || 0);
 }
 
 function _escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Fetches loans.php's eligibility score for the picked client and renders it
+// next to the client card — the same "how well did they pay their last loan"
+// hint shown on the New Loan modal in loans.php, so staff see it here too
+// before deciding how much of this sale to put on credit.
+function showSaleEligibilityHint(prefix, clientId) {
+    var box = document.getElementById(prefix + '_eligibility_hint');
+    if (!box) return;
+    if (!clientId) { box.style.display = 'none'; return; }
+
+    box.style.display = 'block';
+    box.style.background = '#f1f5f9';
+    box.style.color = 'var(--secondary)';
+    box.innerHTML = '<span style="display:inline-block;width:11px;height:11px;border:2px solid rgba(100,116,139,.35);border-top-color:var(--secondary);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;"></span>Checking loan eligibility…';
+
+    var data = new FormData();
+    data.append('get_client_eligibility', '1');
+    data.append('client_id', clientId);
+
+    fetch('loans.php', { method: 'POST', body: data })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (!res.success) { box.style.display = 'none'; return; }
+            if (!res.has_history) {
+                box.style.background = '#f1f5f9';
+                box.style.color = 'var(--secondary)';
+                box.textContent = 'No previous loan on record yet — no eligibility score to base credit on.';
+                return;
+            }
+            var fmt = function(n) { return Math.round(n).toLocaleString(); };
+            var pct = Math.round(res.ratio * 100);
+            var tierStyle = { full: ['#dcfce7', '#166534'], partial: ['#fef3c7', '#92400e'], none: ['#fee2e2', '#991b1b'] };
+            var colors = tierStyle[res.tier] || tierStyle.partial;
+            box.style.background = colors[0];
+            box.style.color = colors[1];
+            var line = 'Eligible loan amount: RWF ' + fmt(res.eligible_amount) +
+                ' — paid ' + pct + '% (RWF ' + fmt(res.paid_within_period) + ' of ' + fmt(res.total_owed) + ') of their outstanding balance by ' + res.due_date + '.';
+            if (res.period_active) line += ' (Cycle still in progress.)';
+            box.textContent = line;
+        })
+        .catch(function() { box.style.display = 'none'; });
+}
 
 DataCache.getClients().then(function(list) {
     if (!list.length) {
@@ -803,7 +856,7 @@ DataCache.getClients().then(function(list) {
     document.getElementById('retail_client_picker_dropdown').innerHTML = list.map(function(c) {
         var visits = parseInt(c.total_loans) || 0;
         var outstanding = parseFloat(c.unpaid_amount) || 0;
-        return '<div class="searchable-select-option" data-client="' + _escH(c.name) +
+        return '<div class="searchable-select-option" data-client-id="' + parseInt(c.id) + '" data-client="' + _escH(c.name) +
             '" data-phone="' + _escH(c.phone) + '" data-visits="' + visits + '" data-outstanding="' + outstanding + '">' + _escH(c.name) +
             (c.phone ? ' — ' + _escH(c.phone) : '') +
             '<small style="color:var(--secondary);"> (' + visits + ' visit' + (visits !== 1 ? 's' : '') + ')</small>' +
@@ -811,7 +864,7 @@ DataCache.getClients().then(function(list) {
             '</div>';
     }).join('');
     initLoanClientPicker('retailClientPickerWrap', 'retail_client_picker_search', 'retail_client_picker_dropdown', 'retail_customer', 'retail_phone',
-        function(opt) { showClientCard('retail', opt); }, 'retail_client_fields');
+        function(opt) { showClientCard('retail', opt); }, 'retail_client_fields', 'retail_new_client_btn');
 });
 
 
@@ -820,12 +873,14 @@ function clearRetailClient() {
     document.getElementById('retail_customer').value = '';
     document.getElementById('retail_phone').value = '';
     document.getElementById('retail_client_card').classList.remove('show');
+    document.getElementById('retail_eligibility_hint').style.display = 'none';
     var pickerGroup = document.getElementById('retailClientPickerGroup');
     if (pickerGroup) {
         pickerGroup.style.display = '';
         document.getElementById('retail_client_fields').style.display = 'none';
     }
     document.getElementById('retail_client_picker_search') && (document.getElementById('retail_client_picker_search').value = '');
+    document.getElementById('retail_new_client_btn') && (document.getElementById('retail_new_client_btn').style.display = 'none');
 }
 
 function updateRetailProductDetails() {

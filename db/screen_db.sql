@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jul 21, 2026 at 04:37 PM
+-- Generation Time: Jul 28, 2026 at 01:45 PM
 -- Server version: 10.4.28-MariaDB-log
 -- PHP Version: 8.2.4
 
@@ -66,6 +66,26 @@ CREATE TABLE `boaster` (
 CREATE TABLE `cache_meta` (
   `store_name` varchar(50) NOT NULL,
   `company_id` int(11) NOT NULL DEFAULT 0,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `cart_drafts`
+--
+
+CREATE TABLE `cart_drafts` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
+  `draft_ref` varchar(64) NOT NULL,
+  `sale_type` varchar(10) NOT NULL,
+  `customer_name` varchar(150) DEFAULT NULL,
+  `items_count` int(11) NOT NULL DEFAULT 0,
+  `total_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `draft_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`draft_json`)),
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -182,6 +202,7 @@ CREATE TABLE `loans` (
   `phone` varchar(20) DEFAULT NULL,
   `client_id` int(11) DEFAULT NULL,
   `loan_date` date NOT NULL,
+  `due_date` date DEFAULT NULL,
   `given_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `retail_id` int(11) DEFAULT NULL,
@@ -204,7 +225,10 @@ CREATE TABLE `loan_clients` (
   `total_loans` int(11) NOT NULL DEFAULT 0,
   `paid_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `unpaid_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `payment_period_days` int(11) DEFAULT NULL,
+  `growth_rate_percent` decimal(5,2) DEFAULT NULL,
+  `zero_payment_floor` decimal(10,2) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -221,6 +245,21 @@ CREATE TABLE `loan_payments` (
   `payment_date` date NOT NULL,
   `received_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `loan_settings`
+--
+
+CREATE TABLE `loan_settings` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
+  `payment_period_days` int(11) NOT NULL DEFAULT 7,
+  `growth_rate_percent` decimal(5,2) NOT NULL DEFAULT 20.00,
+  `zero_payment_floor` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -731,6 +770,14 @@ ALTER TABLE `cache_meta`
   ADD PRIMARY KEY (`store_name`,`company_id`);
 
 --
+-- Indexes for table `cart_drafts`
+--
+ALTER TABLE `cart_drafts`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_cart_drafts_ref` (`draft_ref`),
+  ADD KEY `idx_cart_drafts_company_type` (`company_id`,`sale_type`);
+
+--
 -- Indexes for table `categories`
 --
 ALTER TABLE `categories`
@@ -797,6 +844,13 @@ ALTER TABLE `loan_clients`
 ALTER TABLE `loan_payments`
   ADD PRIMARY KEY (`id`),
   ADD KEY `loan_id` (`loan_id`);
+
+--
+-- Indexes for table `loan_settings`
+--
+ALTER TABLE `loan_settings`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_loan_settings_company` (`company_id`);
 
 --
 -- Indexes for table `notes`
@@ -1012,6 +1066,12 @@ ALTER TABLE `boaster`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `cart_drafts`
+--
+ALTER TABLE `cart_drafts`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `categories`
 --
 ALTER TABLE `categories`
@@ -1063,6 +1123,12 @@ ALTER TABLE `loan_clients`
 -- AUTO_INCREMENT for table `loan_payments`
 --
 ALTER TABLE `loan_payments`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `loan_settings`
+--
+ALTER TABLE `loan_settings`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --

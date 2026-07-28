@@ -4,19 +4,7 @@
  * Including this file auto-creates the cache table if missing.
  */
 global $conn;
-if (isset($conn)) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS stock_value_cache (
-        id         INT AUTO_INCREMENT PRIMARY KEY,
-        product_id INT           NOT NULL,
-        company_id INT           NOT NULL DEFAULT 0,
-        cost_wh    DECIMAL(12,2) NOT NULL DEFAULT 0,
-        cost_rt    DECIMAL(12,2) NOT NULL DEFAULT 0,
-        sell_wh    DECIMAL(12,2) NOT NULL DEFAULT 0,
-        sell_rt    DECIMAL(12,2) NOT NULL DEFAULT 0,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_product (product_id, company_id)
-    )");
-}
+
 
 /**
  * @param mysqli   $conn
@@ -42,7 +30,28 @@ function recalcStockValue(mysqli $conn, ?int $company_id = null, ?int $product_i
 
     if (!$rows) return;
 
-    while ($row = mysqli_fetch_assoc($rows)) {
+    $stock_rows = [];
+    while ($row = mysqli_fetch_assoc($rows)) $stock_rows[] = $row;
+    if (!$stock_rows) return;
+
+    // Pull every candidate purchase row once (was previously one query per
+    // product here), bucketed by product_id in the same purchase_date DESC/id
+    // DESC order the FIFO walk below relies on.
+    $pu_pid_flt = $product_id !== null ? "AND product_id = $product_id" : "";
+    $pu_cid_flt = $company_id !== null ? "AND company_id = $company_id" : "";
+    $purchases_by_product = [];
+    $pu_rows = mysqli_query($conn, "
+        SELECT product_id, quantity, cost_price FROM purchases
+        WHERE cost_price > 0 $pu_pid_flt $pu_cid_flt
+        ORDER BY product_id, purchase_date DESC, id DESC
+    ");
+    while ($p = mysqli_fetch_assoc($pu_rows)) {
+        $purchases_by_product[(int)$p['product_id']][] = $p;
+    }
+
+    $upsert_values = [];
+
+    foreach ($stock_rows as $row) {
         $pid    = (int)$row['product_id'];
         $cid    = (int)$row['company_id'];
         $wh_qty = max(0, (int)$row['wh_qty']);
@@ -57,14 +66,8 @@ function recalcStockValue(mysqli $conn, ?int $company_id = null, ?int $product_i
         $cost_wh = 0.0;
         $cost_rt = 0.0;
 
-        $pu_cid_flt = $company_id !== null ? "AND company_id = $cid" : "";
-        $pq = mysqli_query($conn, "
-            SELECT quantity, cost_price FROM purchases
-            WHERE product_id = $pid AND cost_price > 0 $pu_cid_flt
-            ORDER BY purchase_date DESC, id DESC
-        ");
-
-        while (($wh_rem > 0 || $rt_rem > 0) && ($p = mysqli_fetch_assoc($pq))) {
+        foreach ($purchases_by_product[$pid] ?? [] as $p) {
+            if ($wh_rem <= 0 && $rt_rem <= 0) break;
             $avail = (float)$p['quantity'];
             $cp    = (float)$p['cost_price'];
 
@@ -84,23 +87,19 @@ function recalcStockValue(mysqli $conn, ?int $company_id = null, ?int $product_i
         $cost_wh = round($cost_wh, 2);
         $cost_rt = round($cost_rt, 2);
 
-        $existing = mysqli_fetch_assoc(mysqli_query($conn,
-            "SELECT id FROM stock_value_cache WHERE product_id = $pid AND company_id = $cid LIMIT 1"
-        ));
+        $upsert_values[] = "($pid, $cid, $cost_wh, $cost_rt, $sell_wh, $sell_rt)";
+    }
 
-        if ($existing) {
-            mysqli_query($conn, "
-                UPDATE stock_value_cache
-                   SET cost_wh = $cost_wh, cost_rt = $cost_rt,
-                       sell_wh = $sell_wh, sell_rt = $sell_rt,
-                       updated_at = NOW()
-                 WHERE id = {$existing['id']}
-            ");
-        } else {
-            mysqli_query($conn, "
-                INSERT INTO stock_value_cache (product_id, company_id, cost_wh, cost_rt, sell_wh, sell_rt)
-                VALUES ($pid, $cid, $cost_wh, $cost_rt, $sell_wh, $sell_rt)
-            ");
-        }
+    // Single batched upsert instead of one SELECT + INSERT/UPDATE per product
+    // (the table's uq_product unique key makes ON DUPLICATE KEY UPDATE safe here).
+    foreach (array_chunk($upsert_values, 500) as $chunk) {
+        mysqli_query($conn, "
+            INSERT INTO stock_value_cache (product_id, company_id, cost_wh, cost_rt, sell_wh, sell_rt)
+            VALUES " . implode(',', $chunk) . "
+            ON DUPLICATE KEY UPDATE
+                cost_wh = VALUES(cost_wh), cost_rt = VALUES(cost_rt),
+                sell_wh = VALUES(sell_wh), sell_rt = VALUES(sell_rt),
+                updated_at = NOW()
+        ");
     }
 }
