@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jul 28, 2026 at 01:45 PM
+-- Generation Time: Jul 28, 2026 at 03:41 PM
 -- Server version: 10.4.28-MariaDB-log
 -- PHP Version: 8.2.4
 
@@ -18,7 +18,7 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `screen_db`
+-- Database: `olive2_db`
 --
 
 -- --------------------------------------------------------
@@ -30,10 +30,12 @@ SET time_zone = "+00:00";
 CREATE TABLE `audit_log` (
   `id` int(11) NOT NULL,
   `company_id` int(11) DEFAULT NULL,
-  `user_id` int(11) DEFAULT NULL,
-  `action` varchar(100) NOT NULL,
+  `user_id` int(11) NOT NULL DEFAULT 0,
+  `username` varchar(100) NOT NULL DEFAULT '',
+  `action` varchar(30) NOT NULL,
   `table_name` varchar(100) DEFAULT NULL,
-  `record_id` int(11) DEFAULT NULL,
+  `record_id` int(11) NOT NULL DEFAULT 0,
+  `description` text DEFAULT NULL,
   `old_values` text DEFAULT NULL,
   `new_values` text DEFAULT NULL,
   `ip_address` varchar(45) DEFAULT NULL,
@@ -98,6 +100,19 @@ CREATE TABLE `cart_drafts` (
 CREATE TABLE `categories` (
   `id` int(11) NOT NULL,
   `name` varchar(50) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `client_loans`
+--
+
+CREATE TABLE `client_loans` (
+  `id` int(11) NOT NULL,
+  `client` varchar(100) NOT NULL,
+  `phone` varchar(20) NOT NULL DEFAULT '',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -193,21 +208,23 @@ CREATE TABLE `expenses` (
 CREATE TABLE `loans` (
   `id` int(11) NOT NULL,
   `company_id` int(11) DEFAULT NULL,
-  `product_id` int(11) DEFAULT NULL,
-  `product_name` varchar(255) DEFAULT NULL,
-  `cart` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart`)),
+  `product_id` int(11) NOT NULL,
   `qty` int(11) NOT NULL DEFAULT 1,
   `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `client` varchar(100) NOT NULL,
   `phone` varchar(20) DEFAULT NULL,
-  `client_id` int(11) DEFAULT NULL,
   `loan_date` date NOT NULL,
   `due_date` date DEFAULT NULL,
-  `given_by` int(11) DEFAULT NULL,
+  `sale_type` enum('bulk','retail') DEFAULT NULL,
+  `unit_price` decimal(10,2) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `retail_id` int(11) DEFAULT NULL,
   `bulk_id` int(11) DEFAULT NULL,
-  `external_id` int(11) DEFAULT NULL
+  `given_by` int(11) DEFAULT NULL,
+  `product_name` varchar(200) DEFAULT NULL,
+  `cart` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart`)),
+  `external_id` int(11) DEFAULT NULL,
+  `client_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -220,11 +237,11 @@ CREATE TABLE `loan_clients` (
   `id` int(11) NOT NULL,
   `company_id` int(11) DEFAULT NULL,
   `name` varchar(100) NOT NULL,
-  `phone` varchar(20) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `phone` varchar(20) NOT NULL DEFAULT '',
   `total_loans` int(11) NOT NULL DEFAULT 0,
-  `paid_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `unpaid_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `paid_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `unpaid_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `payment_period_days` int(11) DEFAULT NULL,
   `growth_rate_percent` decimal(5,2) DEFAULT NULL,
@@ -243,8 +260,8 @@ CREATE TABLE `loan_payments` (
   `loan_id` int(11) NOT NULL,
   `amount_paid` decimal(10,2) NOT NULL DEFAULT 0.00,
   `payment_date` date NOT NULL,
-  `received_by` int(11) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `received_by` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -477,14 +494,14 @@ CREATE TABLE `refunds` (
   `sale_id` int(11) NOT NULL,
   `product_id` int(11) DEFAULT NULL,
   `product_name` varchar(255) DEFAULT NULL,
-  `quantity` int(11) NOT NULL DEFAULT 1,
+  `quantity` int(11) NOT NULL DEFAULT 0,
   `refund_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `reason` varchar(255) DEFAULT NULL,
+  `loss_amount` decimal(12,2) DEFAULT NULL,
+  `reason` text DEFAULT NULL,
   `back_to_stock` tinyint(1) NOT NULL DEFAULT 0,
   `refund_date` date NOT NULL,
   `processed_by` int(11) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `loss_amount` decimal(12,2) DEFAULT NULL
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -513,22 +530,22 @@ CREATE TABLE `sales_bulk` (
   `company_id` int(11) DEFAULT NULL,
   `product_id` int(11) DEFAULT NULL,
   `quantity` int(11) NOT NULL,
-  `level_divisor` int(11) NOT NULL DEFAULT 1,
   `package_price` decimal(10,2) DEFAULT NULL,
   `total_amount` decimal(10,2) DEFAULT NULL,
   `cost_total` decimal(12,2) NOT NULL DEFAULT 0.00,
   `purchase_id` int(11) DEFAULT NULL,
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
-  `sold_by` int(11) DEFAULT NULL,
-  `client_ref` varchar(64) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `payment_method` varchar(20) DEFAULT 'Cash',
-  `cash_amount` decimal(12,2) DEFAULT 0.00,
-  `momo_amount` decimal(12,2) DEFAULT 0.00,
-  `loan_amount` decimal(12,2) DEFAULT 0.00,
   `has_loan` tinyint(1) NOT NULL DEFAULT 0,
-  `amount` decimal(12,2) DEFAULT 0.00,
+  `amount` decimal(10,2) DEFAULT NULL,
+  `cash_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `momo_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `loan_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `level_divisor` int(11) NOT NULL DEFAULT 1,
+  `sold_by` int(11) DEFAULT NULL,
+  `client_ref` varchar(64) DEFAULT NULL,
   `refunded` tinyint(1) NOT NULL DEFAULT 0,
   `cart_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart_json`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -547,17 +564,17 @@ CREATE TABLE `sales_external` (
   `quantity` int(11) NOT NULL DEFAULT 1,
   `unit_price` decimal(12,2) NOT NULL DEFAULT 0.00,
   `total_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `cash_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `momo_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `loan_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `customer_name` varchar(255) DEFAULT NULL,
+  `cash_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `momo_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `loan_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `my_revenue` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `customer_name` varchar(100) DEFAULT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `sale_date` date DEFAULT NULL,
   `sold_by` int(11) DEFAULT NULL,
   `client_ref` varchar(64) DEFAULT NULL,
-  `phone` varchar(20) DEFAULT NULL,
-  `sale_date` date NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `refunded` tinyint(1) NOT NULL DEFAULT 0,
-  `my_revenue` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `cart_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart_json`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -578,15 +595,15 @@ CREATE TABLE `sales_retail` (
   `purchase_id` int(11) DEFAULT NULL,
   `sale_date` date DEFAULT NULL,
   `customer_name` varchar(100) DEFAULT NULL,
-  `sold_by` int(11) DEFAULT NULL,
-  `client_ref` varchar(64) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `payment_method` varchar(20) DEFAULT 'Cash',
-  `cash_amount` decimal(12,2) DEFAULT 0.00,
-  `momo_amount` decimal(12,2) DEFAULT 0.00,
-  `loan_amount` decimal(12,2) DEFAULT 0.00,
   `has_loan` tinyint(1) NOT NULL DEFAULT 0,
-  `amount` decimal(12,2) DEFAULT 0.00,
+  `amount` decimal(10,2) DEFAULT NULL,
+  `cash_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `momo_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `loan_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `sold_by` int(11) DEFAULT NULL,
+  `client_ref` varchar(64) DEFAULT NULL,
   `refunded` tinyint(1) NOT NULL DEFAULT 0,
   `cart_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cart_json`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -638,7 +655,23 @@ CREATE TABLE `stock_value_cache` (
   `cost_rt` decimal(15,2) NOT NULL DEFAULT 0.00,
   `sell_wh` decimal(15,2) NOT NULL DEFAULT 0.00,
   `sell_rt` decimal(15,2) NOT NULL DEFAULT 0.00,
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `subscription`
+--
+
+CREATE TABLE `subscription` (
+  `id` int(11) NOT NULL,
+  `license_key` varchar(35) NOT NULL,
+  `expires_at` date NOT NULL,
+  `signature` varchar(64) DEFAULT NULL,
+  `activated_at` datetime DEFAULT current_timestamp(),
+  `activated_by` int(11) DEFAULT NULL,
+  `notes` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -752,10 +785,11 @@ CREATE TABLE `wishlist` (
 --
 ALTER TABLE `audit_log`
   ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_created` (`created_at`),
+  ADD KEY `idx_action` (`action`),
+  ADD KEY `idx_module` (`table_name`),
   ADD KEY `idx_audit_company` (`company_id`),
-  ADD KEY `idx_audit_user` (`user_id`),
-  ADD KEY `idx_audit_table` (`table_name`),
-  ADD KEY `idx_audit_created` (`created_at`);
+  ADD KEY `idx_audit_user` (`user_id`);
 
 --
 -- Indexes for table `boaster`
@@ -785,6 +819,13 @@ ALTER TABLE `categories`
   ADD UNIQUE KEY `uq_categories_name` (`name`);
 
 --
+-- Indexes for table `client_loans`
+--
+ALTER TABLE `client_loans`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `client_phone` (`client`,`phone`);
+
+--
 -- Indexes for table `client_payments`
 --
 ALTER TABLE `client_payments`
@@ -804,8 +845,7 @@ ALTER TABLE `companies`
 --
 ALTER TABLE `consumption`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `product_id` (`product_id`),
-  ADD KEY `idx_consumption_date` (`consumption_date`);
+  ADD KEY `product_id` (`product_id`);
 
 --
 -- Indexes for table `currency_rates`
@@ -827,23 +867,31 @@ ALTER TABLE `expenses`
 ALTER TABLE `loans`
   ADD PRIMARY KEY (`id`),
   ADD KEY `product_id` (`product_id`),
+  ADD KEY `retail_id` (`retail_id`),
+  ADD KEY `bulk_id` (`bulk_id`),
+  ADD KEY `idx_retail_id` (`retail_id`),
+  ADD KEY `idx_bulk_id` (`bulk_id`),
+  ADD KEY `idx_given_by` (`given_by`),
+  ADD KEY `idx_client_id` (`client_id`),
   ADD KEY `idx_loan_date` (`loan_date`),
   ADD KEY `idx_client` (`client`),
-  ADD KEY `idx_loans_client_id` (`client_id`);
+  ADD KEY `idx_loans_company_date` (`company_id`,`loan_date`);
 
 --
 -- Indexes for table `loan_clients`
 --
 ALTER TABLE `loan_clients`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uq_name_phone` (`name`,`phone`);
+  ADD UNIQUE KEY `name_phone` (`name`,`phone`);
 
 --
 -- Indexes for table `loan_payments`
 --
 ALTER TABLE `loan_payments`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `loan_id` (`loan_id`);
+  ADD KEY `loan_id` (`loan_id`),
+  ADD KEY `received_by` (`received_by`),
+  ADD KEY `idx_received_by` (`received_by`);
 
 --
 -- Indexes for table `loan_settings`
@@ -872,9 +920,10 @@ ALTER TABLE `notifications`
 --
 ALTER TABLE `orders`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_orders_company` (`company_id`),
+  ADD KEY `idx_orders_product` (`product_id`),
   ADD KEY `idx_orders_status` (`status`),
-  ADD KEY `idx_orders_created_at` (`created_at`),
+  ADD KEY `idx_orders_created` (`created_at`),
+  ADD KEY `idx_orders_company` (`company_id`),
   ADD KEY `idx_orders_status_date` (`status`,`created_at`),
   ADD KEY `idx_orders_order_owner_id` (`order_owner_id`),
   ADD KEY `idx_orders_created_by` (`created_by`),
@@ -913,8 +962,6 @@ ALTER TABLE `order_payments`
 --
 ALTER TABLE `products`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_deleted` (`deleted`),
-  ADD KEY `idx_name` (`name`),
   ADD KEY `idx_products_category_id` (`category_id`);
 ALTER TABLE `products` ADD FULLTEXT KEY `ftx_products_search_text` (`search_text`);
 
@@ -931,14 +978,16 @@ ALTER TABLE `product_owners`
 ALTER TABLE `purchases`
   ADD PRIMARY KEY (`id`),
   ADD KEY `product_id` (`product_id`),
-  ADD KEY `idx_purchase_date` (`purchase_date`);
+  ADD KEY `supplier_id` (`supplier_id`),
+  ADD KEY `idx_purchase_date` (`purchase_date`),
+  ADD KEY `idx_purchases_company_date` (`company_id`,`purchase_date`);
 
 --
 -- Indexes for table `purchase_levels`
 --
 ALTER TABLE `purchase_levels`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `purchase_id` (`purchase_id`);
+  ADD KEY `idx_purchase_id` (`purchase_id`);
 
 --
 -- Indexes for table `refunds`
@@ -951,8 +1000,7 @@ ALTER TABLE `refunds`
 --
 ALTER TABLE `retail_stock`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `product_id` (`product_id`),
-  ADD KEY `idx_product_id` (`product_id`);
+  ADD KEY `product_id` (`product_id`);
 
 --
 -- Indexes for table `sales_bulk`
@@ -961,8 +1009,6 @@ ALTER TABLE `sales_bulk`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uq_sb_client_ref` (`company_id`,`client_ref`),
   ADD KEY `product_id` (`product_id`),
-  ADD KEY `idx_sale_date` (`sale_date`),
-  ADD KEY `idx_created_at` (`created_at`),
   ADD KEY `idx_sb_purchase_id` (`purchase_id`);
 
 --
@@ -979,8 +1025,6 @@ ALTER TABLE `sales_retail`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uq_sr_client_ref` (`company_id`,`client_ref`),
   ADD KEY `product_id` (`product_id`),
-  ADD KEY `idx_sale_date` (`sale_date`),
-  ADD KEY `idx_created_at` (`created_at`),
   ADD KEY `idx_sr_purchase_id` (`purchase_id`);
 
 --
@@ -988,15 +1032,15 @@ ALTER TABLE `sales_retail`
 --
 ALTER TABLE `stock`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `product_id` (`product_id`),
-  ADD KEY `idx_product_id` (`product_id`);
+  ADD KEY `product_id` (`product_id`);
 
 --
 -- Indexes for table `stock_movements`
 --
 ALTER TABLE `stock_movements`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `product_id` (`product_id`);
+  ADD KEY `product_id` (`product_id`),
+  ADD KEY `idx_stock_movements_company_date` (`company_id`,`moved_date`);
 
 --
 -- Indexes for table `stock_value_cache`
@@ -1006,6 +1050,12 @@ ALTER TABLE `stock_value_cache`
   ADD UNIQUE KEY `uq_product` (`product_id`,`company_id`),
   ADD KEY `idx_svc_company` (`company_id`),
   ADD KEY `idx_svc_product` (`product_id`);
+
+--
+-- Indexes for table `subscription`
+--
+ALTER TABLE `subscription`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `suppliers`
@@ -1046,8 +1096,7 @@ ALTER TABLE `weekly_revenue`
 -- Indexes for table `wishlist`
 --
 ALTER TABLE `wishlist`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `product_name` (`product_name`);
+  ADD PRIMARY KEY (`id`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -1075,6 +1124,12 @@ ALTER TABLE `cart_drafts`
 -- AUTO_INCREMENT for table `categories`
 --
 ALTER TABLE `categories`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `client_loans`
+--
+ALTER TABLE `client_loans`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
@@ -1240,6 +1295,12 @@ ALTER TABLE `stock_value_cache`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `subscription`
+--
+ALTER TABLE `subscription`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `suppliers`
 --
 ALTER TABLE `suppliers`
@@ -1339,18 +1400,6 @@ ALTER TABLE `stock`
 --
 ALTER TABLE `stock_movements`
   ADD CONSTRAINT `stock_movements_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);
-
---
--- Constraints for table `user_company_access`
---
-ALTER TABLE `user_company_access`
-  ADD CONSTRAINT `user_company_access_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Constraints for table `user_permissions`
---
-ALTER TABLE `user_permissions`
-  ADD CONSTRAINT `user_permissions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

@@ -514,9 +514,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     foreach ($cart as $it) {
         $needed_pkgs[$it['product_id']] = ($needed_pkgs[$it['product_id']] ?? 0) + (int)ceil($it['quantity'] / $it['level_divisor']);
     }
+    $needed_pids_sql = implode(',', array_map('intval', array_keys($needed_pkgs)));
+    $stock_by_pid = [];
+    $sres = mysqli_query($conn, "SELECT product_id, quantity FROM stock WHERE product_id IN ($needed_pids_sql) $cid_and");
+    while ($sr = mysqli_fetch_assoc($sres)) $stock_by_pid[(int)$sr['product_id']] = (int)$sr['quantity'];
     foreach ($needed_pkgs as $pid => $needed) {
-        $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $pid $cid_and"));
-        if (!$stock || $stock['quantity'] < $needed)
+        if (!isset($stock_by_pid[$pid]) || $stock_by_pid[$pid] < $needed)
             saleResp(false, "Insufficient stock available for one of the selected products.", 'bulk');
     }
 
@@ -697,9 +700,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     foreach ($cart as $it) {
         $needed_pieces[$it['product_id']] = ($needed_pieces[$it['product_id']] ?? 0) + $it['qty_sold'] * $it['level_multiplier'];
     }
+    $needed_pids_sql = implode(',', array_map('intval', array_keys($needed_pieces)));
+    $retail_by_pid = [];
+    $rres = mysqli_query($conn, "SELECT product_id, pieces_quantity FROM retail_stock WHERE product_id IN ($needed_pids_sql) $cid_and");
+    while ($rr = mysqli_fetch_assoc($rres)) $retail_by_pid[(int)$rr['product_id']] = (int)$rr['pieces_quantity'];
     foreach ($needed_pieces as $pid => $needed) {
-        $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $pid $cid_and"));
-        if (!$retail || $retail['pieces_quantity'] < $needed)
+        if (!isset($retail_by_pid[$pid]) || $retail_by_pid[$pid] < $needed)
             saleResp(false, "Insufficient retail stock available for one of the selected products.", 'retail');
     }
 
