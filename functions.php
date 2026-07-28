@@ -12,25 +12,115 @@ function isSuperAdmin() {
     return ($_SESSION['role'] ?? '') === 'superadmin';
 }
 
-// Returns the session company_id as int, or null for superadmin
+// Thrown by cidSql() when a write is attempted while viewing the "All
+// Companies" aggregate — a new row must belong to exactly one company, and
+// there's no safe single choice to make on the user's behalf. Caught by the
+// global handler in config.php, which turns it into a friendly flash_error
+// (or a JSON error for AJAX requests) instead of a raw fatal error.
+class AggregateViewWriteBlocked extends \RuntimeException {}
+
+// Returns the company_id whose data should currently be shown: the company the
+// user switched to via the nav selector (viewing_company_id), falling back to
+// their home company_id. Null means "no scope" (superadmin sees everything).
+// While viewing the "All Companies" aggregate (cidList() !== null), this still
+// returns a single representative id (home company) for the many call sites
+// that need exactly one company (recalcStockValue, client cache keying, etc.)
+// — use cidAnd()/cidWhere()/cidAndFor() for read filters, which properly
+// expand to an IN(...) list in aggregate mode instead of just this one id.
 function cid(): ?int {
+    if (isset($_SESSION['viewing_company_id']) && $_SESSION['viewing_company_id'] !== null) {
+        return (int)$_SESSION['viewing_company_id'];
+    }
     return isset($_SESSION['company_id']) && $_SESSION['company_id'] !== null
         ? (int)$_SESSION['company_id'] : null;
 }
-// Returns company_id for SQL INSERT values ("5" or "NULL")
+
+// Returns the list of company ids to filter reads by when the user is viewing
+// the "All Companies" aggregate (their own accessible set — never a global,
+// system-wide unscope; that's only ever null/superadmin territory). Returns
+// null when not in aggregate mode, meaning callers should use cid() instead.
+function cidList(): ?array {
+    if (empty($_SESSION['viewing_all_mine']) || isSuperAdmin() || !isLoggedIn()) {
+        return null;
+    }
+    global $conn;
+    $ids = array_column(getAccessibleCompanies($conn, (int)$_SESSION['user_id']), 'id');
+    return !empty($ids) ? $ids : null;
+}
+
+// Returns the user's real/home company_id (unaffected by the viewing-company switch).
+// Use this for identity/permission checks (e.g. "can this admin manage this user"),
+// never for data scoping — use cid() for that.
+function homeCid(): ?int {
+    return isset($_SESSION['company_id']) && $_SESSION['company_id'] !== null
+        ? (int)$_SESSION['company_id'] : null;
+}
+
+// Companies a user is allowed to switch their view to. Purely driven by
+// user_company_access — including the user's own "home" company, which is
+// no longer hardcoded/implicit: it's granted a row automatically whenever a
+// user is created or assigned a company_id (see users.php/companies.php), but
+// that row can be revoked afterward like any other, same as a granted company.
+// Superadmin has no home company and isn't granted rows here — tenant users only.
+function getAccessibleCompanies($conn, $user_id) {
+    try {
+        $companies = [];
+        $res = mysqli_query($conn, "SELECT c.id, c.name FROM user_company_access uca
+            JOIN companies c ON c.id = uca.company_id
+            WHERE uca.user_id = " . (int)$user_id . " AND c.status = 'active'
+            ORDER BY c.name");
+        while ($row = mysqli_fetch_assoc($res)) {
+            $row['id'] = (int)$row['id'];
+            $companies[$row['id']] = $row;
+        }
+        return array_values($companies);
+    } catch (\Throwable $th) {
+        return [];
+    }
+}
+
+// Grants a user access to view a company (idempotent — safe to call even if
+// the row already exists). Used to auto-seed a user's home company on
+// creation/reassignment, and by users.php when an admin explicitly grants more.
+function grantCompanyAccess($conn, int $user_id, int $company_id, ?int $granted_by = null): void {
+    $granted_by_sql = $granted_by !== null ? (int)$granted_by : 'NULL';
+    mysqli_query($conn, "INSERT IGNORE INTO user_company_access (user_id, company_id, granted_by)
+        VALUES ($user_id, $company_id, $granted_by_sql)");
+}
+// Returns the current company's display name (for receipts/print headers), falling
+// back to $fallback when no company is scoped (superadmin, aggregate "All Companies" view).
+function companyName(mysqli $conn, string $fallback = 'Smart Stock'): string {
+    $id = cid();
+    if ($id === null) return $fallback;
+    $r = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM companies WHERE id=$id"));
+    return ($r && $r['name'] !== '') ? $r['name'] : $fallback;
+}
+
+// Returns company_id for SQL INSERT values ("5" or "NULL"). Throws when viewing
+// the "All Companies" aggregate — a new row can't belong to several companies
+// at once, so writes are blocked until the user picks one specific company.
 function cidSql(): string {
+    if (cidList() !== null) {
+        throw new AggregateViewWriteBlocked("Select a single company from the nav before creating or editing records.");
+    }
     $c = cid(); return $c !== null ? (string)$c : 'NULL';
 }
-// Returns "AND company_id = X" or "" (superadmin sees all)
+// Returns "AND company_id = X" / "AND company_id IN (...)" or "" (superadmin sees all)
 function cidAnd(): string {
+    $list = cidList();
+    if ($list !== null) return "AND company_id IN (" . implode(',', $list) . ")";
     $c = cid(); return $c !== null ? "AND company_id = $c" : '';
 }
-// Returns "AND alias.company_id = X" or "" — use when query has multiple joined tables
+// Returns "AND alias.company_id = X" / "IN (...)" or "" — use when query has multiple joined tables
 function cidAndFor(string $alias): string {
+    $list = cidList();
+    if ($list !== null) return "AND $alias.company_id IN (" . implode(',', $list) . ")";
     $c = cid(); return $c !== null ? "AND $alias.company_id = $c" : '';
 }
-// Returns "WHERE company_id = X" or "" (superadmin sees all)
+// Returns "WHERE company_id = X" / "WHERE company_id IN (...)" or "" (superadmin sees all)
 function cidWhere(): string {
+    $list = cidList();
+    if ($list !== null) return "WHERE company_id IN (" . implode(',', $list) . ")";
     $c = cid(); return $c !== null ? "WHERE company_id = $c" : '';
 }
 
@@ -184,6 +274,152 @@ function get_categories(mysqli $conn): array {
     $r = mysqli_query($conn, "SELECT id, name FROM categories ORDER BY name ASC");
     while ($row = mysqli_fetch_assoc($r)) $rows[] = $row;
     return $rows;
+}
+
+// Returns the current company's loan_settings row (payment_period_days,
+// growth_rate_percent, zero_payment_floor), falling back to defaults when no
+// row has been saved yet. Never writes — save_loan_settings creates the row.
+function getLoanSettings(mysqli $conn): array {
+    $defaults = ['payment_period_days' => 7, 'growth_rate_percent' => 20.00, 'zero_payment_floor' => 0.00];
+    $cid_check = cid() !== null ? "company_id = " . cid() : "company_id IS NULL";
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT payment_period_days, growth_rate_percent, zero_payment_floor
+        FROM loan_settings WHERE $cid_check LIMIT 1
+    "));
+    return $row ?: $defaults;
+}
+
+// Returns the loan-settings that actually apply to one borrower: the general
+// (company-wide) row from getLoanSettings(), with any of the three fields the
+// client has personally overridden (loan_clients.payment_period_days /
+// growth_rate_percent / zero_payment_floor — all NULL by default, meaning
+// "inherit") substituted in. Also reports which fields are overridden so the
+// UI can flag it. A trusted client can be given a longer period, a richer
+// growth rate, or a higher zero-payment floor than everyone else this way.
+function getEffectiveLoanSettings(mysqli $conn, ?int $client_id): array {
+    $settings = getLoanSettings($conn);
+    $settings['overrides'] = ['payment_period_days' => false, 'growth_rate_percent' => false, 'zero_payment_floor' => false];
+    if (!$client_id) return $settings;
+
+    $cid_and = cidAnd();
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT payment_period_days, growth_rate_percent, zero_payment_floor
+        FROM loan_clients WHERE id = $client_id $cid_and
+    "));
+    if (!$row) return $settings;
+
+    foreach (['payment_period_days', 'growth_rate_percent', 'zero_payment_floor'] as $field) {
+        if ($row[$field] !== null) {
+            $settings[$field] = $row[$field];
+            $settings['overrides'][$field] = true;
+        }
+    }
+    return $settings;
+}
+
+// Computes the amount a client should be eligible for on their NEXT loan.
+// Judges behavior against ALL of the client's currently outstanding debt
+// (loan_clients.unpaid_amount), not just their single most recent loan — a
+// client who stacks new loans while old ones sit unpaid should score worse,
+// not better, so "did they clear everything they owed" is what's scored.
+//
+// The "period" is anchored to their last UNPAID loan (the most recent loan
+// that still carries a balance) — its loan_date..due_date window is what
+// we're checking repayment against. Only payments recorded on/before the due
+// date, and on/after that loan's date, count as "during the period" — a
+// payment toward ancient debt from years ago doesn't count as this cycle's
+// behavior, and paying late doesn't count as on-time even if eventually paid
+// in full. If every loan is already fully paid off, the client's most recent
+// loan overall is used instead (nothing currently pending to score).
+//
+// total_owed (what's being judged) is reconstructed as:
+//   current unpaid_amount + payments made during the period
+// i.e. "what they owed at the start of the period", assuming (as this gate
+// is meant to enforce) no further credit was extended mid-period.
+//
+// Settings (period/growth/floor) are the borrower's personal overrides where
+// set, otherwise the general company settings — see getEffectiveLoanSettings().
+//   ratio >= 1   → paid in full on time  → total_owed + growth_rate_percent
+//   0 < ratio<1  → partial               → total_owed * ratio
+//   ratio == 0   → nothing paid          → zero_payment_floor
+// Returns ['has_history' => false] when the client has no prior loan at all
+// (no score can be computed yet — caller should treat as "no limit set").
+function computeLoanEligibility(mysqli $conn, int $client_id): array {
+    if ($client_id <= 0) return ['has_history' => false];
+
+    $settings = getEffectiveLoanSettings($conn, $client_id);
+    $cid_and  = cidAndFor('l');
+
+    // Last unpaid loan — the debt whose period we're judging. Falls back to
+    // the most recent loan overall when the client has nothing outstanding.
+    $ref_loan = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT l.id, l.loan_date, l.due_date,
+               (l.amount - COALESCE(SUM(lp.amount_paid),0)) AS balance
+        FROM loans l
+        LEFT JOIN loan_payments lp ON lp.loan_id = l.id
+        WHERE l.client_id = $client_id $cid_and
+        GROUP BY l.id
+        HAVING balance > 0.009
+        ORDER BY l.loan_date DESC, l.id DESC
+        LIMIT 1
+    "));
+    if (!$ref_loan) {
+        $ref_loan = mysqli_fetch_assoc(mysqli_query($conn, "
+            SELECT l.id, l.loan_date, l.due_date
+            FROM loans l
+            WHERE l.client_id = $client_id $cid_and
+            ORDER BY l.loan_date DESC, l.id DESC
+            LIMIT 1
+        "));
+    }
+    if (!$ref_loan) return ['has_history' => false];
+
+    $due_date = $ref_loan['due_date'] ?: date('Y-m-d', strtotime($ref_loan['loan_date'] . ' +' . (int)$settings['payment_period_days'] . ' days'));
+    $due_esc  = mysqli_real_escape_string($conn, $due_date);
+    $ref_date_esc = mysqli_real_escape_string($conn, $ref_loan['loan_date']);
+
+    // Payments toward ANY of this client's loans, made during this loan's
+    // window — we're checking whether their whole debt got cleared in time,
+    // not just this one loan.
+    $paid = (float)mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT COALESCE(SUM(lp.amount_paid),0) AS paid
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        WHERE l.client_id = $client_id $cid_and
+          AND lp.payment_date >= '$ref_date_esc' AND lp.payment_date <= '$due_esc'
+    "))['paid'];
+
+    $cid_and_client = cidAnd();
+    $current_unpaid = (float)(mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT unpaid_amount FROM loan_clients WHERE id = $client_id $cid_and_client
+    "))['unpaid_amount'] ?? 0);
+
+    $total_owed = $current_unpaid + $paid;
+    $ratio = $total_owed > 0 ? min(1.0, $paid / $total_owed) : 1.0;
+
+    if ($ratio >= 1.0) {
+        $eligible = $total_owed * (1 + (float)$settings['growth_rate_percent'] / 100);
+        $tier = 'full';
+    } elseif ($ratio > 0) {
+        $eligible = $total_owed * $ratio;
+        $tier = 'partial';
+    } else {
+        $eligible = (float)$settings['zero_payment_floor'];
+        $tier = 'none';
+    }
+
+    return [
+        'has_history'        => true,
+        'eligible_amount'    => round($eligible, 2),
+        'tier'                => $tier,
+        'ratio'               => $ratio,
+        'total_owed'          => $total_owed,
+        'paid_within_period'  => $paid,
+        'due_date'            => $due_date,
+        'period_active'       => strtotime($due_date) >= strtotime(date('Y-m-d')),
+        'payment_period_days' => (int)$settings['payment_period_days'],
+        'has_custom_settings' => in_array(true, $settings['overrides'], true),
+    ];
 }
 
 // Marks $store ('products' or 'clients') as changed for the current company so

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
@@ -48,8 +48,8 @@ while ($row = mysqli_fetch_assoc($losses_q)) $losses[] = $row;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Losses</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/loans.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/loans.css?v=<?php echo filemtime(__DIR__ . '/css/loans.css'); ?>">
 </head>
 <body>
 <div class="dashboard-container">
@@ -137,7 +137,7 @@ while ($row = mysqli_fetch_assoc($losses_q)) $losses[] = $row;
             </thead>
             <tbody>
             <?php foreach ($losses as $i => $l):
-                $type_colors = ['bulk'=>'#3b82f6','retail'=>'#10b981','external'=>'#f59e0b'];
+                $type_colors = ['bulk'=>'#1a4280','retail'=>'#10b981','external'=>'#f59e0b'];
                 $type_color  = $type_colors[$l['sale_type']] ?? '#64748b';
             ?>
             <tr>

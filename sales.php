@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 ob_start();
 require_once 'config.php';
 
@@ -6,6 +6,8 @@ if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('sales')) { $_SESSION['flash_error'] = "You don't have permission to access Sales."; redirect('dashboard.php'); }
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
+$company_name = companyName($conn);
+$now=date('Y-m-d H:i:s');
 
 // ── DELETE Bulk Sale ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
@@ -49,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
             mysqli_commit($conn);
             // require_once 'stock_value.php';
             // recalcStockValue($conn, cid(), (int)$row['product_id']);
-            touchCacheStore($conn, 'products');
+            //touchCacheStore($conn, 'products');
             if ($del_client_id > 0) touchCacheStore($conn, 'clients');
 
             $_SESSION['flash_success'] = "Bulk sale deleted and stock restored.";
@@ -90,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
         mysqli_query($conn, "UPDATE sales_bulk SET quantity=$new_qty, package_price=$new_price, total_amount=$total_amount, cost_total=$new_cost_total, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         // require_once 'stock_value.php';
         // recalcStockValue($conn, cid(), (int)$old['product_id']);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Bulk sale updated.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Bulk Sale', "Edited bulk sale #{$id}",
             'sales_bulk', $id,
@@ -143,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale']))
             mysqli_commit($conn);
             // require_once 'stock_value.php';
             // recalcStockValue($conn, cid(), (int)$row['product_id']);
-            touchCacheStore($conn, 'products');
+            //touchCacheStore($conn, 'products');
             if ($del_client_id > 0) touchCacheStore($conn, 'clients');
 
             $_SESSION['flash_success'] = "Retail sale deleted and stock restored.";
@@ -184,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
         mysqli_query($conn, "UPDATE sales_retail SET pieces_sold=$new_qty, retail_price=$new_price, total_amount=$total_amount, cost_total=$new_cost_total, customer_name='$customer_name', cash_amount=$cash_amount, momo_amount=$momo_amount, loan_amount=$loan_amount, sale_date='$sale_date' WHERE id=$id");
         // require_once 'stock_value.php';
         // recalcStockValue($conn, cid(), (int)$old['product_id']);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Retail sale updated.";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Retail Sale', "Edited retail sale #{$id}",
             'sales_retail', $id,
@@ -318,6 +320,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         }
     }
 
+    // Full cart snapshot, stored once on the sale's first row — see identical
+    // comment in the bulk_sale handler above.
+    $cart_json_sql = "'" . mysqli_real_escape_string($conn, json_encode($cart)) . "'";
+
     mysqli_begin_transaction($conn);
     $ok = true;
     $new_loan_ids = [];
@@ -336,6 +342,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         $row_momo        = $i === 0 ? $momo_amount : 0;
         $row_loan        = $i === 0 ? $loan_amount : 0;
         $row_client_ref  = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
+        $row_cart_json   = $i === 0 ? $cart_json_sql : 'NULL';
 
         // Resolve owner for this item
         $owner_id_val   = 'NULL';
@@ -354,8 +361,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
         }
         if (!$ok) break;
 
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by, client_ref)
-                       VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $item_total, $row_cash, $row_momo, $row_loan, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by, $row_client_ref)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_external (company_id, product_name, owner_id, quantity, unit_price, total_amount, cash_amount, momo_amount, loan_amount, my_revenue, customer_name, phone, sale_date, sold_by, client_ref, cart_json)
+                       VALUES ($cid_sql, '$product_name', $owner_id_val, $quantity, $unit_price, $item_total, $row_cash, $row_momo, $row_loan, $my_revenue, '$customer_name', '$phone', CURDATE(), $sold_by, $row_client_ref, $row_cart_json)");
         if (!$ok) break;
         $ext_sale_id = (int)mysqli_insert_id($conn);
 
@@ -379,13 +386,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['external_sale'])) {
     // Client-level aggregates (loan_clients balance, the payment already collected)
     // apply once to the whole sale, not per product row.
     if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount, updated_at)
+            VALUES ($cid_sql, '$customer_name', $ph_lc_ext, 1, 0, $loan_amount, '$now')
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
+                unpaid_amount = unpaid_amount + $loan_amount,
+                updated_at    = '$now'
         ");
         $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) {
@@ -479,7 +488,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $qty   = (int)($it['quantity'] ?? 0);
         $price = (float)($it['selling_price'] ?? 0);
         if ($pid > 0 && $qty > 0 && $price > 0) {
-            $cart[] = ['product_id' => $pid, 'quantity' => $qty, 'selling_price' => $price, 'level_divisor' => max(1, (int)($it['level_divisor'] ?? 1))];
+            $cart[] = [
+                'product_id'    => $pid,
+                'name'          => trim((string)($it['name'] ?? '')),
+                'quantity'      => $qty,
+                'selling_price' => $price,
+                'level_divisor' => max(1, (int)($it['level_divisor'] ?? 1)),
+                'level_name'    => trim((string)($it['level_name'] ?? '')),
+            ];
         }
     }
     if (empty($cart)) saleResp(false, "Add at least one product to the sale.", 'bulk');
@@ -498,9 +514,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     foreach ($cart as $it) {
         $needed_pkgs[$it['product_id']] = ($needed_pkgs[$it['product_id']] ?? 0) + (int)ceil($it['quantity'] / $it['level_divisor']);
     }
+    $needed_pids_sql = implode(',', array_map('intval', array_keys($needed_pkgs)));
+    $stock_by_pid = [];
+    $sres = mysqli_query($conn, "SELECT product_id, quantity FROM stock WHERE product_id IN ($needed_pids_sql) $cid_and");
+    while ($sr = mysqli_fetch_assoc($sres)) $stock_by_pid[(int)$sr['product_id']] = (int)$sr['quantity'];
     foreach ($needed_pkgs as $pid => $needed) {
-        $stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $pid $cid_and"));
-        if (!$stock || $stock['quantity'] < $needed)
+        if (!isset($stock_by_pid[$pid]) || $stock_by_pid[$pid] < $needed)
             saleResp(false, "Insufficient stock available for one of the selected products.", 'bulk');
     }
 
@@ -534,6 +553,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         }
     }
 
+    // Full cart snapshot, stored once on the sale's first row so the whole
+    // checkout (all items, not just this row's single product) can be
+    // reconstructed/reprinted later from a single sales_bulk row.
+    $cart_json_sql = "'" . mysqli_real_escape_string($conn, json_encode($cart)) . "'";
+
     mysqli_begin_transaction($conn);
     $ok = true;
     $touched_products = [];
@@ -554,9 +578,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
         $row_client_ref = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
+        $row_cart_json = $i === 0 ? $cart_json_sql : 'NULL';
 
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref)
-                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_bulk (company_id, product_id, quantity, level_divisor, package_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref, cart_json)
+                       VALUES ($cid_sql, $product_id, $quantity, $level_divisor, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref, $row_cart_json)");
         if (!$ok) break;
         $bulk_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;
@@ -576,13 +601,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     // Client-level aggregates (loan_clients balance, the payment already collected)
     // apply once to the whole sale, not per product row.
     if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount, updated_at)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount, '$now')
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
+                unpaid_amount = unpaid_amount + $loan_amount,
+                updated_at    = '$now'
         ");
         $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) {
@@ -604,7 +631,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         mysqli_commit($conn);
       //  require_once 'stock_value.php';
         // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         touchCacheStore($conn, 'recent_sales_bulk');
         if ($loan_amount > 0) touchCacheStore($conn, 'clients');
 
@@ -647,7 +674,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $qty   = (int)($it['pieces_sold'] ?? 0);
         $price = (float)($it['selling_price'] ?? 0);
         if ($pid > 0 && $qty > 0 && $price > 0) {
-            $cart[] = ['product_id' => $pid, 'qty_sold' => $qty, 'selling_price' => $price, 'level_multiplier' => max(1, (int)($it['level_multiplier'] ?? 1))];
+            $cart[] = [
+                'product_id'       => $pid,
+                'name'             => trim((string)($it['name'] ?? '')),
+                'qty_sold'         => $qty,
+                'selling_price'    => $price,
+                'level_multiplier' => max(1, (int)($it['level_multiplier'] ?? 1)),
+                'level_name'       => trim((string)($it['level_name'] ?? '')),
+            ];
         }
     }
     if (empty($cart)) saleResp(false, "Add at least one product to the sale.", 'retail');
@@ -666,9 +700,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     foreach ($cart as $it) {
         $needed_pieces[$it['product_id']] = ($needed_pieces[$it['product_id']] ?? 0) + $it['qty_sold'] * $it['level_multiplier'];
     }
+    $needed_pids_sql = implode(',', array_map('intval', array_keys($needed_pieces)));
+    $retail_by_pid = [];
+    $rres = mysqli_query($conn, "SELECT product_id, pieces_quantity FROM retail_stock WHERE product_id IN ($needed_pids_sql) $cid_and");
+    while ($rr = mysqli_fetch_assoc($rres)) $retail_by_pid[(int)$rr['product_id']] = (int)$rr['pieces_quantity'];
     foreach ($needed_pieces as $pid => $needed) {
-        $retail = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity FROM retail_stock WHERE product_id = $pid $cid_and"));
-        if (!$retail || $retail['pieces_quantity'] < $needed)
+        if (!isset($retail_by_pid[$pid]) || $retail_by_pid[$pid] < $needed)
             saleResp(false, "Insufficient retail stock available for one of the selected products.", 'retail');
     }
 
@@ -702,6 +739,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         }
     }
 
+    // Full cart snapshot, stored once on the sale's first row — see identical
+    // comment in the bulk_sale handler above.
+    $cart_json_sql = "'" . mysqli_real_escape_string($conn, json_encode($cart)) . "'";
+
     mysqli_begin_transaction($conn);
     $ok = true;
     $touched_products = [];
@@ -722,10 +763,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
         $row_client_ref = $client_ref !== '' ? "'" . mysqli_real_escape_string($conn, $client_ref . '-' . $i) . "'" : 'NULL';
+        $row_cart_json = $i === 0 ? $cart_json_sql : 'NULL';
 
         // Store pieces_to_deduct as pieces_sold so edit/delete correctly restore stock
-        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref)
-                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref)");
+        $ok = (bool)mysqli_query($conn, "INSERT INTO sales_retail (company_id, product_id, pieces_sold, retail_price, total_amount, cost_total, purchase_id, sale_date, customer_name, cash_amount, momo_amount, loan_amount, has_loan, amount, sold_by, client_ref, cart_json)
+                       VALUES ($cid_sql, $product_id, $pieces_to_deduct, $selling_price, $item_total, $cost_total, $purchase_id_sql, CURDATE(), '$customer_name', $row_cash, $row_momo, $row_loan, " . ($row_loan > 0 ? 1 : 0) . ", $row_loan, $sold_by, $row_client_ref, $row_cart_json)");
         if (!$ok) break;
         $retail_sale_id = (int)mysqli_insert_id($conn);
         $touched_products[$product_id] = true;
@@ -745,13 +787,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     // Client-level aggregates (loan_clients balance, the payment already collected)
     // apply once to the whole sale, not per product row.
     if ($ok && $loan_amount > 0 && !empty($new_loan_ids)) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
-            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount)
-            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount)
+            INSERT INTO loan_clients (company_id, name, phone, total_loans, paid_amount, unpaid_amount, updated_at)
+            VALUES ($cid_sql, '$customer_name', $ph_lc, 1, 0, $loan_amount, '$now')
             ON DUPLICATE KEY UPDATE
                 id            = LAST_INSERT_ID(id),
                 total_loans   = total_loans   + 1,
-                unpaid_amount = unpaid_amount + $loan_amount
+                unpaid_amount = unpaid_amount + $loan_amount,
+                updated_at    = '$now'
         ");
         $new_client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
         if ($ok) {
@@ -773,7 +817,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         mysqli_commit($conn);
         // require_once 'stock_value.php';
         // foreach (array_keys($touched_products) as $pid) recalcStockValue($conn, cid(), (int)$pid);
-        touchCacheStore($conn, 'products');
+        //touchCacheStore($conn, 'products');
         touchCacheStore($conn, 'recent_sales_retail');
         if ($loan_amount > 0) touchCacheStore($conn, 'clients');
 
@@ -1049,8 +1093,8 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sales - Small Stock Management</title>
-        <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/sales.css">
+        <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/sales.css?v=<?php echo filemtime(__DIR__ . '/css/sales.css'); ?>">
     <link rel="stylesheet" href="css/all.min.css">
     <style>
         .searchable-select {
@@ -1068,7 +1112,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
         .searchable-select-input:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+            box-shadow: 0 0 0 3px rgba(16,48,96, 0.15);
         }
         .searchable-select-dropdown {
             display: none;
@@ -1140,8 +1184,8 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             border-radius: var(--radius); cursor: pointer; background: var(--white);
             transition: all .15s; min-width: 100px; gap: 2px;
         }
-        .lvl-btn:hover { border-color: var(--primary); background: #eff6ff; }
-        .lvl-btn.active { border-color: var(--primary); background: #eff6ff; }
+        .lvl-btn:hover { border-color: var(--primary); background: #e8edf5; }
+        .lvl-btn.active { border-color: var(--primary); background: #e8edf5; }
         .lvl-btn-name  { font-size: 13px; font-weight: 700; color: var(--dark); }
         .lvl-btn-stock { font-size: 11px; color: var(--secondary); }
         .lvl-btn-price { font-size: 14px; font-weight: 700; color: var(--primary); }
@@ -1336,6 +1380,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditBulk(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['package_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
                                         <button class="act-item" onclick="printSaleReceipt('bulk',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,'pkg',<?php echo $row['package_price']; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','');closeActMenus()"><i class="fas fa-print"></i> Print</button>
+                                        <?php if (!empty($row['cart_json'])): ?>
+                                        <button class="act-item" data-cart="<?php echo htmlspecialchars($row['cart_json'], ENT_QUOTES); ?>" onclick="printCartReceipt('bulk',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',this.dataset.cart,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-receipt"></i> Print Cart</button>
+                                        <?php endif; ?>
                                         <button class="act-item" onclick="openRefundModal('bulk',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this bulk sale and restore stock?')">
@@ -1402,6 +1449,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditRetail(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['retail_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
                                         <button class="act-item" onclick="printSaleReceipt('retail',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,'pcs',<?php echo $actual_per_piece; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','');closeActMenus()"><i class="fas fa-print"></i> Print</button>
+                                        <?php if (!empty($row['cart_json'])): ?>
+                                        <button class="act-item" data-cart="<?php echo htmlspecialchars($row['cart_json'], ENT_QUOTES); ?>" onclick="printCartReceipt('retail',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',this.dataset.cart,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-receipt"></i> Print Cart</button>
+                                        <?php endif; ?>
                                         <button class="act-item" onclick="openRefundModal('retail',<?php echo $row['id']; ?>,<?php echo $row['product_id']; ?>,'<?php echo htmlspecialchars($row['name'],ENT_QUOTES); ?>',<?php echo $row['pieces_sold']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this retail sale and restore stock?')">
@@ -1462,6 +1512,9 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                                     <div class="act-menu">
                                         <button class="act-item" onclick="openEditExternal(<?php echo $row['id']; ?>,'<?php echo htmlspecialchars($row['sale_date'],ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['unit_price']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,<?php echo (float)($row['my_revenue'] ?? 0); ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
                                         <button class="act-item" onclick="printSaleReceipt('external',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,'pkg',<?php echo $row['unit_price']; ?>,<?php echo $row['total_amount']; ?>,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['owner_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-print"></i> Print</button>
+                                        <?php if (!empty($row['cart_json'])): ?>
+                                        <button class="act-item" data-cart="<?php echo htmlspecialchars($row['cart_json'], ENT_QUOTES); ?>" onclick="printCartReceipt('external',<?php echo $row['id']; ?>,'<?php echo htmlspecialchars(date('Y-m-d', strtotime($row['sale_date'])),ENT_QUOTES); ?>','<?php echo htmlspecialchars($row['customer_name']??'',ENT_QUOTES); ?>',this.dataset.cart,<?php echo $row['cash_amount']; ?>,<?php echo $row['momo_amount']; ?>,<?php echo $row['loan_amount']; ?>,'<?php echo htmlspecialchars($row['seller_name']??'',ENT_QUOTES); ?>');closeActMenus()"><i class="fas fa-receipt"></i> Print Cart</button>
+                                        <?php endif; ?>
                                         <button class="act-item" onclick="openRefundModal('external',<?php echo $row['id']; ?>,0,'<?php echo htmlspecialchars($row['product_name'],ENT_QUOTES); ?>',<?php echo $row['quantity']; ?>,<?php echo $row['total_amount']; ?>);closeActMenus()"><i class="fas fa-rotate-left"></i> Refund</button>
                                         <div class="act-menu-sep"></div>
                                         <form method="POST" onsubmit="return confirm('Delete this external sale?')">
@@ -1681,6 +1734,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
     </div>
 
     <script src="script.js"></script>
+    <script>window.APP_COMPANY_NAME = <?php echo json_encode($company_name); ?>;</script>
     <script>
         // --- Searchable Select Init ---
         function initSearchableSelect(wrapperId, searchInputId, dropdownId, hiddenSelectId) {
@@ -2571,7 +2625,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
                 '</style></head><body>';
 
-            h += '<h2>SMART STOCK</h2>';
+            h += '<h2>' + escH((window.APP_COMPANY_NAME || 'Smart Stock').toUpperCase()) + '</h2>';
             h += '<div class="sub">' + typeLabel + ' Receipt</div>';
             h += '<hr>';
 
@@ -2588,6 +2642,81 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
             h += '<tr><td>' + Number(qty).toLocaleString() + ' ' + qtyUnit + ' &times; RWF ' + Number(unitPrice).toLocaleString() + '</td>' +
                  '<td class="r b">RWF ' + Number(total).toLocaleString() + '</td></tr>';
             h += '<tr class="grand"><td>TOTAL</td><td class="r">RWF ' + Number(total).toLocaleString() + '</td></tr>';
+            h += '</table>';
+
+            if (cash > 0 || momo > 0 || loan > 0) {
+                h += '<hr>';
+                h += '<table>';
+                h += '<tr><td colspan="2" class="b">Payment Received</td></tr>';
+                if (cash > 0) h += '<tr><td style="padding-left:6px">Cash</td><td class="r">RWF ' + Number(cash).toLocaleString() + '</td></tr>';
+                if (momo > 0) h += '<tr><td style="padding-left:6px">Momo</td><td class="r">RWF ' + Number(momo).toLocaleString() + '</td></tr>';
+                if (loan > 0) h += '<tr><td style="padding-left:6px">Loan</td><td class="r">RWF ' + Number(loan).toLocaleString() + '</td></tr>';
+                h += '</table>';
+            }
+
+            h += '<hr>';
+            if (seller) h += '<div class="footer">Sold by ' + escH(seller) + '</div>';
+            h += '<div class="footer">Thank you for your business!</div>';
+            h += '</body></html>';
+
+            var w = window.open('', '_blank', 'width=340,height=520,toolbar=0,menubar=0,scrollbars=1,resizable=1');
+            if (!w) { alert('Allow popups to print receipts.'); return; }
+            w.document.write(h);
+            w.document.close();
+            w.focus();
+            setTimeout(function() { w.print(); }, 350);
+        }
+
+        // ── Thermal receipt print (whole cart, from the sales_bulk/retail/external
+        // .cart_json column stored on the sale's first row) ─────────────────────
+        function printCartReceipt(type, id, date, customer, cartJsonStr, cash, momo, loan, seller) {
+            var items;
+            try { items = JSON.parse(cartJsonStr) || []; } catch (e) { items = []; }
+            if (!items.length) { alert('No cart data stored for this sale.'); return; }
+
+            var typeLabel = type === 'bulk' ? 'Wholesale Sale' : type === 'retail' ? 'Retail Sale' : 'External Sale';
+            var total = 0;
+
+            var h = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+                '<style>' +
+                'body{font-family:monospace;font-size:11px;width:76mm;margin:0;padding:3mm 4mm;color:#000;}' +
+                'h2{text-align:center;font-size:13px;margin:0 0 2px;letter-spacing:1px;}' +
+                '.sub{text-align:center;font-size:10px;margin-bottom:4px;}' +
+                'hr{border:none;border-top:1px dashed #000;margin:5px 0;}' +
+                'table{width:100%;border-collapse:collapse;}' +
+                'td{padding:1px 0;vertical-align:top;font-size:10px;}' +
+                '.r{text-align:right;}' +
+                '.b{font-weight:bold;}' +
+                '.item-name{font-weight:bold;font-size:10px;}' +
+                '.grand td{font-weight:bold;border-top:1px solid #000;padding-top:3px;font-size:11px;}' +
+                '.footer{text-align:center;font-size:9px;margin-top:4px;}' +
+                '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
+                '</style></head><body>';
+
+            h += '<h2>' + escH((window.APP_COMPANY_NAME || 'Smart Stock').toUpperCase()) + '</h2>';
+            h += '<div class="sub">' + typeLabel + ' Receipt</div>';
+            h += '<hr>';
+
+            h += '<table>';
+            h += '<tr><td class="b">Sale #</td><td class="r b">' + id + '</td></tr>';
+            h += '<tr><td>Date</td><td class="r">' + escH(date) + '</td></tr>';
+            h += '<tr><td>Customer</td><td class="r">' + escH(customer || 'N/A') + '</td></tr>';
+            h += '</table>';
+            h += '<hr>';
+
+            h += '<table>';
+            items.forEach(function(it) {
+                var name  = it.name || it.product_name || 'Item';
+                var qty   = it.quantity != null ? it.quantity : (it.qty_sold != null ? it.qty_sold : 0);
+                var price = it.selling_price != null ? it.selling_price : (it.unit_price != null ? it.unit_price : 0);
+                var unit  = it.level_name || (type === 'retail' ? 'pcs' : '');
+                var sub   = qty * price;
+                total += sub;
+                h += '<tr><td colspan="2" class="item-name">' + escH(name) + '</td></tr>';
+                h += '<tr><td>' + Number(qty).toLocaleString() + (unit ? ' ' + escH(unit) : '') + ' &times; RWF ' + Number(price).toLocaleString() + '</td>' +
+                     '<td class="r b">RWF ' + Math.round(sub).toLocaleString() + '</td></tr>';
+            });
+            h += '<tr class="grand"><td>TOTAL</td><td class="r">RWF ' + Math.round(total).toLocaleString() + '</td></tr>';
             h += '</table>';
 
             if (cash > 0 || momo > 0 || loan > 0) {

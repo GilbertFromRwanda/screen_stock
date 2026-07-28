@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 require_once __DIR__ . '/stock_value.php';
 if (!isLoggedIn()) redirect('login.php');
@@ -7,6 +7,7 @@ if (!hasPermission('orders')) { $_SESSION['flash_error'] = "You don't have permi
 global $conn;
 $user_id = (int)$_SESSION['user_id'];
 $role    = $_SESSION['role'] ?? 'staff';
+$company_name = companyName($conn);
 
 // ── AJAX: Delete ──────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_order'])) {
@@ -810,12 +811,12 @@ function renderOrderRow(array $o, array $o_items, array $staff_users, string $ro
                 <button class="act-item" onclick='openPaymentsModal(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>,<?php echo $isProcessing ? "true" : "false"; ?>);closeActMenus()'><i class="fas fa-coins"></i> Payments</button>
                 <?php if ($isNew): ?>
                 <div class="act-menu-sep"></div>
-                <button class="act-item" style="color:#1d4ed8;" onclick='activateLink(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-link"></i> Activate Link</button>
+                <button class="act-item" style="color:#0a2148;" onclick='activateLink(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-link"></i> Activate Link</button>
                 <button class="act-item danger" onclick='cancelOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-times"></i> Cancel</button>
                 <?php endif; ?>
                 <?php if ($isOpen): ?>
                 <div class="act-menu-sep"></div>
-                <button class="act-item" style="color:#1d4ed8;" onclick='copyOrderLink(<?php echo json_encode($link_url); ?>)'><i class="fas fa-copy"></i> Copy Link</button>
+                <button class="act-item" style="color:#0a2148;" onclick='copyOrderLink(<?php echo json_encode($link_url); ?>)'><i class="fas fa-copy"></i> Copy Link</button>
                 <?php if (!$o['is_reusable']): ?>
                 <a class="act-item" href="order_add_products.php?order_id=<?php echo $o['id']; ?>" style="text-decoration:none;"><i class="fas fa-plus-circle"></i> Add Product</a>
                 <button class="act-item" style="color:#d97706;" onclick='finalizeOrdering(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-flag-checkered"></i> Close Ordering</button>
@@ -845,7 +846,7 @@ function renderOrderRow(array $o, array $o_items, array $staff_users, string $ro
                 <?php endif; ?>
                 <?php if ($isClosed && in_array($role, ['admin','superadmin'])): ?>
                 <div class="act-menu-sep"></div>
-                <button class="act-item" style="color:#1d4ed8;" onclick='reopenOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-unlock"></i> Reopen</button>
+                <button class="act-item" style="color:#0a2148;" onclick='reopenOrder(<?php echo $o["id"]; ?>,<?php echo json_encode($order_num); ?>);closeActMenus()'><i class="fas fa-unlock"></i> Reopen</button>
                 <?php endif; ?>
                 <?php if (($isPending || $isNew || $isOpen) && in_array($role, ['admin','manager','superadmin'])): ?>
                 <div class="act-menu-sep"></div>
@@ -1010,7 +1011,7 @@ $stats = fetchOrderStats($conn);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Orders – Smart Stock</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
 <link rel="stylesheet" href="css/all.min.css">
 <style>
 .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:700; }
@@ -1022,7 +1023,7 @@ $stats = fetchOrderStats($conn);
 .badge-cancelled  { background:#fee2e2; color:#991b1b; }
 .badge-closed     { background:#f1f5f9; color:#475569; }
 .badge-new        { background:#e0e7ff; color:#3730a3; }
-.badge-open       { background:#dbeafe; color:#1e40af; }
+.badge-open       { background:#e8edf5; color:#103060; }
 
 .link-info { margin-top:5px; font-size:11px; color:var(--secondary); }
 .link-code-pill { display:inline-block; font-family:monospace; font-weight:700; letter-spacing:1px;
@@ -1085,7 +1086,7 @@ $stats = fetchOrderStats($conn);
     border-radius:var(--radius); background:var(--gray-50);
     transition:border-color .15s, background .15s;
 }
-.pay-shortcut-lbl:has(input:checked) { border-color:var(--primary); background:#eff6ff; }
+.pay-shortcut-lbl:has(input:checked) { border-color:var(--primary); background:#e8edf5; }
 .pay-shortcut-lbl input[type="checkbox"] { width:16px; height:16px; cursor:pointer; accent-color:var(--primary); flex-shrink:0; }
 .pay-shortcut-name { font-weight:700; font-size:13px; color:var(--dark); }
 .pay-shortcut-desc { font-size:11px; color:var(--secondary); }
@@ -1463,8 +1464,8 @@ $stats = fetchOrderStats($conn);
         <div id="aprod_results"
              style="display:none;position:absolute;left:0;right:0;background:var(--white);border:1px solid var(--gray-300);border-top:none;border-radius:0 0 var(--radius) var(--radius);max-height:200px;overflow-y:auto;z-index:100;"></div>
     </div>
-    <div id="aprod_selected_card" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius);padding:12px 16px;margin-bottom:14px;">
-        <div style="font-weight:700;color:#1e40af;font-size:14px;" id="aprod_sel_name"></div>
+    <div id="aprod_selected_card" style="display:none;background:#e8edf5;border:1px solid #c9d6ea;border-radius:var(--radius);padding:12px 16px;margin-bottom:14px;">
+        <div style="font-weight:700;color:#103060;font-size:14px;" id="aprod_sel_name"></div>
         <div style="font-size:12px;color:var(--secondary);margin-top:2px;" id="aprod_sel_stock"></div>
     </div>
     <div id="aprod_form" style="display:none;">
@@ -1509,6 +1510,7 @@ $stats = fetchOrderStats($conn);
 </div>
 
 <script src="script.js"></script>
+<script>window.APP_COMPANY_NAME = <?php echo json_encode($company_name); ?>;</script>
 <script>
 function escH(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -1761,7 +1763,7 @@ function openProductsModal(o) {
             var isCustomer = it.source === 'customer';
             var srcLabel = isCustomer ? 'Customer' : 'Staff' + (it.added_by_name ? ' (' + escH(it.added_by_name) + ')' : '');
             var srcCell  = '<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600;background:' +
-                (isCustomer ? '#ede9fe' : '#dbeafe') + ';color:' + (isCustomer ? '#5b21b6' : '#1e40af') + ';">' + srcLabel + '</span>';
+                (isCustomer ? '#ede9fe' : '#e8edf5') + ';color:' + (isCustomer ? '#5b21b6' : '#103060') + ';">' + srcLabel + '</span>';
             html += '<tr>' +
                 '<td style="padding:7px 0;">' + escH(it.product) + '</td>' +
                 '<td class="num">' + it.quantity.toLocaleString() + '</td>' +
@@ -1926,7 +1928,7 @@ function loadPayments(id) {
                     function fmt(v){ return parseFloat(v)>0 ? 'RWF '+Math.round(v).toLocaleString() : '<span style="color:var(--gray-300)">—</span>'; }
                     return '<tr style="border-bottom:1px solid var(--gray-100);">'
                         + '<td style="padding:7px 4px;">'
-                        + (isInitial ? '<span style="font-size:11px;font-weight:700;background:#eff6ff;color:#1e40af;padding:1px 6px;border-radius:8px;">Initial</span>' : dateStr+'<br><span style="font-size:11px;color:var(--secondary);">'+timeStr+'</span>')
+                        + (isInitial ? '<span style="font-size:11px;font-weight:700;background:#e8edf5;color:#103060;padding:1px 6px;border-radius:8px;">Initial</span>' : dateStr+'<br><span style="font-size:11px;color:var(--secondary);">'+timeStr+'</span>')
                         + '</td>'
                         + '<td style="text-align:right;padding:7px 4px;">'+fmt(p.cash)+'</td>'
                         + '<td style="text-align:right;padding:7px 4px;">'+fmt(p.momo)+'</td>'
@@ -2246,7 +2248,7 @@ function printReceipt(o) {
         '@media print{@page{margin:0;size:80mm auto;}body{padding:2mm;}}' +
         '</style></head><body>';
 
-    h += '<h2>SMART STOCK</h2>';
+    h += '<h2>' + escH((window.APP_COMPANY_NAME || 'Smart Stock').toUpperCase()) + '</h2>';
     h += '<div class="sub">Order Receipt</div>';
     h += '<hr>';
 

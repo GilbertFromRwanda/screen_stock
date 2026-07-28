@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 require_once __DIR__ . '/stock_value.php';
 if (!isLoggedIn()) redirect('login.php');
@@ -150,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'list') 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zero Stock - Small Stock Management</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <style>
         .zs-badge {
             display:inline-block; padding:2px 10px; border-radius:12px;

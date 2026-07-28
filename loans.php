@@ -1,5 +1,6 @@
-<?php
+﻿<?php
 require_once 'config.php';
+
 
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('loans')) { $_SESSION['flash_error'] = "You don't have permission to access Loans."; redirect('dashboard.php'); }
@@ -17,9 +18,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_new_client'])) {
 
     $cid_sql = cidSql();
     $ph = $phone !== '' ? "'$phone'" : 'NULL';
+    $now = date('Y-m-d H:i:s');
     $ok = (bool)mysqli_query($conn, "
-        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount, paid_amount)
-        VALUES ($cid_sql, '$name', $ph, 0, 0, 0)
+        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount, paid_amount, updated_at)
+        VALUES ($cid_sql, '$name', $ph, 0, 0, 0, '$now')
     ");
 
     header('Content-Type: application/json');
@@ -29,6 +31,66 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_new_client'])) {
     } else {
         $err = mysqli_error($conn);
         $msg = strpos($err, 'Duplicate') !== false ? 'A client with this name and phone already exists.' : $err;
+        echo json_encode(['success' => false, 'message' => $msg]);
+    }
+    exit;
+}
+
+// ── AJAX: Edit Client (name & phone only) ──────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_client'])) {
+    $client_id = (int)$_POST['client_id'];
+    $name      = mysqli_real_escape_string($conn, trim($_POST['client_name']));
+    $phone     = mysqli_real_escape_string($conn, trim($_POST['client_phone']));
+
+    if ($client_id <= 0 || $name === '') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Client name is required.']);
+        exit;
+    }
+
+    $cid_and = cidAnd();
+    $old = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name, phone FROM loan_clients WHERE id = $client_id $cid_and"));
+    if (!$old) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Client not found.']);
+        exit;
+    }
+
+    $ph = $phone !== '' ? "'$phone'" : 'NULL';
+    $now = date('Y-m-d H:i:s');
+
+    // Per-borrower loan-setting overrides — admin/superadmin only. A blank
+    // field means "inherit the general setting" (stored as NULL).
+    $override_sql = '';
+    if (in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'])) {
+        $ov_days   = trim($_POST['ov_payment_period_days'] ?? '');
+        $ov_growth = trim($_POST['ov_growth_rate_percent'] ?? '');
+        $ov_floor  = trim($_POST['ov_zero_payment_floor'] ?? '');
+        $days_val   = $ov_days   === '' ? 'NULL' : max(1, (int)$ov_days);
+        $growth_val = $ov_growth === '' ? 'NULL' : max(0, (float)$ov_growth);
+        $floor_val  = $ov_floor  === '' ? 'NULL' : max(0, (float)$ov_floor);
+        $override_sql = ", payment_period_days = $days_val, growth_rate_percent = $growth_val, zero_payment_floor = $floor_val";
+    }
+
+    mysqli_begin_transaction($conn);
+    $ok = (bool)mysqli_query($conn, "UPDATE loan_clients SET name = '$name', phone = $ph, updated_at = '$now' $override_sql WHERE id = $client_id $cid_and");
+    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client = '$name', phone = $ph WHERE client_id = $client_id");
+
+    if ($ok) {
+        mysqli_commit($conn);
+        touchCacheStore($conn, 'clients');
+        logActivity($conn, (int)$_SESSION['user_id'], 'Edit Client', "Updated client #{$client_id}",
+            'loan_clients', $client_id,
+            ['name' => $old['name'], 'phone' => $old['phone']],
+            ['name' => $name, 'phone' => $phone]
+        );
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true]);
+    } else {
+        mysqli_rollback($conn);
+        $err = mysqli_error($conn);
+        $msg = strpos($err, 'Duplicate') !== false ? 'A client with this name and phone already exists.' : $err;
+        header('Content-Type: application/json');
         echo json_encode(['success' => false, 'message' => $msg]);
     }
     exit;
@@ -51,29 +113,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
     $given_by = (int)$_SESSION['user_id'];
     $ph = $phone !== '' ? "'$phone'" : 'NULL';
 
+    // Preliminary due_date off the general settings — refined below once the
+    // client_id is resolved, in case that client has a personal override.
+    $loan_settings = getLoanSettings($conn);
+    $due_date = date('Y-m-d', strtotime("$loan_date +{$loan_settings['payment_period_days']} days"));
+
     mysqli_begin_transaction($conn);
     $ok = true;
 
     $cid_sql = cidSql(); $cid_and = cidAnd();
     $ok = (bool)mysqli_query($conn, "
-        INSERT INTO loans (company_id, product_id, qty, amount, client, phone, loan_date, given_by)
-        VALUES ($cid_sql, '$product_id','$qty','$amount','$client','$phone','$loan_date',$given_by)
+        INSERT INTO loans (company_id, product_id, qty, amount, client, phone, loan_date, due_date, given_by)
+        VALUES ($cid_sql, '$product_id','$qty','$amount','$client','$phone','$loan_date','$due_date',$given_by)
     ");
     $loan_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
     if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity - $qty WHERE product_id = $product_id $cid_and");
 
+    $now = date('Y-m-d H:i:s');
     if ($ok) $ok = (bool)mysqli_query($conn, "
-        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount)
-        VALUES ($cid_sql, '$client', $ph, 1, '$amount')
+        INSERT INTO loan_clients (company_id, name, phone, total_loans, unpaid_amount, updated_at)
+        VALUES ($cid_sql, '$client', $ph, 1, '$amount', '$now')
         ON DUPLICATE KEY UPDATE
             id            = LAST_INSERT_ID(id),
             total_loans   = total_loans + 1,
-            unpaid_amount = unpaid_amount + '$amount'
+            unpaid_amount = unpaid_amount + '$amount',
+            updated_at    = '$now'
     ");
     $client_id = $ok ? (int)mysqli_insert_id($conn) : 0;
 
-    if ($ok) $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $client_id WHERE id = $loan_id");
+    if ($ok) {
+        $effective  = getEffectiveLoanSettings($conn, $client_id);
+        $due_date_2 = date('Y-m-d', strtotime("$loan_date +{$effective['payment_period_days']} days"));
+        $ok = (bool)mysqli_query($conn, "UPDATE loans SET client_id = $client_id, due_date = '$due_date_2' WHERE id = $loan_id");
+    }
 
     if ($ok) {
         mysqli_commit($conn);
@@ -83,6 +156,72 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_loan'])) {
     }
     mysqli_rollback($conn);
     header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => mysqli_error($conn)]); exit;
+}
+
+// ── AJAX: Get Client Eligibility ────────────────────────────────────────────────
+// Powers the "Eligible amount" hint on the New Loan modal — a suggestion based
+// on how the client handled their most recent loan's payment period. Not
+// enforced; staff can still enter any amount.
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_eligibility'])) {
+    $client_id = (int)$_POST['client_id'];
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true] + computeLoanEligibility($conn, $client_id));
+    exit;
+}
+
+// ── AJAX: Get Loan Settings ─────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_loan_settings'])) {
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true] + getLoanSettings($conn));
+    exit;
+}
+
+// ── AJAX: Get one client's raw loan-setting overrides ───────────────────────────
+// Powers the "Custom loan settings" fields on the Edit Client modal — returns
+// the client's own (possibly-NULL) override columns plus the general settings,
+// so the modal can show "inherits: 7 days" placeholders when a field is unset.
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_loan_settings'])) {
+    header('Content-Type: application/json');
+    $client_id = (int)$_POST['client_id'];
+    $cid_and = cidAnd();
+    $row = mysqli_fetch_assoc(mysqli_query($conn, "
+        SELECT payment_period_days, growth_rate_percent, zero_payment_floor
+        FROM loan_clients WHERE id = $client_id $cid_and
+    "));
+    if (!$row) { echo json_encode(['success' => false, 'message' => 'Client not found.']); exit; }
+    echo json_encode(['success' => true, 'overrides' => $row, 'general' => getLoanSettings($conn)]);
+    exit;
+}
+
+// ── AJAX: Save Loan Settings (admin/superadmin only) ────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_loan_settings'])) {
+    header('Content-Type: application/json');
+    if (!in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'])) {
+        echo json_encode(['success' => false, 'message' => "Only admins can change loan settings."]);
+        exit;
+    }
+
+    $days   = max(1, (int)($_POST['payment_period_days'] ?? 7));
+    $growth = max(0, (float)($_POST['growth_rate_percent'] ?? 20));
+    $floor  = max(0, (float)($_POST['zero_payment_floor'] ?? 0));
+
+    $cid_val   = cidSql();
+    $cid_check = cid() !== null ? "company_id = " . cid() : "company_id IS NULL";
+
+    if (mysqli_num_rows(mysqli_query($conn, "SELECT id FROM loan_settings WHERE $cid_check")) > 0) {
+        $ok = (bool)mysqli_query($conn, "
+            UPDATE loan_settings SET payment_period_days=$days, growth_rate_percent=$growth, zero_payment_floor=$floor
+            WHERE $cid_check
+        ");
+    } else {
+        $ok = (bool)mysqli_query($conn, "
+            INSERT INTO loan_settings (company_id, payment_period_days, growth_rate_percent, zero_payment_floor)
+            VALUES ($cid_val, $days, $growth, $floor)
+        ");
+    }
+
+    echo json_encode($ok ? ['success' => true] : ['success' => false, 'message' => mysqli_error($conn)]);
+    exit;
 }
 
 // ── AJAX: Add Payment ──────────────────────────────────────────────────────────
@@ -146,6 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
         }
 
     if ($ok && $lc_id > 0) {
+        $now = date('Y-m-d H:i:s');
         $ok = (bool)mysqli_query($conn, "
             UPDATE loan_clients lc
             JOIN (
@@ -159,7 +299,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_payment'])) {
             ) agg
             SET lc.paid_amount   = agg.total_paid_sum,
                 lc.unpaid_amount = agg.total_loaned - agg.total_paid_sum,
-                lc.total_loans   = agg.cnt
+                lc.total_loans   = agg.cnt,
+                lc.updated_at    = '$now'
             WHERE lc.id = $lc_id
         ");
     }
@@ -452,6 +593,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['get_client_payments_di
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['recalc_client_balance'])) {
     $client_id = (int)$_POST['client_id'];
     if ($client_id <= 0) { header('Content-Type: application/json'); echo json_encode(['success'=>false,'message'=>'Invalid client.']); exit; }
+    $now = date('Y-m-d H:i:s');
     $ok = (bool)mysqli_query($conn, "
         UPDATE loan_clients lc
         JOIN (
@@ -465,7 +607,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['recalc_client_balance'
         ) agg
         SET lc.total_loans   = agg.cnt,
             lc.paid_amount   = agg.paid_sum,
-            lc.unpaid_amount = agg.loaned - agg.paid_sum
+            lc.unpaid_amount = agg.loaned - agg.paid_sum,
+            lc.updated_at    = '$now'
         WHERE lc.id = $client_id
     ");
     if ($ok) touchCacheStore($conn, 'clients');
@@ -510,6 +653,7 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
         }
         if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loan_payments WHERE loan_id = $del_id");
         if ($ok) $ok = (bool)mysqli_query($conn, "DELETE FROM loans WHERE id = $del_id");
+        $now = date('Y-m-d H:i:s');
         if ($ok) $ok = (bool)mysqli_query($conn, "
             UPDATE loan_clients lc
             JOIN (
@@ -523,7 +667,8 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
             ) agg
             SET lc.total_loans   = agg.cnt,
                 lc.paid_amount   = agg.paid_sum,
-                lc.unpaid_amount = agg.loaned - agg.paid_sum
+                lc.unpaid_amount = agg.loaned - agg.paid_sum,
+                lc.updated_at    = '$now'
             WHERE lc.id = $del_client_id
         ");
 
@@ -587,8 +732,8 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Loans</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/loans.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/loans.css?v=<?php echo filemtime(__DIR__ . '/css/loans.css'); ?>">
     <link rel="stylesheet" href="css/all.min.css">
 </head>
 <body>
@@ -608,8 +753,11 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 </button>
                 <?php endif; ?>
                 </div>
+                <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'])): ?>
+                <button onclick="openLoanSettings()" class="btn btn-secondary"><i class="fas fa-sliders-h"></i> Loan Settings</button>
+                <?php endif; ?>
                 <button onclick="openModal('addClientModal')" class="btn btn-secondary">+ Add New Client</button>
-                <button onclick="openModal('addLoanModal')" class="btn btn-primary">+ New Loan</button>
+                <button onclick="openNewLoanModal()" class="btn btn-primary">+ New Loan</button>
             </div>
         </div>
 
@@ -689,14 +837,16 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                         <div class="act-menu">
                               <?php if ($outstanding > 0): ?>
                             <div class="act-menu-sep"></div>
-                            <button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(<?php echo (int)$c['client_id']; ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
+                            <button class="act-item warning" onclick="openGlobalLoanPayFor(<?php echo (int)$c['client_id']; ?>, <?php echo (float)$outstanding; ?>);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>
                             <?php endif; ?>
                             <button class="act-item" onclick="viewClientLoans(<?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo (int)$c['client_id']; ?>);closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>
                             <button class="act-item" onclick="viewClientPayments(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>
+                            <button class="act-item" onclick="checkClientEligibility(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-chart-line"></i> Check Eligibility</button>
 
                             <div class="act-menu-sep"></div>
-                            <button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
-                          
+                            <button class="act-item" onclick="openEditClient(<?php echo (int)$c['client_id']; ?>, <?php echo htmlspecialchars(json_encode($c['name']), ENT_QUOTES); ?>, <?php echo htmlspecialchars(json_encode($c['phone']), ENT_QUOTES); ?>);closeActMenus()"><i class="fas fa-pen"></i> Edit</button>
+                            <button class="act-item info" onclick="recalcClientBalance(<?php echo (int)$c['client_id']; ?>, this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>
+
                         </div>
                     </div>
                 </td>
@@ -790,7 +940,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <span class="close" onclick="closeModal('clientLoansModal')">&times;</span>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;padding-right:34px;">
             <h2 id="clientLoansTitle" style="margin:0;">Loans</h2>
-            <button id="clLoansExportBtn" onclick="exportClientLoans()" style="display:none;background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;gap:6px;align-items:center;">
+            <button id="clLoansExportBtn" class="btn btn-secondary" onclick="exportClientLoans()" style="display:none;">
                 &#8681; Export
             </button>
         </div>
@@ -879,6 +1029,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 </div>
                 <small style="color:var(--secondary);margin-top:3px;display:block;">Pick to auto-fill, or type a new name below.</small>
             </div>
+            <div id="eligibilityHint" style="display:none;margin-bottom:14px;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.5;"></div>
             <div class="form-group">
                 <label>Client Name*</label>
                 <input type="text" id="loan_client" name="client" required placeholder="Full name">
@@ -888,6 +1039,36 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
                 <input type="text" id="loan_phone" name="phone" placeholder="e.g. 07XXXXXXXX">
             </div>
             <button type="submit" name="add_loan" class="btn btn-primary">Save Loan</button>
+        </form>
+    </div>
+</div>
+
+<!-- Loan Settings Modal -->
+<div id="loanSettingsModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('loanSettingsModal')">&times;</span>
+        <h2>Loan Settings</h2>
+        <p style="color:var(--secondary);font-size:13px;margin-top:-8px;">
+            Controls the eligible-amount hint shown when giving a client a new loan, based on how they paid their last one.
+        </p>
+        <div id="loanSettingsAlert" class="alert" style="display:none;"></div>
+        <form id="loanSettingsForm">
+            <div class="form-group">
+                <label>Payment Period (days)*</label>
+                <input type="text" id="ls_payment_period_days" name="payment_period_days" required value="7">
+                <small style="color:var(--secondary);margin-top:3px;display:block;">How many days a borrower has to repay before their behavior is scored.</small>
+            </div>
+            <div class="form-group">
+                <label>Growth Rate on Full On-Time Payment (%)*</label>
+                <input type="text" id="ls_growth_rate_percent" name="growth_rate_percent" required value="20">
+                <small style="color:var(--secondary);margin-top:3px;display:block;">Paid 100% within the period → next eligible amount = last amount + this %.</small>
+            </div>
+            <div class="form-group">
+                <label>Minimum Eligible Amount When Nothing Is Paid (RWF)*</label>
+                <input type="text" id="ls_zero_payment_floor" name="zero_payment_floor" required value="0">
+                <small style="color:var(--secondary);margin-top:3px;display:block;">Floor offered even if the client paid nothing during the period.</small>
+            </div>
+            <button type="submit" name="save_loan_settings" class="btn btn-primary">Save Settings</button>
         </form>
     </div>
 </div>
@@ -922,7 +1103,7 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
         <p id="shareModalSubtitle" style="color:var(--secondary);font-size:13px;margin:0 0 14px;"></p>
         <div id="shareTablePreview" style="overflow-x:auto;max-height:340px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:16px;"></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button onclick="printSharePDF()" style="background:#2563eb;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;">
+            <button onclick="printSharePDF()" style="background:#103060;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;">
                 &#128438; Save as PDF
             </button>
             <button onclick="shareToWhatsApp()" style="background:#475569;color:#fff;border:none;border-radius:var(--radius);padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;">
@@ -954,6 +1135,54 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
     </div>
 </div>
 
+<!-- Edit Client Modal -->
+<div id="editClientModal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <span class="close" onclick="closeModal('editClientModal')">&times;</span>
+        <h2>Edit Client</h2>
+        <div id="editClientAlert" class="alert" style="display:none;"></div>
+        <form id="editClientForm">
+            <input type="hidden" id="edit_client_id" name="client_id">
+            <div class="form-group">
+                <label>Client Name*</label>
+                <input type="text" id="edit_client_name" name="client_name" required placeholder="Full name">
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="edit_client_phone" name="client_phone" placeholder="e.g. 07XXXXXXXX">
+            </div>
+            <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'superadmin'])): ?>
+            <hr style="border:none;border-top:1px solid var(--gray-200);margin:16px 0;">
+            <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">
+                Custom Loan Settings <small style="font-weight:400;color:var(--secondary);">(overrides the general settings for this client only — leave blank to inherit)</small>
+            </div>
+            <div class="form-group">
+                <label>Payment Period (days)</label>
+                <input type="text" id="ov_payment_period_days" name="ov_payment_period_days" placeholder="Inherits general setting">
+            </div>
+            <div class="form-group">
+                <label>Growth Rate on Full On-Time Payment (%)</label>
+                <input type="text" id="ov_growth_rate_percent" name="ov_growth_rate_percent" placeholder="Inherits general setting">
+            </div>
+            <div class="form-group">
+                <label>Minimum Eligible Amount When Nothing Is Paid (RWF)</label>
+                <input type="text" id="ov_zero_payment_floor" name="ov_zero_payment_floor" placeholder="Inherits general setting">
+            </div>
+            <?php endif; ?>
+            <button type="submit" name="edit_client" class="btn btn-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<!-- Client Eligibility Modal -->
+<div id="eligibilityModal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <span class="close" onclick="closeModal('eligibilityModal')">&times;</span>
+        <h2 id="eligibilityModalTitle">Loan Eligibility</h2>
+        <div id="eligibilityModalBody" style="margin-top:12px;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.6;"></div>
+    </div>
+</div>
+
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
 <script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script src="script.js"></script>
@@ -978,7 +1207,7 @@ function openShareModal(pdfData, waText) {
     var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<thead><tr>';
     pdfData.headers.forEach(function(h) {
-        html += '<th style="padding:9px 12px;background:#1e40af;color:#fff;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">' + h + '</th>';
+        html += '<th style="padding:9px 12px;background:#103060;color:#fff;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">' + h + '</th>';
     });
     html += '</tr></thead><tbody>';
     pdfData.rows.forEach(function(row, ri) {
@@ -1012,7 +1241,7 @@ function printSharePDF() {
         '.sub{color:#64748b;font-size:12px;margin-bottom:6px;}' +
         '.meta{text-align:right;font-size:11px;color:#94a3b8;margin-bottom:18px;}' +
         'table{width:100%;border-collapse:collapse;}' +
-        'th{background:#1e40af;color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}' +
+        'th{background:#103060;color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}' +
         'td{padding:8px 12px;border-bottom:1px solid #e2e8f0;}' +
         'tr:nth-child(even) td{background:#f8fafc;}' +
         'tfoot td{background:#f1f5f9;font-weight:700;border-top:2px solid #cbd5e1;border-bottom:none;}' +
@@ -1021,7 +1250,7 @@ function printSharePDF() {
         '</style></head><body>';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">' +
         '<div class="meta" style="margin:0;">Generated: ' + new Date().toLocaleString() + '</div>' +
-        '<button class="print-btn" onclick="window.print()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Print / Save PDF</button>' +
+        '<button class="print-btn" onclick="window.print()" style="background:#103060;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Print / Save PDF</button>' +
         '</div>';
     html += '<h1>' + d.title + '</h1>';
     if (d.subtitle) html += '<div class="sub">' + d.subtitle + '</div>';
@@ -1225,7 +1454,7 @@ document.getElementById('loan_qty').addEventListener('input', calcLoanAmount);
         group.style.display = '';
         dropdown.innerHTML = list.map(function(c) {
             var visits = parseInt(c.total_loans) || 0;
-            return '<div class="searchable-select-option" data-client="' + _escHtml(c.name).replace(/"/g,'&quot;') +
+            return '<div class="searchable-select-option" data-client-id="' + parseInt(c.id) + '" data-client="' + _escHtml(c.name).replace(/"/g,'&quot;') +
                 '" data-phone="' + _escHtml(c.phone || '').replace(/"/g,'&quot;') + '">' +
                 _escHtml(c.name) + (c.phone ? ' — ' + _escHtml(c.phone) : '') +
                 '<small style="color:var(--secondary);"> (' + visits + ' visit' + (visits !== 1 ? 's' : '') + ')</small></div>';
@@ -1263,8 +1492,95 @@ document.getElementById('loan_qty').addEventListener('input', calcLoanAmount);
         document.getElementById('loan_phone').value  = opt.getAttribute('data-phone');
         search.value = opt.getAttribute('data-client');
         dropdown.classList.remove('open'); hi = -1;
+        showEligibilityFor(parseInt(opt.getAttribute('data-client-id')) || 0);
     }
 })();
+
+// Fetches and renders the "Eligible amount" hint on the New Loan modal for the
+// picked client, based on how well they paid their most recent loan.
+function showEligibilityFor(clientId) {
+    var box = document.getElementById('eligibilityHint');
+    if (!clientId) { box.style.display = 'none'; return; }
+
+    box.style.display = 'block';
+    box.style.background = '#f1f5f9';
+    box.style.color = 'var(--secondary)';
+    box.innerHTML = '<span style="display:inline-block;width:11px;height:11px;border:2px solid rgba(100,116,139,.35);border-top-color:var(--secondary);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;"></span>Checking eligibility…';
+
+    var data = new FormData();
+    data.append('get_client_eligibility', '1');
+    data.append('client_id', clientId);
+
+    fetch('loans.php', { method: 'POST', body: data })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (!res.success) { box.style.display = 'none'; return; }
+            if (!res.has_history) {
+                box.style.background = '#f1f5f9';
+                box.style.color = 'var(--secondary)';
+                box.textContent = 'No previous loan on record yet — no eligibility score to base this on.';
+                return;
+            }
+            var fmt = function(n) { return Math.round(n).toLocaleString(); };
+            var pct = Math.round(res.ratio * 100);
+            var tierStyle = { full: ['#dcfce7', '#166534'], partial: ['#fef3c7', '#92400e'], none: ['#fee2e2', '#991b1b'] };
+            var colors = tierStyle[res.tier] || tierStyle.partial;
+            box.style.background = colors[0];
+            box.style.color = colors[1];
+            var line = 'Eligible amount: RWF ' + fmt(res.eligible_amount) +
+                ' — paid ' + pct + '% (RWF ' + fmt(res.paid_within_period) + ' of ' + fmt(res.total_owed) + ') of their outstanding balance by ' + res.due_date + '.';
+            if (res.period_active) line += ' (Current cycle still in progress — this may still improve.)';
+            if (res.has_custom_settings) line += ' [Custom loan settings apply to this client.]';
+            box.textContent = line;
+        })
+        .catch(function() { box.style.display = 'none'; });
+}
+
+// "Check Eligibility" row action — opens a small modal with the same score
+// computeLoanEligibility() produces, for a client picked from the client
+// table (no need to open the New Loan modal first).
+function checkClientEligibility(clientId, name) {
+    document.getElementById('eligibilityModalTitle').textContent = 'Loan Eligibility — ' + name;
+    var box = document.getElementById('eligibilityModalBody');
+    box.style.background = '#f1f5f9';
+    box.style.color = 'var(--secondary)';
+    box.innerHTML = '<span style="display:inline-block;width:11px;height:11px;border:2px solid rgba(100,116,139,.35);border-top-color:var(--secondary);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;"></span>Checking eligibility…';
+    openModal('eligibilityModal');
+
+    var data = new FormData();
+    data.append('get_client_eligibility', '1');
+    data.append('client_id', clientId);
+
+    fetch('loans.php', { method: 'POST', body: data })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (!res.success) {
+                box.style.background = '#fee2e2'; box.style.color = '#991b1b';
+                box.textContent = res.message || 'Could not check eligibility.';
+                return;
+            }
+            if (!res.has_history) {
+                box.style.background = '#f1f5f9'; box.style.color = 'var(--secondary)';
+                box.textContent = 'No previous loan on record yet for this client — no eligibility score to base a new loan on.';
+                return;
+            }
+            var fmt = function(n) { return Math.round(n).toLocaleString(); };
+            var pct = Math.round(res.ratio * 100);
+            var tierStyle = { full: ['#dcfce7', '#166534'], partial: ['#fef3c7', '#92400e'], none: ['#fee2e2', '#991b1b'] };
+            var colors = tierStyle[res.tier] || tierStyle.partial;
+            box.style.background = colors[0];
+            box.style.color = colors[1];
+            var html = '<div style="font-size:22px;font-weight:800;margin-bottom:8px;">RWF ' + fmt(res.eligible_amount) + '</div>' +
+                '<div>Paid ' + pct + '% (RWF ' + fmt(res.paid_within_period) + ' of ' + fmt(res.total_owed) + ') of their outstanding balance by ' + res.due_date + '.</div>';
+            if (res.period_active) html += '<div style="margin-top:6px;">Current cycle still in progress — this may still improve.</div>';
+            if (res.has_custom_settings) html += '<div style="margin-top:6px;font-style:italic;">Custom loan settings apply to this client.</div>';
+            box.innerHTML = html;
+        })
+        .catch(function() {
+            box.style.background = '#fee2e2'; box.style.color = '#991b1b';
+            box.textContent = 'Network error — please try again.';
+        });
+}
 
 // Generic AJAX form helper
 function ajaxForm(formId, alertId, actionName, onSuccess) {
@@ -1324,8 +1640,34 @@ ajaxForm('addLoanForm', 'addLoanAlert', 'add_loan', function() {
     document.getElementById('loanPriceHint').textContent = '';
     document.getElementById('loan_product_search').value = '';
     document.getElementById('loan_product_id').value = '';
+    document.getElementById('eligibilityHint').style.display = 'none';
     DataCache.invalidate('products'); // loan reduces retail stock
     reloadClientsTable();
+});
+
+function openNewLoanModal() {
+    document.getElementById('eligibilityHint').style.display = 'none';
+    document.getElementById('client_picker_search').value = '';
+    openModal('addLoanModal');
+}
+
+function openLoanSettings() {
+    var data = new FormData();
+    data.append('get_loan_settings', '1');
+    fetch('loans.php', { method: 'POST', body: data })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (res.success) {
+                document.getElementById('ls_payment_period_days').value = res.payment_period_days;
+                document.getElementById('ls_growth_rate_percent').value = res.growth_rate_percent;
+                document.getElementById('ls_zero_payment_floor').value = res.zero_payment_floor;
+            }
+            openModal('loanSettingsModal');
+        });
+}
+
+ajaxForm('loanSettingsForm', 'loanSettingsAlert', 'save_loan_settings', function() {
+    closeModal('loanSettingsModal');
 });
 
 ajaxForm('paymentForm', 'paymentAlert', 'add_payment', function() {
@@ -1339,6 +1681,41 @@ ajaxForm('addClientForm', 'addClientAlert', 'add_new_client', function() {
     document.getElementById('addClientForm').reset();
     var allBtn = document.querySelector('.filter-status-btn[data-status="all"]');
     if (allBtn) setStatusFilter(allBtn);
+    reloadClientsTable();
+});
+
+function openEditClient(clientId, name, phone) {
+    document.getElementById('edit_client_id').value = clientId;
+    document.getElementById('edit_client_name').value = name || '';
+    document.getElementById('edit_client_phone').value = phone || '';
+    document.getElementById('editClientAlert').style.display = 'none';
+
+    var ovDays = document.getElementById('ov_payment_period_days');
+    if (ovDays) {
+        var ovGrowth = document.getElementById('ov_growth_rate_percent');
+        var ovFloor  = document.getElementById('ov_zero_payment_floor');
+        ovDays.value = ''; ovGrowth.value = ''; ovFloor.value = '';
+        var data = new FormData();
+        data.append('get_client_loan_settings', '1');
+        data.append('client_id', clientId);
+        fetch('loans.php', { method: 'POST', body: data })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (!res.success) return;
+                ovDays.value   = res.overrides.payment_period_days ?? '';
+                ovGrowth.value = res.overrides.growth_rate_percent ?? '';
+                ovFloor.value  = res.overrides.zero_payment_floor ?? '';
+                ovDays.placeholder   = 'Inherits general setting (' + res.general.payment_period_days + ' days)';
+                ovGrowth.placeholder = 'Inherits general setting (' + res.general.growth_rate_percent + '%)';
+                ovFloor.placeholder  = 'Inherits general setting (RWF ' + res.general.zero_payment_floor + ')';
+            });
+    }
+
+    openModal('editClientModal');
+}
+
+ajaxForm('editClientForm', 'editClientAlert', 'edit_client', function() {
+    closeModal('editClientModal');
     reloadClientsTable();
 });
 
@@ -1508,10 +1885,14 @@ function renderClientLoans() {
         if (l.external_id) { saleTab = 'external'; saleId = l.external_id; }
         else if (l.bulk_id) { saleTab = 'bulk'; saleId = l.bulk_id; }
         else if (l.retail_id) { saleTab = 'retail'; saleId = l.retail_id; }
-        var saleLink = saleId
-            ? '<a href="sales.php?tab=' + saleTab + '&highlight=' + saleId + '" target="_blank" ' +
-              'style="font-size:12px;color:var(--primary);text-decoration:none;padding:3px 6px;border:1px solid var(--primary);border-radius:4px;margin-right:4px;">' +
-              saleTab.charAt(0).toUpperCase() + saleTab.slice(1) + ' ↗</a>' : '';
+        var saleLabel = saleTab.charAt(0).toUpperCase() + saleTab.slice(1);
+        var saleItem = saleId
+            ? '<a class="act-item" href="sales.php?tab=' + saleTab + '&highlight=' + saleId + '" target="_blank"><i class="fas fa-arrow-up-right-from-square"></i> ' + saleLabel + ' Sale</a>'
+            : '';
+        var payItem = balance > 0
+            ? (saleId ? '<div class="act-menu-sep"></div>' : '') +
+              '<button class="act-item warning" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this);closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>'
+            : '';
         var cartItems = null;
         try { cartItems = l.cart ? JSON.parse(l.cart) : null; } catch (e) { cartItems = null; }
         var productCell;
@@ -1525,10 +1906,11 @@ function renderClientLoans() {
             productCell = _escHtml(l.product_category || '') + '-' + _escHtml(l.product_name || '—');
         }
         html += '<tr>' +
-            '<td style="white-space:nowrap;">' + saleLink +
-            (balance > 0 ? '<button class="btn-pay" data-loan-id="' + l.id + '" data-balance="' + balance + '" data-client="' + _clName.replace(/"/g,'&quot;') + '" onclick="openPayment(this)" style="margin-right:4px;">Pay</button>' : '') +
-            '<a href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');" style="font-size:12px;color:var(--danger);text-decoration:none;padding:3px 6px;border:1px solid var(--danger);border-radius:4px;">Del</a>' +
-            '</td>' +
+            '<td><div class="act-menu-wrap"><button class="act-btn" title="Actions" onclick="toggleActMenu(this)">&#8942;</button>' +
+            '<div class="act-menu">' + saleItem + payItem +
+            '<div class="act-menu-sep"></div>' +
+            '<a class="act-item danger" href="loans.php?delete=' + l.id + '" onclick="return confirm(\'Delete this loan?\');"><i class="fas fa-trash"></i> Delete</a>' +
+            '</div></div></td>' +
             '<td style="color:var(--secondary);">' + (start + idx + 1) + '</td>' +
             '<td style="white-space:nowrap;">' + l.loan_date + '</td>' +
             '<td>' + productCell + '</td>' +
@@ -1936,7 +2318,7 @@ function _renderClientsTable(clients) {
         else                                          { status = 'Unpaid';  badge = 'badge-unpaid'; }
 
         var payBtn = outstanding > 0
-            ? '<div class="act-menu-sep"></div><button class="act-item" style="color:#d97706;" onclick="openGlobalLoanPayFor(' + c.client_id + ',' + outstanding + ');closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>'
+            ? '<div class="act-menu-sep"></div><button class="act-item warning" onclick="openGlobalLoanPayFor(' + c.client_id + ',' + outstanding + ');closeActMenus()"><i class="fas fa-money-bill-wave"></i> Pay</button>'
             : '';
 
         html += '<tr data-status="' + status.toLowerCase() + '">' +
@@ -1944,8 +2326,10 @@ function _renderClientsTable(clients) {
             '<div class="act-menu">' + payBtn +
             '<button class="act-item" onclick="viewClientLoans(' + _escHtml(JSON.stringify(c.name)) + ',' + parseInt(c.client_id) + ');closeActMenus()"><i class="fas fa-eye"></i> View Loans</button>' +
             '<button class="act-item" onclick="viewClientPayments(' + parseInt(c.client_id) + ',' + _escHtml(JSON.stringify(c.name)) + ');closeActMenus()"><i class="fas fa-clock-rotate-left"></i> Payments</button>' +
+            '<button class="act-item" onclick="checkClientEligibility(' + parseInt(c.client_id) + ',' + _escHtml(JSON.stringify(c.name)) + ');closeActMenus()"><i class="fas fa-chart-line"></i> Check Eligibility</button>' +
             '<div class="act-menu-sep"></div>' +
-            '<button class="act-item" style="color:#0ea5e9;" onclick="recalcClientBalance(' + parseInt(c.client_id) + ',this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>' +
+            '<button class="act-item" onclick="openEditClient(' + parseInt(c.client_id) + ',' + _escHtml(JSON.stringify(c.name)) + ',' + _escHtml(JSON.stringify(c.phone || '')) + ');closeActMenus()"><i class="fas fa-pen"></i> Edit</button>' +
+            '<button class="act-item info" onclick="recalcClientBalance(' + parseInt(c.client_id) + ',this);closeActMenus()"><i class="fas fa-rotate"></i> Recalculate</button>' +
             '</div></div></td>' +
             '<td style="color:var(--secondary);">' + (i + 1) + '</td>' +
             '<td style="font-weight:600;">' + _escHtml(c.name) + '</td>' +

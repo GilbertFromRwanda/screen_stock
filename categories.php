@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 
 if (!isLoggedIn()) redirect('login.php');
@@ -12,6 +12,56 @@ function json_result($success, $message) {
     header('Content-Type: application/json');
     echo json_encode(['success' => $success, 'message' => $message]);
     exit;
+}
+
+// ── XLSX parser using built-in ZipArchive + SimpleXML ─────────────────────────
+function xlsx_col_index($ref) {
+    preg_match('/^([A-Z]+)/', strtoupper($ref), $m);
+    $col = $m[1] ?? 'A';
+    $n = 0;
+    for ($i = 0; $i < strlen($col); $i++) $n = $n * 26 + (ord($col[$i]) - 64);
+    return $n - 1;
+}
+
+function parse_xlsx($file) {
+    if (!class_exists('ZipArchive')) return false;
+    $zip = new ZipArchive();
+    if ($zip->open($file) !== true) return false;
+
+    $strings = [];
+    $ssXml = $zip->getFromName('xl/sharedStrings.xml');
+    if ($ssXml) {
+        $ss = simplexml_load_string($ssXml);
+        foreach ($ss->si as $si) {
+            $text = '';
+            if (isset($si->t)) { $text = (string)$si->t; }
+            else { foreach ($si->r as $r) $text .= (string)$r->t; }
+            $strings[] = $text;
+        }
+    }
+
+    $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
+    $zip->close();
+    if (!$sheetXml) return false;
+
+    $sheet = simplexml_load_string($sheetXml);
+    $rows  = [];
+    foreach ($sheet->sheetData->row as $row) {
+        $cells = [];
+        $maxCol = 0;
+        foreach ($row->c as $cell) {
+            $idx   = xlsx_col_index((string)$cell['r']);
+            $type  = (string)$cell['t'];
+            $value = isset($cell->v) ? (string)$cell->v : '';
+            if ($type === 's') $value = $strings[(int)$value] ?? '';
+            $cells[$idx] = $value;
+            if ($idx > $maxCol) $maxCol = $idx;
+        }
+        $rowData = [];
+        for ($c = 0; $c <= $maxCol; $c++) $rowData[] = $cells[$c] ?? '';
+        $rows[] = $rowData;
+    }
+    return $rows;
 }
 
 // Syncs the denormalized products.category text for every product pointing at $category_id.
@@ -69,6 +119,62 @@ if (isset($_GET['ajax'])) {
         'rows'       => build_category_rows($conn),
         'categories' => get_categories($conn),
     ]);
+    exit;
+}
+
+// ── Template download ──────────────────────────────────────────────────────────
+if (isset($_GET['template'])) {
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="categories_template.csv"');
+    echo "Name\n";
+    echo "Example Category\n";
+    exit;
+}
+
+// ── Import handler (AJAX) ──────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+    header('Content-Type: application/json');
+    $file = $_FILES['excel_file'];
+    $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['success' => false, 'error' => 'Upload failed.']); exit;
+    }
+
+    $rows = [];
+    if ($ext === 'csv') {
+        $handle = fopen($file['tmp_name'], 'r');
+        while (($row = fgetcsv($handle)) !== false) $rows[] = $row;
+        fclose($handle);
+    } elseif ($ext === 'xlsx') {
+        $rows = parse_xlsx($file['tmp_name']);
+        if ($rows === false) { echo json_encode(['success' => false, 'error' => 'Could not read .xlsx file.']); exit; }
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Only .xlsx and .csv files are supported.']); exit;
+    }
+
+    array_shift($rows); // remove header row
+    $added = $skipped = $duplicates = 0;
+    $existing = [];
+    foreach (get_categories($conn) as $c) $existing[strtolower($c['name'])] = true;
+
+    foreach ($rows as $row) {
+        $name = trim($row[0] ?? '');
+        if ($name === '') { $skipped++; continue; }
+
+        $key = strtolower($name);
+        if (isset($existing[$key])) { $duplicates++; continue; }
+        $existing[$key] = true;
+
+        resolve_category($conn, $name);
+        $added++;
+    }
+
+    if ($added > 0) {
+        touchCacheStore($conn, 'categories');
+        logActivity($conn, (int)$_SESSION['user_id'], 'Import Categories', "Imported $added categorie(s) from file", 'categories', 0, [], ['added' => $added]);
+    }
+    echo json_encode(['success' => true, 'added' => $added, 'skipped' => $skipped, 'duplicates' => $duplicates]);
     exit;
 }
 
@@ -163,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_category'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Categories - Small Stock Management</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <style>
         .products-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
         .search-wrap { position:relative; flex:1; min-width:200px; max-width:360px; }
@@ -185,6 +291,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_category'])) {
 
         <div class="products-toolbar">
             <button onclick="openModal('addCategoryModal')" class="btn btn-primary">Add Category</button>
+            <button onclick="openModal('importCategoryModal')" class="btn btn-secondary">Import Excel</button>
             <div class="search-wrap">
                 <input type="text" id="categorySearch" placeholder="Search category..." autocomplete="off">
                 <button class="search-clear" onclick="clearSearch()" title="Clear">&times;</button>
@@ -245,6 +352,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_category'])) {
                 <select id="merge_target_id" name="target_id" required></select>
             </div>
             <button type="submit" class="btn btn-primary">Merge</button>
+        </form>
+    </div>
+</div>
+
+<!-- Import Category Modal -->
+<div id="importCategoryModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('importCategoryModal')">&times;</span>
+        <h2>Import Categories from Excel</h2>
+        <p style="font-size:13px;color:var(--secondary);margin-bottom:20px;">
+            Upload a <strong>.xlsx</strong> or <strong>.csv</strong> file.
+            Columns: <em>Name</em>.
+            &nbsp;<a href="categories.php?template=1" style="color:var(--primary);font-weight:600;">Download template</a>
+        </p>
+        <form id="importCategoryForm">
+            <div class="form-group">
+                <label>File</label>
+                <input type="file" id="categoryExcelFile" name="excel_file" accept=".xlsx,.csv" required>
+            </div>
+            <div id="importCategoryResult" style="display:none;margin-bottom:12px;"></div>
+            <button type="submit" id="importCategoryBtn" class="btn btn-primary">Import</button>
         </form>
     </div>
 </div>
@@ -404,6 +532,52 @@ function clearSearch() {
 }
 
 categorySearch.addEventListener('input', applySearchFilter);
+
+// ── Excel import ──────────────────────────────────────────────────────────────
+document.getElementById('importCategoryForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const file = document.getElementById('categoryExcelFile').files[0];
+    if (!file) return;
+
+    const btn    = document.getElementById('importCategoryBtn');
+    const result = document.getElementById('importCategoryResult');
+
+    btn.disabled    = true;
+    btn.textContent = 'Importing…';
+    result.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('excel_file', file);
+
+    try {
+        const res  = await fetch('categories.php', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: fd
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            result.className = 'alert alert-success';
+            let msg = `${data.added} categorie(s) imported.`;
+            if (data.duplicates > 0) msg += ` ${data.duplicates} duplicate(s) skipped.`;
+            if (data.skipped    > 0) msg += ` ${data.skipped} empty row(s) skipped.`;
+            result.textContent = msg;
+            if (data.added > 0) refreshCategories();
+        } else {
+            result.className   = 'alert alert-danger';
+            result.textContent = data.error;
+        }
+    } catch {
+        result.className   = 'alert alert-danger';
+        result.textContent = 'Upload failed. Please try again.';
+    }
+
+    result.style.display    = 'block';
+    btn.disabled            = false;
+    btn.textContent         = 'Import';
+    document.getElementById('categoryExcelFile').value = '';
+});
 </script>
 </body>
 </html>

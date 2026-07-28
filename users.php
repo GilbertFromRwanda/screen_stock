@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 
 if (!isLoggedIn()) {
@@ -6,6 +6,11 @@ if (!isLoggedIn()) {
 }
 
 $is_super = isSuperAdmin();
+$is_admin = ($_SESSION['role'] ?? '') === 'admin';
+// Superadmin or a company admin (for users in their own company) can grant
+// a user access to view another company's data, in addition to granting
+// module permissions.
+$can_manage_company_access = $is_super || $is_admin;
 
 // Module definitions used by the permissions system
 $perm_modules = [
@@ -27,14 +32,23 @@ $perm_modules = [
 // If filtering by company (superadmin feature)
 $filter_company_id = isset($_GET['company_id']) ? (int)$_GET['company_id'] : null;
 
-// Fetch companies for superadmin dropdowns
+// Fetch companies for superadmin's "assign home company" dropdown (full list —
+// superadmin can put any user in any company).
 $all_companies    = [];
 $filter_companies = [];
 $filter_company_name = '';
 if ($is_super) {
     $res_c = mysqli_query($conn, "SELECT id, name FROM companies WHERE status='active' ORDER BY name");
     while ($row = mysqli_fetch_assoc($res_c)) $all_companies[] = $row;
+}
 
+// Companies a granting user can offer in the Company Access modal: superadmin
+// can grant any active company; a plain admin can only grant companies THEY
+// themselves can view (their own home company + whatever they were granted) —
+// they can't hand out visibility into a company they have no relationship to.
+$grantable_companies = $is_super ? $all_companies : getAccessibleCompanies($conn, (int)$_SESSION['user_id']);
+
+if ($is_super) {
     $res_fc = mysqli_query($conn, "SELECT id, name FROM companies ORDER BY name");
     while ($row = mysqli_fetch_assoc($res_fc)) $filter_companies[] = $row;
 
@@ -75,6 +89,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if (mysqli_query($conn, $q)) {
                     $new_user_id = (int)mysqli_insert_id($conn);
                     $success = "User added successfully!";
+                    if ($post_company_id !== null) {
+                        grantCompanyAccess($conn, $new_user_id, $post_company_id, (int)$_SESSION['user_id']);
+                    }
                     logActivity($conn, (int)$_SESSION['user_id'], 'Add User', "Added user: $username",
                         'users', $new_user_id, [],
                         ['username' => $username, 'email' => $_POST['email'], 'full_name' => $full_name, 'role' => $role, 'status' => $status]
@@ -97,6 +114,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
                 if (mysqli_query($conn, $q)) {
                     $success = "User updated successfully!";
+                    if ($post_company_id !== null) {
+                        // Ensure the (possibly new) home company is accessible — doesn't touch
+                        // any other grants the user already has.
+                        grantCompanyAccess($conn, $user_id, $post_company_id, (int)$_SESSION['user_id']);
+                    }
                     logActivity($conn, (int)$_SESSION['user_id'], 'Edit User', "Edited user: $username",
                         'users', $user_id, $old_user,
                         ['username' => $username, 'email' => $_POST['email'], 'full_name' => $full_name, 'role' => $role, 'status' => $status, 'password_changed' => !empty($_POST['password'])]
@@ -173,6 +195,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
+    // Save which other companies a user is allowed to switch their view to
+    if (isset($_POST['modal_action']) && $_POST['modal_action'] === 'save_company_access') {
+        $target_uid  = (int)$_POST['access_user_id'];
+        $target_user = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, company_id FROM users WHERE id=$target_uid"));
+        $can_set     = false;
+        if ($target_user) {
+            if ($is_super) {
+                $can_set = true;
+            } elseif ($is_admin && (int)($target_user['company_id'] ?? 0) === (int)(homeCid() ?? 0)) {
+                $can_set = true;
+            }
+        }
+        if ($can_set && $target_user) {
+            $selected = isset($_POST['access_companies']) && is_array($_POST['access_companies'])
+                ? array_map('intval', $_POST['access_companies']) : [];
+
+            // A plain admin can only hand out companies THEY themselves can view —
+            // never a company they have no relationship to, regardless of what the
+            // request claims. Superadmin can grant any company. Home is no longer
+            // special-cased here — it's just another row in user_company_access now,
+            // so it goes through the same allow-list filtering as any other grant.
+            if (!$is_super) {
+                $grant_allowed = array_column(getAccessibleCompanies($conn, (int)$_SESSION['user_id']), 'id');
+                $selected = array_intersect($selected, $grant_allowed);
+            }
+
+            if (empty($selected)) {
+                $error = "Cannot save — this user must have access to at least one company.";
+            } else {
+                mysqli_query($conn, "DELETE FROM user_company_access WHERE user_id=$target_uid");
+                foreach ($selected as $grant_cid) {
+                    grantCompanyAccess($conn, $target_uid, (int)$grant_cid, (int)$_SESSION['user_id']);
+                }
+                $success = "Company access updated successfully!";
+                logActivity($conn, (int)$_SESSION['user_id'], 'Update Company Access',
+                    "Set company access for user ID: $target_uid", 'user_company_access', $target_uid);
+            }
+        } else {
+            $error = "Unauthorized to set company access for this user.";
+        }
+    }
+
 }
 
 // Fetch users — superadmin sees all (optionally filtered), others see own company only
@@ -204,13 +268,23 @@ if (!empty($all_users)) {
     }
 }
 
+// Pre-load company access grants for all listed users (for the modal)
+$all_user_access = [];
+if (!empty($all_users)) {
+    $access_uids = implode(',', array_map('intval', array_column($all_users, 'id')));
+    $ar = mysqli_query($conn, "SELECT user_id, company_id FROM user_company_access WHERE user_id IN ($access_uids)");
+    while ($row = mysqli_fetch_assoc($ar)) {
+        $all_user_access[$row['user_id']][] = (int)$row['company_id'];
+    }
+}
+
 $total_users    = count($all_users);
 $active_users   = count(array_filter($all_users, fn($u) => $u['status'] === 'active'));
 $inactive_users = count(array_filter($all_users, fn($u) => $u['status'] === 'inactive'));
 $admin_users    = count(array_filter($all_users, fn($u) => $u['role'] === 'admin'));
 
 function avatarColor($name) {
-    $colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6'];
+    $colors = ['#1a4280','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6'];
     return $colors[ord($name[0]) % count($colors)];
 }
 
@@ -221,8 +295,8 @@ function avatarColor($name) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Management - Small Stock Management</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/user.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/user.css?v=<?php echo filemtime(__DIR__ . '/css/user.css'); ?>">
 </head>
 <body>
 <div class="dashboard-container">
@@ -256,7 +330,7 @@ function avatarColor($name) {
         <!-- Stats Row -->
         <div class="um-stats-row">
             <div class="um-stat-card">
-                <div class="um-stat-icon" style="background:#dbeafe;color:#2563eb;">
+                <div class="um-stat-icon" style="background:#e8edf5;color:#103060;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </div>
                 <div class="um-stat-body">
@@ -399,7 +473,7 @@ function avatarColor($name) {
                                 <td><span class="status-badge <?php echo $user['status']; ?>"><?php echo ucfirst($user['status']); ?></span></td>
                                 <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
                                 <td><?php echo $user['last_login'] ? date('M d, Y h:i A', strtotime($user['last_login'])) : '<span style="color:var(--gray-400);">—</span>'; ?></td>
-                               
+
                                 <td>
                                     <div class="act-menu-wrap">
                                         <button class="act-btn" title="Actions" onclick="toggleActMenu(this)">⋮</button>
@@ -407,6 +481,9 @@ function avatarColor($name) {
                                             <button class="act-item" type="button" onclick="openEditModal(this);closeActMenus()" <?php echo $data_attrs; ?>><i class="fas fa-pen"></i> Edit</button>
                                             <?php if (in_array($user['role'], ['manager', 'user'])): ?>
                                             <button class="act-item" type="button" onclick="openPermModal(<?php echo $user['id']; ?>,'<?php echo addslashes(htmlspecialchars($user['full_name'])); ?>');closeActMenus()"><i class="fas fa-shield-alt"></i> Permissions</button>
+                                            <?php endif; ?>
+                                            <?php if ($can_manage_company_access && $user['role'] !== 'superadmin'): ?>
+                                            <button class="act-item" type="button" onclick="openAccessModal(<?php echo $user['id']; ?>,'<?php echo addslashes(htmlspecialchars($user['full_name'])); ?>',<?php echo (int)($user['company_id'] ?? 0); ?>);closeActMenus()"><i class="fas fa-building"></i> Company Access</button>
                                             <?php endif; ?>
                                             <?php if ($user['id'] != $_SESSION['user_id']): ?>
                                             <form method="POST">
@@ -637,9 +714,50 @@ function avatarColor($name) {
     </div>
 </div>
 
+
+<?php if ($can_manage_company_access): ?>
+<!-- ═══════════════════════════════════════════════════
+     Company Access Modal
+═══════════════════════════════════════════════════ -->
+<div id="accessModal" class="modal">
+    <div class="modal-content" style="max-width:420px;">
+        <div class="modal-header">
+            <div class="modal-title-group">
+                <div class="modal-form-icon" style="background:#e8edf5;color:#103060;">
+                    <i class="fas fa-building"></i>
+                </div>
+                <h3>Company Access — <span id="accessUserName"></span></h3>
+            </div>
+            <button type="button" class="modal-close" onclick="closeAccessModal()">&times;</button>
+        </div>
+        <form method="POST" action="" id="accessForm" onsubmit="return validateAccessForm()">
+            <input type="hidden" name="modal_action" value="save_company_access">
+            <input type="hidden" name="access_user_id" id="accessUserId">
+            <div class="modal-body">
+                <p style="font-size:12.5px;color:#64748b;margin-bottom:12px;">
+                    Choose which companies this user can switch to viewing — including their own. At least one must stay checked.
+                </p>
+                <?php foreach ($grantable_companies as $co): ?>
+                <label class="access-co-row" data-company-id="<?php echo $co['id']; ?>" style="display:flex;align-items:center;gap:8px;padding:8px 4px;font-size:13.5px;cursor:pointer;">
+                    <input type="checkbox" name="access_companies[]" value="<?php echo $co['id']; ?>" class="access-cb">
+                    <span><?php echo htmlspecialchars($co['name']); ?></span>
+                    <span class="access-home-tag" style="display:none;font-size:11px;color:#94a3b8;">(home company)</span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeAccessModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Access</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 // permissions data pre-loaded from PHP
 const allUserPerms = <?php echo json_encode($all_user_perms); ?>;
+const allUserAccess = <?php echo json_encode($all_user_access); ?>;
 </script>
 
 <script src="script.js"></script>
@@ -694,8 +812,8 @@ function setModalMode(mode) {
 
     // icon colour
     const icon = document.getElementById('modalIcon');
-    icon.style.background = isEdit ? '#fef3c7' : '#dbeafe';
-    icon.style.color      = isEdit ? '#d97706'  : '#2563eb';
+    icon.style.background = isEdit ? '#fef3c7' : '#e8edf5';
+    icon.style.color      = isEdit ? '#d97706'  : '#103060';
     icon.innerHTML = isEdit
         ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
         : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
@@ -786,7 +904,7 @@ document.addEventListener('DOMContentLoaded', function () {
         setTimeout(() => { a.style.opacity='0'; setTimeout(() => a.style.display='none', 300); }, 5000);
     });
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { closeUserModal(); closeDeleteModal(); closePermModal(); }
+        if (e.key === 'Escape') { closeUserModal(); closeDeleteModal(); closePermModal(); closeAccessModal(); }
     });
 });
 
@@ -826,6 +944,46 @@ document.getElementById('permModal').addEventListener('click', function(e) {
 
 function toggleAllPerms(type, checked) {
     document.querySelectorAll('.perm-' + type).forEach(cb => { cb.checked = checked; });
+}
+
+// ── Company Access Modal ────────────────────────────
+function openAccessModal(userId, userName, homeCompanyId) {
+    document.getElementById('accessUserId').value   = userId;
+    document.getElementById('accessUserName').textContent = userName;
+
+    // Home is just a normal, revocable grant now — checked/unchecked purely based
+    // on what's actually in user_company_access, same as any other company. The
+    // "(home company)" tag is an informational label only, not a lock.
+    const granted = allUserAccess[userId] || [];
+    document.querySelectorAll('.access-co-row').forEach(row => {
+        const cid = parseInt(row.dataset.companyId, 10);
+        const cb  = row.querySelector('.access-cb');
+        const tag = row.querySelector('.access-home-tag');
+        cb.checked = granted.includes(cid);
+        tag.style.display = (cid === homeCompanyId) ? 'inline' : 'none';
+    });
+
+    document.getElementById('accessModal').classList.add('is-open');
+}
+
+function validateAccessForm() {
+    const anyChecked = Array.from(document.querySelectorAll('.access-cb')).some(cb => cb.checked);
+    if (!anyChecked) {
+        showToast('Select at least one company for this user to view.', 'error');
+        return false;
+    }
+    return true;
+}
+
+function closeAccessModal() {
+    document.getElementById('accessModal').classList.remove('is-open');
+}
+
+const accessModalEl = document.getElementById('accessModal');
+if (accessModalEl) {
+    accessModalEl.addEventListener('click', function(e) {
+        if (e.target === this) closeAccessModal();
+    });
 }
 </script>
 </body>

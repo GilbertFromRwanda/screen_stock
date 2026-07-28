@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('notes')) { $_SESSION['flash_error'] = "You don't have permission to access Notes."; redirect('dashboard.php'); }
@@ -76,7 +76,7 @@ $total_count  = count($all_notes);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notes</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <style>
         .notes-header {
             display: flex; align-items: center; justify-content: space-between;

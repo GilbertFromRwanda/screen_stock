@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('purchases', 'create')) { $_SESSION['flash_error'] = "You don't have permission to create purchases."; redirect('dashboard.php'); }
@@ -357,12 +357,42 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
             justify-content: flex-end; margin-top: 8px;
         }
 
-        /* Bottom action bar (single continuous page — no step gating) */
-        .action-bar {
+        /* Multi-step */
+        .steps-wrap {
+            display: flex; align-items: flex-start; margin-bottom: 24px;
+        }
+        .step-ind {
+            display: flex; flex-direction: column; align-items: center; gap: 5px; flex-shrink: 0;
+        }
+        .step-circle {
+            width: 30px; height: 30px; border-radius: 50%;
+            border: 2px solid var(--gray-300); background: var(--white);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 700; color: var(--secondary);
+            transition: background .2s, border-color .2s, color .2s;
+        }
+        .step-ind.active .step-circle { border-color: var(--primary); background: var(--primary); color: #fff; }
+        .step-ind.done   .step-circle { border-color: #16a34a; background: #16a34a; color: #fff; }
+        .step-lbl { font-size: 11px; font-weight: 600; color: var(--secondary); white-space: nowrap; }
+        .step-ind.active .step-lbl { color: var(--primary); }
+        .step-ind.done   .step-lbl { color: #16a34a; }
+        .step-ind:hover .step-circle { opacity: .8; }
+        .step-line {
+            flex: 1; height: 2px; background: var(--gray-200);
+            margin: 0 6px; margin-top: 14px; transition: background .3s;
+        }
+        .step-line.done { background: #16a34a; }
+
+        /* Step panels */
+        .step-panel { display: none; }
+        .step-panel.active { display: block; }
+
+        /* Step navigation */
+        .step-nav {
             display: flex; align-items: center; justify-content: space-between;
             margin-top: 20px; gap: 12px;
         }
-        .action-bar-right { display: flex; gap: 10px; }
+        .step-nav-right { display: flex; gap: 10px; }
 
         /* Purchase cart */
         .cart-panel { margin-bottom: 16px; }
@@ -538,9 +568,26 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                 <div id="cartList"></div>
             </div>
 
-            <div class="form-grid">
-            <!-- ── Product & Details ───────────────────────────────────────── -->
-            <div>
+            <!-- ── Step indicator ─────────────────────────────────────────── -->
+            <div class="steps-wrap">
+                <div class="step-ind active" id="step-ind-1" onclick="goStep(1)" style="cursor:pointer;">
+                    <div class="step-circle">1</div>
+                    <div class="step-lbl">Product</div>
+                </div>
+                <div class="step-line" id="line-1-2"></div>
+                <div class="step-ind" id="step-ind-2" onclick="goStep(2)" style="cursor:pointer;">
+                    <div class="step-circle">2</div>
+                    <div class="step-lbl">Cost</div>
+                </div>
+                <div class="step-line" id="line-2-3"></div>
+                <div class="step-ind" id="step-ind-3" onclick="goStep(3)" style="cursor:pointer;">
+                    <div class="step-circle">3</div>
+                    <div class="step-lbl">Packaging</div>
+                </div>
+            </div>
+
+            <!-- ── Step 1: Product & Details ──────────────────────────────── -->
+            <div class="step-panel active" id="panel-1">
                 <div class="card">
                     <div class="card-title">Product & Details</div>
 
@@ -588,8 +635,8 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                 </div>
             </div>
 
-            <!-- ── Cost ─────────────────────────────────────────────────────── -->
-            <div>
+            <!-- ── Step 2: Cost ────────────────────────────────────────────── -->
+            <div class="step-panel" id="panel-2">
                 <div class="card">
                     <div class="card-title">Cost Price</div>
 
@@ -659,10 +706,9 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                     </div>
                 </div>
             </div>
-            </div><!-- /.form-grid -->
 
-            <!-- ── Packaging & Review ───────────────────────────────────────── -->
-            <div>
+            <!-- ── Step 3: Packaging & Review ─────────────────────────────── -->
+            <div class="step-panel" id="panel-3">
                 <div class="card" style="margin-bottom:16px;">
                     <div class="card-title">Packaging Levels</div>
                     <p style="font-size:13px;color:var(--secondary);margin-bottom:16px;">
@@ -707,14 +753,18 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                 </div>
             </div>
 
-            <!-- ── Actions ─────────────────────────────────────────────────── -->
-            <div class="action-bar">
+            <!-- ── Step navigation ────────────────────────────────────────── -->
+            <div class="step-nav">
                 <a href="purchases.php" class="btn btn-secondary" onclick="return confirmCancel()">Cancel</a>
-                <div class="action-bar-right">
+                <div class="step-nav-right">
+                    <button type="button" class="btn btn-secondary" id="backBtn"
+                            onclick="goStep(currentStep - 1)" style="display:none">&#8592; Back</button>
+                    <button type="button" class="btn btn-primary" id="nextBtn"
+                            onclick="goStep(currentStep + 1)">Next &#8594;</button>
                     <button type="button" class="btn btn-secondary" id="addAnotherBtn"
-                            onclick="addAnotherProduct()">+ Add Another Product</button>
+                            onclick="addAnotherProduct()" style="display:none">+ Add Another Product</button>
                     <button type="button" class="btn btn-primary" id="saveBtn"
-                            onclick="saveAllPurchases()">Save Purchase</button>
+                            onclick="saveAllPurchases()" style="display:none">Save Purchase</button>
                 </div>
             </div>
 
@@ -780,6 +830,47 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 <script>window.APP_COMPANY_ID = <?php echo json_encode(cid()); ?>;</script>
 <script src="js/data-cache.js?v=<?php echo filemtime(__DIR__ . '/js/data-cache.js'); ?>"></script>
 <script>
+// ── Multi-step navigation ─────────────────────────────────────────────────────
+var currentStep = 1;
+var totalSteps  = 3;
+
+function goStep(n) {
+    if (n < 1 || n > totalSteps) return;
+    if (n > currentStep && !validateStep(currentStep)) return;
+
+    document.getElementById('panel-' + currentStep).classList.remove('active');
+    document.getElementById('panel-' + n).classList.add('active');
+
+    for (var i = 1; i <= totalSteps; i++) {
+        var ind = document.getElementById('step-ind-' + i);
+        ind.classList.remove('active', 'done');
+        if (i < n)        ind.classList.add('done');
+        else if (i === n) ind.classList.add('active');
+    }
+    for (var j = 1; j < totalSteps; j++) {
+        document.getElementById('line-' + j + '-' + (j + 1)).classList.toggle('done', j < n);
+    }
+
+    currentStep = n;
+    document.getElementById('backBtn').style.display       = n > 1           ? '' : 'none';
+    document.getElementById('nextBtn').style.display       = n < totalSteps  ? '' : 'none';
+    document.getElementById('addAnotherBtn').style.display = n === totalSteps ? '' : 'none';
+    document.getElementById('saveBtn').style.display       = n === totalSteps ? '' : 'none';
+    updateSaveBtnLabel();
+}
+
+function validateStep(step) {
+    if (step === 1) {
+        if (!document.getElementById('product_id').value) {
+            showToast('Please select a product.', 'error'); return false;
+        }
+        if ((parseInt(document.getElementById('quantity').value) || 0) < 1) {
+            showToast('Quantity must be at least 1.', 'error'); return false;
+        }
+    }
+    return true;
+}
+
 // ── Number formatting helpers ─────────────────────────────────────────────────
 function fmtNum(n, maxDec) {
     var v = parseFloat(String(n || '').replace(/,/g, ''));
@@ -1048,7 +1139,7 @@ function addAnotherProduct() {
     cart.push(item);
     renderCart();
     resetWizardFields();
-    document.getElementById('product_search').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    goStep(1);
     document.getElementById('product_search').focus();
     showToast('Added "' + item.product_label + '" to cart. Add the next product or click Save.', 'success');
 }
@@ -1097,6 +1188,7 @@ function saveAllPurchases() {
             showToast(results.length > 1
                 ? (results.length + ' purchases recorded successfully.')
                 : (results[0].message || 'Purchase recorded successfully.'), 'success');
+            goStep(1);
             document.getElementById('product_search').focus();
         } else if (pending && pendingResult && !pendingResult.ok) {
             showToast(pendingResult.message || 'Failed to save this item.', 'error');
@@ -1200,8 +1292,7 @@ function editCartItem(idx) {
     updateLabels();
     updateSummary();
     fetchLastPurchase(item.product_id);
-    document.getElementById('product_search').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    document.getElementById('product_search').focus();
+    goStep(1);
     showToast('Editing "' + item.product_label + '" — update and Add Another or Save.', 'success');
 }
 
@@ -1782,18 +1873,15 @@ function submitNewSupplier() {
         });
 }
 
-// Enter moves focus to the next field (like Tab), so the whole purchase can be
-// typed without reaching for the mouse. Buttons keep their native Enter-click.
-document.getElementById('purchaseForm').addEventListener('keydown', function (e) {
+// Pressing Enter in a Step 1/2 field advances to the next step, so a purchase
+// can be entered keyboard-only without reaching for the "Next" button.
+document.getElementById('purchaseForm').addEventListener('keydown', function(e) {
     if (e.key !== 'Enter') return;
-    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') return;
     if (e.target.closest('#rates-inputs')) return; // Enter there should not skip "Save Rates"
+    var inStep1or2 = e.target.closest('#panel-1') || e.target.closest('#panel-2');
+    if (!inStep1or2) return;
     e.preventDefault();
-    var focusable = Array.prototype.slice.call(
-        document.getElementById('purchaseForm').querySelectorAll('input, select')
-    ).filter(function (el) { return el.offsetParent !== null && !el.disabled; });
-    var idx = focusable.indexOf(e.target);
-    if (idx > -1 && idx < focusable.length - 1) focusable[idx + 1].focus();
+    goStep(currentStep + 1);
 });
 
 loadRates();
@@ -1840,6 +1928,8 @@ document.getElementById('product_search').focus();
     syncFromConverted();
     updateLabels();
     fetchLastPurchase(p.product_id);
+    currentStep = 1;
+    goStep(3);
     showToast('Pre-filled from previous purchase — adjust as needed.', 'success');
 })();
 <?php endif; ?>

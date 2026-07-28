@@ -1,21 +1,21 @@
  /* Additional styles for editable prices */
     :root {
-        --price-primary: #2563eb;
-        --price-primary-light: #dbeafe;
-        --price-secondary: #64748b;
-        --price-secondary-light: #f1f5f9;
-        --price-success: #10b981;
+        --price-primary: #103060;
+        --price-primary-light: #e8edf5;
+        --price-secondary: #6b7280;
+        --price-secondary-light: #f4f6f9;
+        --price-success: #059669;
         --price-success-light: #d1fae5;
-        --price-danger: #ef4444;
+        --price-danger: #dc2626;
         --price-danger-light: #fee2e2;
-        --price-warning: #f59e0b;
+        --price-warning: #d97706;
         --price-warning-light: #fef3c7;
-        --price-border: #e2e8f0;
+        --price-border: #d0d7e3;
         --price-bg: #ffffff;
-        --price-bg-hover: #f8fafc;
-        --price-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-        --price-radius: 8px;
-        --price-radius-lg: 12px;
+        --price-bg-hover: #f4f6f9;
+        --price-shadow-sm: none;
+        --price-radius: 4px;
+        --price-radius-lg: 4px;
     }
 
     .price-input-group {
@@ -40,7 +40,7 @@
     .price-input-group input:focus {
         outline: none;
         border-color: var(--price-primary);
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        box-shadow: 0 0 0 3px rgba(16, 48, 96, 0.12);
     }
     
     .price-input-group input:hover {
@@ -50,7 +50,7 @@
     .default-price-badge {
         background: var(--price-secondary-light);
         padding: 8px 16px;
-        border-radius: 20px;
+        border-radius: 999px;
         font-size: 12px;
         font-weight: 600;
         color: var(--price-secondary);
@@ -128,7 +128,7 @@
     }
     
     .sale-tab.active:hover {
-        background: #1d4ed8;
+        background: #1a4280;
         color: white;
     }
     
@@ -215,7 +215,7 @@
         background: var(--price-success-light);
         color: #0b5e42;
         padding: 4px 12px;
-        border-radius: 20px;
+        border-radius: 999px;
         font-size: 12px;
         font-weight: 600;
         border: 1px solid #a7f3d0;
@@ -274,7 +274,7 @@
     }
     
     .price-multiplier button:hover {
-        background: #1d4ed8;
+        background: #1a4280;
     }
     
     /* Price alert */
@@ -321,7 +321,7 @@
         align-items: center;
         gap: 6px;
         padding: 4px 12px;
-        border-radius: 20px;
+        border-radius: 999px;
         font-size: 12px;
         font-weight: 600;
     }
@@ -355,7 +355,7 @@
         padding: 14px 28px;
         font-size: 15px;
         font-weight: 600;
-        border-radius: 12px;
+        border-radius: var(--price-radius-lg);
     }
 
     .btn-success {
@@ -749,7 +749,7 @@
     }
     
     .dark .sale-tab.active {
-        background: #3b82f6;
+        background: #1a4280;
         color: white;
     }
     
