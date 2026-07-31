@@ -9,6 +9,13 @@ $user_id = (int)$_SESSION['user_id'];
 $role    = $_SESSION['role'] ?? 'staff';
 $company_name = companyName($conn);
 
+// Landing on the Orders page (a plain page view, not one of the AJAX actions
+// below) counts as having viewed the pending notifications, so clear this
+// user's bell here instead of requiring them to dismiss via the dropdown.
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    mysqli_query($conn, "DELETE FROM notifications WHERE user_id=$user_id");
+}
+
 // ── AJAX: Delete ──────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_order'])) {
     header('Content-Type: application/json');

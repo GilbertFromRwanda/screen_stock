@@ -41,7 +41,11 @@
         var fd = new FormData();
         fd.append('mark_read', '1');
         fd.append('id', id);
-        fetch('notifications_poll.php', {method: 'POST', body: fd});
+        // keepalive: the "View Orders" link fires this from an onclick right
+        // before the browser navigates away — without keepalive, browsers
+        // cancel the in-flight fetch on unload and the server-side delete
+        // never happens, so the badge count doesn't actually go down.
+        fetch('notifications_poll.php', {method: 'POST', body: fd, keepalive: true});
     }
 
     function escH(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

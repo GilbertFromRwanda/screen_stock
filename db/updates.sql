@@ -79,5 +79,57 @@ INSERT IGNORE INTO `users` (`company_id`, `username`, `password`, `full_name`, `
 VALUES (NULL, 'superadmin', '$2y$10$.jJafyBL/kRUv1eQAomQQ.w5sLK2y.GZ4gsPDHfH2GqzAFPC.KsSW', 'Super Admin', 'superadmin', 'active');
 
 
+-- ── Backfill: sales_bulk / sales_retail cost_total + purchase_id ───────────
+-- These two columns didn't exist before this migration, so every sale row
+-- recorded prior to it has purchase_id = NULL and cost_total = 0.00. New
+-- sales get them from bulkSaleCost()/retailSaleCost() in functions.php,
+-- which snapshot the most recent purchase of the product on/before the sale
+-- date. This reproduces that exact lookup for the old rows so historical
+-- profit/COGS reports aren't understated. Safe to re-run: only touches rows
+-- where purchase_id is still NULL, and does nothing if no eligible purchase
+-- (same product/company, purchase_date <= sale_date) exists.
+UPDATE `sales_bulk` sb
+JOIN (
+  SELECT sb2.id AS sale_id, pu.id AS purchase_id, pu.cost_price
+  FROM `sales_bulk` sb2
+  JOIN `purchases` pu
+    ON pu.product_id = sb2.product_id
+   AND (pu.company_id <=> sb2.company_id)
+   AND pu.purchase_date <= sb2.sale_date
+  WHERE sb2.purchase_id IS NULL
+    AND pu.id = (
+      SELECT pu2.id FROM `purchases` pu2
+      WHERE pu2.product_id = sb2.product_id
+        AND (pu2.company_id <=> sb2.company_id)
+        AND pu2.purchase_date <= sb2.sale_date
+      ORDER BY pu2.purchase_date DESC, pu2.id DESC
+      LIMIT 1
+    )
+) x ON x.sale_id = sb.id
+SET sb.purchase_id = x.purchase_id,
+    sb.cost_total   = ROUND(x.cost_price * sb.quantity / GREATEST(1, sb.level_divisor), 2)
+WHERE sb.purchase_id IS NULL;
+
+UPDATE `sales_retail` sr
+JOIN (
+  SELECT sr2.id AS sale_id, pu.id AS purchase_id, pu.cost_price, pu.pieces_per_qty
+  FROM `sales_retail` sr2
+  JOIN `purchases` pu
+    ON pu.product_id = sr2.product_id
+   AND (pu.company_id <=> sr2.company_id)
+   AND pu.purchase_date <= sr2.sale_date
+  WHERE sr2.purchase_id IS NULL
+    AND pu.id = (
+      SELECT pu2.id FROM `purchases` pu2
+      WHERE pu2.product_id = sr2.product_id
+        AND (pu2.company_id <=> sr2.company_id)
+        AND pu2.purchase_date <= sr2.sale_date
+      ORDER BY pu2.purchase_date DESC, pu2.id DESC
+      LIMIT 1
+    )
+) x ON x.sale_id = sr.id
+SET sr.purchase_id = x.purchase_id,
+    sr.cost_total   = ROUND(x.cost_price / GREATEST(1, x.pieces_per_qty) * sr.pieces_sold, 2)
+WHERE sr.purchase_id IS NULL;
 
 
