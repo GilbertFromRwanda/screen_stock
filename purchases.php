@@ -182,9 +182,13 @@ if (isset($_SESSION['flash_error'])) {
     unset($_SESSION['flash_error']);
 }
 
-// Date filter
+// Date filter — defaults to the current month when nothing is picked
 $date_from = isset($_GET['date_from']) ? mysqli_real_escape_string($conn, $_GET['date_from']) : '';
 $date_to = isset($_GET['date_to']) ? mysqli_real_escape_string($conn, $_GET['date_to']) : '';
+if ($date_from === '' && $date_to === '' && !isset($_GET['date_from']) && !isset($_GET['date_to'])) {
+    $date_from = date('Y-m-01');
+    $date_to = date('Y-m-t');
+}
 
 // Deep-link to a single purchase (e.g. from loss_products.php) — show only that
 // row regardless of date filter/limit, same pattern as sales.php's highlight mode.
@@ -196,7 +200,7 @@ if ($highlight_id > 0) {
     $limit = "";
 } else {
     $where_clause = "WHERE 1=1 $cid_and";
-    $limit=" limit 50";
+    $limit="";
     if ($date_from && $date_to) {
         $limit=" ";
         $where_clause .= " AND p.purchase_date BETWEEN '$date_from' AND '$date_to'";
