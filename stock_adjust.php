@@ -7,19 +7,19 @@ if (!hasPermission('stock_adjust')) { $_SESSION['flash_error'] = "You don't have
 // ── AJAX: save adjustment ─────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust'])) {
     $pid        = (int)$_POST['product_id'];
-    $wh_qty     = max(0, (int)$_POST['wh_qty']);
-    $rt_qty     = max(0, (int)$_POST['rt_qty']);
+    $wh_qty     = max(0, round((float)$_POST['wh_qty'], 1));
+    $rt_qty     = max(0, round((float)$_POST['rt_qty'], 1));
     $rt_price   = max(0, (float)$_POST['rt_price']);
     $pkg_price  = max(0, (float)$_POST['pkg_price']);
     $reason_raw = trim($_POST['reason'] ?? '');
     $reason     = mysqli_real_escape_string($conn, $reason_raw);
 
     $old_wh_row  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity, package_price FROM stock WHERE product_id=$pid"));
-    $old_wh      = $old_wh_row ? (int)$old_wh_row['quantity'] : 0;
+    $old_wh      = $old_wh_row ? (float)$old_wh_row['quantity'] : 0;
     $old_pkg_price = $old_wh_row ? (float)$old_wh_row['package_price'] : 0;
 
     $old_rt_row  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT pieces_quantity, retail_price FROM retail_stock WHERE product_id=$pid"));
-    $old_rt      = $old_rt_row ? (int)$old_rt_row['pieces_quantity'] : 0;
+    $old_rt      = $old_rt_row ? (float)$old_rt_row['pieces_quantity'] : 0;
     $old_rt_price = $old_rt_row ? (float)$old_rt_row['retail_price'] : 0;
 
     mysqli_query($conn, "UPDATE stock SET quantity=$wh_qty, package_price=$pkg_price, retail_price=$rt_price WHERE product_id=$pid");
@@ -256,10 +256,10 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
                     </td>
                     <td>
                         <span class="qty-chip <?php echo $r['wh_qty'] > 0 ? 'chip-wh' : 'chip-zero'; ?>">
-                            <?php echo number_format($r['wh_qty']); ?> pkg
+                            <?php echo number_format($r['wh_qty'], 1); ?> pkg
                         </span>
                         <?php if ($r['ppp'] > 1): ?>
-                        <div class="val-block"><?php echo number_format($r['wh_qty'] * $r['ppp']); ?> pcs total</div>
+                        <div class="val-block"><?php echo number_format($r['wh_qty'] * $r['ppp'], 1); ?> pcs total</div>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -268,7 +268,7 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
                     </td>
                     <td>
                         <span class="qty-chip <?php echo $r['rt_qty'] > 0 ? 'chip-rt' : 'chip-zero'; ?>">
-                            <?php echo number_format($r['rt_qty']); ?> pcs
+                            <?php echo number_format($r['rt_qty'], 1); ?> pcs
                         </span>
                     </td>
                     <td>
@@ -324,7 +324,7 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                 <div class="modal-field" style="margin:0;">
                     <label>Warehouse qty (pkgs)</label>
-                    <input type="number" name="wh_qty" id="fWh" min="0" required>
+                    <input type="number" name="wh_qty" id="fWh" min="0" step="0.1" required>
                 </div>
                 <div class="modal-field" style="margin:0;">
                     <label>Bulk price / pkg (RWF)</label>
@@ -332,7 +332,7 @@ while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
                 </div>
                 <div class="modal-field" style="margin:0;">
                     <label>Retail qty (pcs)</label>
-                    <input type="number" name="rt_qty" id="fRt" min="0" required>
+                    <input type="number" name="rt_qty" id="fRt" min="0" step="0.1" required>
                 </div>
                 <div class="modal-field" style="margin:0;">
                     <label>Retail price / pc (RWF)</label>

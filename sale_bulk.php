@@ -419,7 +419,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 
                             <div class="form-group">
                                 <label id="bulk_qty_label">Quantity (Packages)*</label>
-                                <input type="number" id="bulk_quantity" name="quantity" required min="1" oninput="calculateBulkTotal()">
+                                <input type="number" id="bulk_quantity" name="quantity" required min="1" step="0.1" oninput="calculateBulkTotal()">
                                 <small id="bulk_stock_info" class="field-hint"></small>
                                 <small id="bulk_qty_error" class="field-error"></small>
                             </div>
@@ -698,7 +698,7 @@ loadBulkCategories();
             id:    opt.dataset.id,
             name:  opt.dataset.name,
             price: parseFloat(opt.dataset.price) || 0,
-            stock: parseInt(opt.dataset.stock)   || 0,
+            stock: parseFloat(opt.dataset.stock) || 0,
             unit:  opt.dataset.unit || ''
         };
         search.value = opt.dataset.name;
@@ -918,7 +918,7 @@ function updateBulkProductDetails() {
             var btns = document.getElementById('bulk_level_buttons');
             btns.innerHTML = '';
             if (data.ok && data.levels && data.levels.length > 0) {
-                var running = parseInt(data.stock_qty) || 0;
+                var running = parseFloat(data.stock_qty) || 0;
                 var divisor = 1;
                 data.levels.forEach(function(lvl, i) {
                     if (i > 0) { divisor *= (parseInt(lvl.qty_per_parent)||1); running *= (parseInt(lvl.qty_per_parent)||1); }
@@ -937,7 +937,7 @@ function updateBulkProductDetails() {
                         this.classList.add('active');
                         document.getElementById('bulk_selling_price').value = this.dataset.price;
                         document.getElementById('bulk_quantity').max = this.dataset.stock;
-                        document.getElementById('bulk_stock_info').innerHTML = 'Available: ' + parseInt(this.dataset.stock).toLocaleString() + ' ' + this.dataset.name;
+                        document.getElementById('bulk_stock_info').innerHTML = 'Available: ' + parseFloat(this.dataset.stock).toLocaleString() + ' ' + this.dataset.name;
                         document.getElementById('bulk_qty_label').textContent = 'Quantity (' + this.dataset.name + ')*';
                         calculateBulkTotal();
                     };
@@ -967,10 +967,10 @@ function calculateBulkTotal() {
     if (!bulkSelectedProduct) { addBtn.disabled = true; return; }
 
     var qtyInput = document.getElementById('bulk_quantity');
-    var stock = parseInt(qtyInput.max) > 0 ? parseInt(qtyInput.max) : bulkSelectedProduct.stock;
+    var stock = parseFloat(qtyInput.max) > 0 ? parseFloat(qtyInput.max) : bulkSelectedProduct.stock;
     var activeBtn = document.querySelector('#bulk_level_buttons .lvl-btn.active');
     var defaultPrice = activeBtn ? (parseFloat(activeBtn.dataset.price)||0) : bulkSelectedProduct.price;
-    var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
+    var qty   = parseFloat(document.getElementById('bulk_quantity').value) || 0;
     var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
     var qtyError     = document.getElementById('bulk_qty_error');
     var priceWarning = document.getElementById('bulk_price_warning');
@@ -997,9 +997,9 @@ function calculateBulkTotal() {
 
 function addBulkToCart() {
     if (!bulkSelectedProduct) return;
-    var qty   = parseInt(document.getElementById('bulk_quantity').value) || 0;
+    var qty   = parseFloat(document.getElementById('bulk_quantity').value) || 0;
     var price = parseFloat(document.getElementById('bulk_selling_price').value) || 0;
-    var stock = parseInt(document.getElementById('bulk_quantity').max) || bulkSelectedProduct.stock;
+    var stock = parseFloat(document.getElementById('bulk_quantity').max) || bulkSelectedProduct.stock;
     if (qty < 1 || price < 1 || qty > stock) return;
 
     var activeBtn  = document.querySelector('#bulk_level_buttons .lvl-btn.active');
@@ -1189,7 +1189,7 @@ function renderBulkRecentSales(filter) {
         return;
     }
     list.innerHTML = rows.map(function(r) {
-        var qty = parseInt(r.quantity) || 0;
+        var qty = parseFloat(r.quantity) || 0;
         return '<div class="recent-sale-row" title="Click to refill the form with this sale">' +
             '<div class="recent-sale-main">' +
                 '<div class="recent-sale-name">' + escBulkHtml(r.product_name) + (r.refunded == 1 ? ' <small style="color:#dc2626;">(refunded)</small>' : '') + '</div>' +
@@ -1222,7 +1222,7 @@ function reuseBulkSale(r) {
         bulkSelectedCat = p.category || '';
         document.getElementById('bulk_cat_search').value = bulkSelectedCat;
         document.getElementById('bulk_cat_search').setAttribute('readonly', '');
-        bulkSelectedProduct = { id: p.id, name: label, price: parseFloat(p.bulk_price) || 0, stock: parseInt(p.wh_qty) || 0, unit: p.unit_measure || '' };
+        bulkSelectedProduct = { id: p.id, name: label, price: parseFloat(p.bulk_price) || 0, stock: parseFloat(p.wh_qty) || 0, unit: p.unit_measure || '' };
         document.getElementById('bulk_product_search').value = label;
         document.getElementById('bulk_product_id').value = p.id;
 

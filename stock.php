@@ -7,7 +7,7 @@ if (!hasPermission('inventory')) { $_SESSION['flash_error'] = "You don't have pe
 // ── Edit warehouse stock ──────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_stock'])) {
     $product_id       = (int)$_POST['product_id'];
-    $quantity         = max(0, (int)$_POST['quantity']);
+    $quantity         = max(0, round((float)$_POST['quantity'], 1));
     $pieces_per_pkg   = max(1, (int)$_POST['pieces_per_package']);
     $package_price    = max(0, (float)$_POST['package_price']);
     $retail_price     = max(0, (float)$_POST['retail_price']);
@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_stock'])) {
 // ── Edit retail stock ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_stock'])) {
     $product_id     = (int)$_POST['product_id'];
-    $pieces_qty     = max(0, (int)$_POST['pieces_quantity']);
+    $pieces_qty     = max(0, round((float)$_POST['pieces_quantity'], 1));
     $retail_price   = max(0, (float)$_POST['retail_price']);
 
     mysqli_query($conn, "
@@ -58,12 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['move_to_retail'])) {
     $available_packages = $stock['quantity'];
 
     if ($move_type === 'packages') {
-        $packages_to_move = (int)$_POST['packages_to_move'];
+        $packages_to_move = round((float)$_POST['packages_to_move'], 1);
         $pieces_to_move = $packages_to_move * $stock['pieces_per_package'];
         $packages_to_remove = $packages_to_move;
     } else {
-        $pieces_to_move = (int)$_POST['pieces_to_move'];
-        $packages_to_remove = ceil($pieces_to_move / $stock['pieces_per_package']);
+        $pieces_to_move = round((float)$_POST['pieces_to_move'], 1);
+        $packages_to_remove = round($pieces_to_move / $stock['pieces_per_package'], 1);
     }
 
     if ($pieces_to_move > 0 && $pieces_to_move <= $available_pieces) {
@@ -215,7 +215,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                     <td><?php echo htmlspecialchars($row['category']); ?></td>
                                     <td>
                                         <?php if (!empty($lvls)):
-                                            $running = (int)$row['quantity'];
+                                            $running = (float)$row['quantity'];
                                         ?>
                                         <div class="stk-chain">
                                             <?php foreach ($lvls as $li => $lvl):
@@ -224,14 +224,14 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                                             <?php if ($li > 0): ?><span class="stk-arrow">→</span><?php endif; ?>
                                             <span class="stk-node">
                                                 <span class="stk-name"><?= htmlspecialchars($lvl['level_name']) ?></span>
-                                                <span class="stk-qty"><?= number_format($running) ?></span>
+                                                <span class="stk-qty"><?= number_format($running, 1) ?></span>
                                                 <span class="stk-price">RWF <?= number_format($lvl['selling_price'], 0) ?></span>
                                             </span>
                                             <?php endforeach; ?>
                                         </div>
                                         <?php else: ?>
                                         <div class="stk-fallback">
-                                            <span><?= $row['quantity'] ?> pkgs × <?= $row['pieces_per_package'] ?> = <strong><?= number_format($total_pieces) ?></strong></span>
+                                            <span><?= $row['quantity'] ?> pkgs × <?= $row['pieces_per_package'] ?> = <strong><?= number_format($total_pieces, 1) ?></strong></span>
                                             <span class="stk-prices">Bulk: RWF <?= number_format($row['package_price'], 0) ?> &nbsp;|&nbsp; Retail: RWF <?= number_format($row['retail_price'], 0) ?></span>
                                         </div>
                                         <?php endif; ?>
@@ -329,12 +329,12 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
 
                 <div class="form-group" id="packages_input_group">
                     <label for="packages_to_move">Number of Packages*</label>
-                    <input type="number" id="packages_to_move" name="packages_to_move" min="1" oninput="calculateFromPackages()">
+                    <input type="number" id="packages_to_move" name="packages_to_move" min="1" step="0.1" oninput="calculateFromPackages()">
                 </div>
 
                 <div class="form-group" id="pieces_input_group" style="display:none;">
                     <label for="pieces_to_move">Number of Pieces*</label>
-                    <input type="number" id="pieces_to_move" name="pieces_to_move" min="1" oninput="calculateFromPieces()">
+                    <input type="number" id="pieces_to_move" name="pieces_to_move" min="1" step="0.1" oninput="calculateFromPieces()">
                 </div>
 
                 <div class="form-group" id="move_summary" style="display:none; background:#f0f7ff; padding:10px; border-radius:5px; border-left:3px solid #007bff;">
@@ -359,7 +359,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                 </div>
                 <div class="form-group">
                     <label>Packages (Qty)*</label>
-                    <input type="number" name="quantity" id="es_quantity" min="0" required>
+                    <input type="number" name="quantity" id="es_quantity" min="0" step="0.1" required>
                 </div>
                 <div class="form-group">
                     <label>Pieces per Package*</label>
@@ -394,7 +394,7 @@ $products = mysqli_query($conn, "SELECT id, name FROM products ORDER BY name");
                 </div>
                 <div class="form-group">
                     <label>Pieces Available*</label>
-                    <input type="number" name="pieces_quantity" id="er_pieces_qty" min="0" required>
+                    <input type="number" name="pieces_quantity" id="er_pieces_qty" min="0" step="0.1" required>
                 </div>
                 <div class="form-group">
                     <label>Retail Price (RWF)*</label>

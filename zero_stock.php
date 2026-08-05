@@ -9,11 +9,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restock'])) {
     header('Content-Type: application/json');
 
     $pid             = (int)($_POST['product_id'] ?? 0);
-    $wh_add          = max(0, (int)($_POST['wh_add'] ?? 0));
+    $wh_add          = max(0, round((float)($_POST['wh_add'] ?? 0), 1));
     $wh_ppp          = max(1, (int)($_POST['wh_ppp'] ?? 1));
     $wh_pkg_price    = max(0, (float)($_POST['wh_pkg_price'] ?? 0));
     $wh_retail_price = max(0, (float)($_POST['wh_retail_price'] ?? 0));
-    $rt_add          = max(0, (int)($_POST['rt_add'] ?? 0));
+    $rt_add          = max(0, round((float)($_POST['rt_add'] ?? 0), 1));
     $rt_price        = max(0, (float)($_POST['rt_price'] ?? 0));
     $cost_price      = max(0, (float)($_POST['cost_price'] ?? 0));
 
@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restock'])) {
     // Record a purchases row too, so cost basis (FIFO in recalcStockValue) and
     // purchase history (purchases.php, purchase_advice.php) stay in sync with
     // quantity added here instead of silently drifting out of sync.
-    $rt_pkg_equiv  = $rt_add > 0 ? max(1, (int)ceil($rt_add / $wh_ppp)) : 0;
+    $rt_pkg_equiv  = $rt_add > 0 ? round($rt_add / $wh_ppp, 1) : 0;
     $total_pkg_qty = $wh_add + $rt_pkg_equiv;
     $pur_pkg_price = $wh_add > 0 ? $wh_pkg_price : $wh_retail_price;
     $pur_rt_price  = $rt_add > 0 ? $rt_price : $wh_retail_price;
@@ -249,7 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'list') 
                 <div class="modal-grid">
                     <div class="modal-field">
                         <label>Add qty (packages)</label>
-                        <input type="number" name="wh_add" id="fWhAdd" min="0" value="0">
+                        <input type="number" name="wh_add" id="fWhAdd" min="0" step="0.1" value="0">
                     </div>
                     <div class="modal-field">
                         <label>Pieces per package</label>
@@ -271,7 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'list') 
                 <div class="modal-grid">
                     <div class="modal-field">
                         <label>Add qty (pieces)</label>
-                        <input type="number" name="rt_add" id="fRtAdd" min="0" value="0">
+                        <input type="number" name="rt_add" id="fRtAdd" min="0" step="0.1" value="0">
                     </div>
                     <div class="modal-field">
                         <label>Retail price / piece (RWF)</label>
@@ -398,8 +398,8 @@ document.getElementById('modal').addEventListener('click', function(e) {
 
 document.getElementById('restockForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    var whAdd = parseInt(document.getElementById('fWhAdd').value || '0', 10);
-    var rtAdd = parseInt(document.getElementById('fRtAdd').value || '0', 10);
+    var whAdd = parseFloat(document.getElementById('fWhAdd').value || '0');
+    var rtAdd = parseFloat(document.getElementById('fRtAdd').value || '0');
     if (whAdd < 1 && rtAdd < 1) {
         alert('Enter a quantity to add to warehouse and/or retail stock.');
         return;

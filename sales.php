@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_bulk_sale'])) {
 // ── EDIT Bulk Sale ───────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
     $id            = (int)$_POST['sale_id'];
-    $new_qty       = max(1, (int)$_POST['quantity']);
+    $new_qty       = max(0.1, round((float)$_POST['quantity'], 1));
     $new_price     = max(0, (float)$_POST['selling_price']);
     $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
     $cash_amount   = max(0, (float)$_POST['cash_amount']);
@@ -82,8 +82,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_bulk_sale'])) {
 
     $old = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_bulk WHERE id=$id"));
     if ($old) {
-        $qty_diff = $old['quantity'] - $new_qty;
-        if ($qty_diff !== 0) {
+        $qty_diff = (float)$old['quantity'] - $new_qty;
+        if (abs($qty_diff) > 0.001) {
             mysqli_query($conn, "UPDATE stock SET quantity = quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
         // Keep the per-unit cost frozen from sale time; just scale it to the new quantity.
@@ -165,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_retail_sale']))
 // ── EDIT Retail Sale ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
     $id            = (int)$_POST['sale_id'];
-    $new_qty       = max(1, (int)$_POST['pieces_sold']);
+    $new_qty       = max(0.1, round((float)$_POST['pieces_sold'], 1));
     $new_price     = max(0, (float)$_POST['selling_price']);
     $customer_name = mysqli_real_escape_string($conn, trim($_POST['customer_name']));
     $cash_amount   = max(0, (float)$_POST['cash_amount']);
@@ -176,8 +176,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_retail_sale'])) {
 
     $old = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM sales_retail WHERE id=$id"));
     if ($old) {
-        $qty_diff = $old['pieces_sold'] - $new_qty;
-        if ($qty_diff !== 0) {
+        $qty_diff = (float)$old['pieces_sold'] - $new_qty;
+        if (abs($qty_diff) > 0.001) {
             mysqli_query($conn, "UPDATE retail_stock SET pieces_quantity = pieces_quantity + $qty_diff WHERE product_id = {$old['product_id']} $cid_and");
         }
         // Keep the per-piece cost frozen from sale time; just scale it to the new quantity.
@@ -485,7 +485,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     $cart  = [];
     foreach ($items as $it) {
         $pid   = (int)($it['product_id'] ?? 0);
-        $qty   = (int)($it['quantity'] ?? 0);
+        $qty   = round((float)($it['quantity'] ?? 0), 1);
         $price = (float)($it['selling_price'] ?? 0);
         if ($pid > 0 && $qty > 0 && $price > 0) {
             $cart[] = [
@@ -512,12 +512,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
     // Aggregate packages needed per product (a product may appear at more than one level)
     $needed_pkgs = [];
     foreach ($cart as $it) {
-        $needed_pkgs[$it['product_id']] = ($needed_pkgs[$it['product_id']] ?? 0) + (int)ceil($it['quantity'] / $it['level_divisor']);
+        $needed_pkgs[$it['product_id']] = ($needed_pkgs[$it['product_id']] ?? 0) + $it['quantity'] / $it['level_divisor'];
     }
     $needed_pids_sql = implode(',', array_map('intval', array_keys($needed_pkgs)));
     $stock_by_pid = [];
     $sres = mysqli_query($conn, "SELECT product_id, quantity FROM stock WHERE product_id IN ($needed_pids_sql) $cid_and");
-    while ($sr = mysqli_fetch_assoc($sres)) $stock_by_pid[(int)$sr['product_id']] = (int)$sr['quantity'];
+    while ($sr = mysqli_fetch_assoc($sres)) $stock_by_pid[(int)$sr['product_id']] = (float)$sr['quantity'];
     foreach ($needed_pkgs as $pid => $needed) {
         if (!isset($stock_by_pid[$pid]) || $stock_by_pid[$pid] < $needed)
             saleResp(false, "Insufficient stock available for one of the selected products.", 'bulk');
@@ -573,7 +573,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['bulk_sale'])) {
         $cost          = bulkSaleCost($conn, $product_id, $loan_date, $quantity, $level_divisor);
         $cost_total    = $cost['cost_total'];
         $purchase_id_sql = $cost['purchase_id'] !== null ? $cost['purchase_id'] : 'NULL';
-        $packages_to_deduct = (int)ceil($quantity / $level_divisor);
+        $packages_to_deduct = round($quantity / $level_divisor, 1);
         $row_cash = $i === 0 ? $cash_amount : 0;
         $row_momo = $i === 0 ? $momo_amount : 0;
         $row_loan = $i === 0 ? $loan_amount : 0;
@@ -671,7 +671,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     $cart  = [];
     foreach ($items as $it) {
         $pid   = (int)($it['product_id'] ?? 0);
-        $qty   = (int)($it['pieces_sold'] ?? 0);
+        $qty   = round((float)($it['pieces_sold'] ?? 0), 1);
         $price = (float)($it['selling_price'] ?? 0);
         if ($pid > 0 && $qty > 0 && $price > 0) {
             $cart[] = [
@@ -703,7 +703,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
     $needed_pids_sql = implode(',', array_map('intval', array_keys($needed_pieces)));
     $retail_by_pid = [];
     $rres = mysqli_query($conn, "SELECT product_id, pieces_quantity FROM retail_stock WHERE product_id IN ($needed_pids_sql) $cid_and");
-    while ($rr = mysqli_fetch_assoc($rres)) $retail_by_pid[(int)$rr['product_id']] = (int)$rr['pieces_quantity'];
+    while ($rr = mysqli_fetch_assoc($rres)) $retail_by_pid[(int)$rr['product_id']] = (float)$rr['pieces_quantity'];
     foreach ($needed_pieces as $pid => $needed) {
         if (!isset($retail_by_pid[$pid]) || $retail_by_pid[$pid] < $needed)
             saleResp(false, "Insufficient retail stock available for one of the selected products.", 'retail');
@@ -754,7 +754,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['retail_sale'])) {
         $qty_sold         = $it['qty_sold'];
         $selling_price    = $it['selling_price'];
         $level_multiplier = $it['level_multiplier'];
-        $pieces_to_deduct = $qty_sold * $level_multiplier;   // actual pieces removed from retail_stock
+        $pieces_to_deduct = round($qty_sold * $level_multiplier, 1);   // actual pieces removed from retail_stock
         $item_total       = round($qty_sold * $selling_price, 2);
         $cost             = retailSaleCost($conn, $product_id, $loan_date, $pieces_to_deduct);
         $cost_total       = $cost['cost_total'];
@@ -1626,7 +1626,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 </div>
                 <div class="form-group">
                     <label for="edit_bulk_qty">Quantity (Packages)*</label>
-                    <input type="number" id="edit_bulk_qty" name="quantity" required min="1">
+                    <input type="number" id="edit_bulk_qty" name="quantity" required min="1" step="0.1">
                 </div>
                 <div class="form-group">
                     <label for="edit_bulk_price">Price per Package*</label>
@@ -1666,7 +1666,7 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 </div>
                 <div class="form-group">
                     <label for="edit_retail_qty">Pieces Sold*</label>
-                    <input type="number" id="edit_retail_qty" name="pieces_sold" required min="1">
+                    <input type="number" id="edit_retail_qty" name="pieces_sold" required min="1" step="0.1">
                 </div>
                 <div class="form-group">
                     <label for="edit_retail_price">Price per Piece*</label>

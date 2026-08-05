@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
         $supplier_id = "'" . mysqli_real_escape_string($conn, $_POST['supplier_id']) . "'";
     }
 
-    $quantity = (int)$_POST['quantity'];
+    $quantity = max(0.1, round((float)$_POST['quantity'], 1));
     $pieces_per_qty = (int)$_POST['pieces_per_qty'];
     $cost_price = mysqli_real_escape_string($conn, $_POST['cost_price']);
     $package_price = mysqli_real_escape_string($conn, $_POST['package_price']);
@@ -115,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_purchase'])) {
             WHERE id = $purchase_id";
 
         if (mysqli_query($conn, $query)) {
-            $old_qty = (int)$old['quantity'];
+            $old_qty = (float)$old['quantity'];
 
             if ($old['product_id'] != $product_id) {
                 // Product changed: revert old product stock, apply to new
@@ -515,7 +515,7 @@ $purchases = mysqli_query($conn, "
                 </div>
                 <div class="form-group">
                     <label for="quantity">Quantity (Number of packages)*</label>
-                    <input type="text" id="quantity" value="" name="quantity" required min="1">
+                    <input type="text" id="quantity" value="" name="quantity" required min="1" inputmode="decimal">
                 </div>
                 
                 <div class="form-group">
@@ -576,7 +576,7 @@ $purchases = mysqli_query($conn, "
                 </div>
                 <div class="form-group">
                     <label for="edit_quantity">Quantity (Number of packages)*</label>
-                    <input type="text" id="edit_quantity" name="quantity" required min="1">
+                    <input type="text" id="edit_quantity" name="quantity" required min="1" inputmode="decimal">
                 </div>
                 <div class="form-group">
                     <label for="edit_pieces_per_qty">Pieces per Quantity(Qty Imwe Ingana ite?)*</label>

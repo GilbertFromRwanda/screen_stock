@@ -175,7 +175,7 @@ function bulkSaleCost(mysqli $conn, int $product_id, string $date, float $quanti
 
 // COGS for a retail sale of $pieces_sold individual pieces.
 // Returns ['cost_total' => float, 'purchase_id' => ?int].
-function retailSaleCost(mysqli $conn, int $product_id, string $date, int $pieces_sold): array {
+function retailSaleCost(mysqli $conn, int $product_id, string $date, float $pieces_sold): array {
     $lp = lastPurchaseCost($conn, $product_id, $date);
     return [
         'cost_total'  => round($lp['cost_price'] / $lp['pieces_per_qty'] * $pieces_sold, 2),

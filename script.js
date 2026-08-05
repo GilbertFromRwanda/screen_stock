@@ -116,7 +116,7 @@ function toggleMoveType() {
 }
 
 function calculateFromPackages() {
-    var pkgs = parseInt(document.getElementById('packages_to_move').value) || 0;
+    var pkgs = parseFloat(document.getElementById('packages_to_move').value) || 0;
     var summary = document.getElementById('move_summary');
     var calc = document.getElementById('move_calculation');
 
@@ -134,12 +134,12 @@ function calculateFromPackages() {
 }
 
 function calculateFromPieces() {
-    var pcs = parseInt(document.getElementById('pieces_to_move').value) || 0;
+    var pcs = parseFloat(document.getElementById('pieces_to_move').value) || 0;
     var summary = document.getElementById('move_summary');
     var calc = document.getElementById('move_calculation');
 
     if (pcs > 0) {
-        var pkgsNeeded = Math.ceil(pcs / movePiecesPerPackage);
+        var pkgsNeeded = Math.round((pcs / movePiecesPerPackage) * 10) / 10;
         calc.innerHTML = pcs + ' pieces (will deduct ' + pkgsNeeded + ' package(s) from warehouse)';
         summary.style.display = 'block';
 
@@ -316,7 +316,7 @@ function exportToCSV(tableId, filename) {
 function checkLowStock() {
     const stockRows = document.querySelectorAll('.stock-row');
     stockRows.forEach(row => {
-        const quantity = parseInt(row.dataset.quantity);
+        const quantity = parseFloat(row.dataset.quantity);
         const reorderLevel = parseInt(row.dataset.reorderLevel);
         
         if (quantity <= reorderLevel) {

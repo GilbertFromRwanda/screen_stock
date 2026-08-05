@@ -418,7 +418,7 @@ if (isset($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   
 
                             <div class="form-group">
                                 <label id="retail_qty_label">Number of Pieces*</label>
-                                <input type="number" id="pieces_sold" name="pieces_sold" required min="1" value="1" oninput="calculateRetailTotal()">
+                                <input type="number" id="pieces_sold" name="pieces_sold" required min="1" step="0.1" value="1" oninput="calculateRetailTotal()">
                                 <small id="retail_stock_info" class="field-hint"></small>
                                 <small id="retail_qty_error" class="field-error"></small>
                             </div>
@@ -697,7 +697,7 @@ loadRetailCategories();
             id:    opt.dataset.id,
             name:  opt.dataset.name,
             price: parseFloat(opt.dataset.price) || 0,
-            stock: parseInt(opt.dataset.stock)   || 0,
+            stock: parseFloat(opt.dataset.stock) || 0,
             unit:  opt.dataset.unit || ''
         };
         search.value = opt.dataset.name;
@@ -925,7 +925,7 @@ function updateRetailProductDetails() {
                     mults[i-1] = mults[i] * (parseInt(data.levels[i].qty_per_parent)||1);
                 }
                 data.levels.forEach(function(lvl, i) {
-                    var available = Math.floor(retail_pieces / mults[i]);
+                    var available = Math.round((retail_pieces / mults[i]) * 10) / 10;
                     var btn = document.createElement('button');
                     btn.type = 'button'; btn.className = 'lvl-btn';
                     btn.innerHTML =
@@ -941,7 +941,7 @@ function updateRetailProductDetails() {
                         this.classList.add('active');
                         document.getElementById('retail_selling_price').value = this.dataset.price;
                         document.getElementById('pieces_sold').max = this.dataset.available;
-                        document.getElementById('retail_stock_info').innerHTML = 'Available: ' + parseInt(this.dataset.available).toLocaleString() + ' ' + this.dataset.name;
+                        document.getElementById('retail_stock_info').innerHTML = 'Available: ' + parseFloat(this.dataset.available).toLocaleString() + ' ' + this.dataset.name;
                         document.getElementById('retail_qty_label').textContent = 'Quantity (' + this.dataset.name + ')*';
                         calculateRetailTotal();
                     };
@@ -972,10 +972,10 @@ function calculateRetailTotal() {
     if (!retailSelectedProduct) { addBtn.disabled = true; return; }
 
     var piecesInput = document.getElementById('pieces_sold');
-    var stock = parseInt(piecesInput.max) > 0 ? parseInt(piecesInput.max) : retailSelectedProduct.stock;
+    var stock = parseFloat(piecesInput.max) > 0 ? parseFloat(piecesInput.max) : retailSelectedProduct.stock;
     var activeBtn = document.querySelector('#retail_level_buttons .lvl-btn.active');
     var defaultPrice = activeBtn ? (parseFloat(activeBtn.dataset.price)||0) : retailSelectedProduct.price;
-    var qty   = parseInt(document.getElementById('pieces_sold').value) || 0;
+    var qty   = parseFloat(document.getElementById('pieces_sold').value) || 0;
     var price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
     var qtyError     = document.getElementById('retail_qty_error');
     var priceWarning = document.getElementById('retail_price_warning');
@@ -1002,9 +1002,9 @@ function calculateRetailTotal() {
 
 function addRetailToCart() {
     if (!retailSelectedProduct) return;
-    var qty   = parseInt(document.getElementById('pieces_sold').value) || 0;
+    var qty   = parseFloat(document.getElementById('pieces_sold').value) || 0;
     var price = parseFloat(document.getElementById('retail_selling_price').value) || 0;
-    var stock = parseInt(document.getElementById('pieces_sold').max) || retailSelectedProduct.stock;
+    var stock = parseFloat(document.getElementById('pieces_sold').max) || retailSelectedProduct.stock;
     if (qty < 1 || price < 1 || qty > stock) return;
 
     var activeBtn  = document.querySelector('#retail_level_buttons .lvl-btn.active');
@@ -1194,7 +1194,7 @@ function renderRetailRecentSales(filter) {
         return;
     }
     list.innerHTML = rows.map(function(r) {
-        var qty = parseInt(r.pieces_sold) || 0;
+        var qty = parseFloat(r.pieces_sold) || 0;
         return '<div class="recent-sale-row" title="Click to refill the form with this sale">' +
             '<div class="recent-sale-main">' +
                 '<div class="recent-sale-name">' + escRetailHtml(r.product_name) + (r.refunded == 1 ? ' <small style="color:#dc2626;">(refunded)</small>' : '') + '</div>' +
@@ -1227,7 +1227,7 @@ function reuseRetailSale(r) {
         retailSelectedCat = p.category || '';
         document.getElementById('retail_cat_search').value = retailSelectedCat;
         document.getElementById('retail_cat_search').setAttribute('readonly', '');
-        retailSelectedProduct = { id: p.id, name: label, price: parseFloat(p.retail_price) || 0, stock: parseInt(p.retail_qty) || 0, unit: p.unit_measure || '' };
+        retailSelectedProduct = { id: p.id, name: label, price: parseFloat(p.retail_price) || 0, stock: parseFloat(p.retail_qty) || 0, unit: p.unit_measure || '' };
         document.getElementById('retail_product_search').value = label;
         document.getElementById('retail_product_id').value = p.id;
 

@@ -54,8 +54,8 @@ function recalcStockValue(mysqli $conn, ?int $company_id = null, ?int $product_i
     foreach ($stock_rows as $row) {
         $pid    = (int)$row['product_id'];
         $cid    = (int)$row['company_id'];
-        $wh_qty = max(0, (int)$row['wh_qty']);
-        $rt_pcs = max(0, (int)$row['rt_pcs']);
+        $wh_qty = max(0, (float)$row['wh_qty']);
+        $rt_pcs = max(0, (float)$row['rt_pcs']);
         $ppp    = max(1, (int)$row['ppp']);
 
         $sell_wh = round($wh_qty * (float)$row['package_price'], 2);

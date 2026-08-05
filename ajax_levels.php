@@ -25,6 +25,6 @@ $levels = [];
 while ($l = mysqli_fetch_assoc($lq)) $levels[] = $l;
 
 $stock     = mysqli_fetch_assoc(mysqli_query($conn, "SELECT quantity FROM stock WHERE product_id = $product_id " . cidAnd()));
-$stock_qty = $stock ? (int)$stock['quantity'] : 0;
+$stock_qty = $stock ? (float)$stock['quantity'] : 0;
 
 echo json_encode(['ok' => true, 'levels' => $levels, 'stock_qty' => $stock_qty]);

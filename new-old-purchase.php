@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $product_id    = (int)($_POST['product_id'] ?? 0);
     $supplier_id   = empty($_POST['supplier_id']) ? 'NULL' : (int)$_POST['supplier_id'];
-    $quantity      = max(1, (int)($_POST['quantity'] ?? 1));
+    $quantity      = max(0.1, round((float)($_POST['quantity'] ?? 1), 1));
     $cost_price    = max(0, (float)str_replace(',', '', $_POST['cost_price'] ?? '0'));
     $purchase_date = mysqli_real_escape_string($conn, $_POST['purchase_date'] ?? date('Y-m-d'));
 
@@ -628,7 +628,7 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 
                         <div class="form-group">
                             <label id="qty-label">Quantity Purchased *</label>
-                            <input type="text" name="quantity" id="quantity" min="1" value="1" inputmode="numeric"
+                            <input type="text" name="quantity" id="quantity" min="1" value="1" inputmode="decimal"
                                    oninput="updateSummary()" onfocus="this.select()">
                         </div>
                     </div>
@@ -864,7 +864,7 @@ function validateStep(step) {
         if (!document.getElementById('product_id').value) {
             showToast('Please select a product.', 'error'); return false;
         }
-        if ((parseInt(document.getElementById('quantity').value) || 0) < 1) {
+        if ((parseFloat(document.getElementById('quantity').value) || 0) < 1) {
             showToast('Quantity must be at least 1.', 'error'); return false;
         }
     }
@@ -1040,7 +1040,7 @@ function validateCurrentItem() {
     var productId = document.getElementById('product_id').value;
     if (!productId) { showToast('Please select a product.', 'error'); return null; }
 
-    var quantity  = parseInt(document.getElementById('quantity').value) || 0;
+    var quantity  = parseFloat(document.getElementById('quantity').value) || 0;
     if (quantity < 1) { showToast('Quantity must be at least 1.', 'error'); return null; }
 
     var costPrice = parseNum(document.getElementById('cost_price').value);
@@ -1612,7 +1612,7 @@ function updateSummary() {
     var chain = document.getElementById('summaryChain');
     var total = document.getElementById('summaryTotal');
     var rows  = document.getElementById('levelsContainer').querySelectorAll('.level-row');
-    var qty   = parseInt(document.getElementById('quantity').value) || 0;
+    var qty   = parseFloat(document.getElementById('quantity').value) || 0;
 
     if (!rows.length || !qty) {
         chain.innerHTML = '<span style="color:var(--secondary);font-size:13px;">Add levels above to see the breakdown.</span>';
