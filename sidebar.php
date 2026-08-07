@@ -268,15 +268,15 @@ if ($_nav_settings['enable_ip']) {
 <div class="quickbar" id="quickbar">
     <span class="qb-label">Quick:</span>
     
-    
+     <a href="sales.php"         class="qb-btn qb-sale<?= $current_page==='sales.php'         ? ' active':'' ?>">Sales</a>
+   
     <a href="sale_bulk.php"     class="qb-btn qb-sale-bulk<?= $current_page==='sale_bulk.php'     ? ' active':'' ?>">+ Bulk Sale</a>
         <?php if ($_nav_settings['enable_external_sale']): ?>
         <a href="sale_external.php" class="qb-btn qb-sale-ext<?= $current_page==='sale_external.php' ? ' active':'' ?>">+ Ext. Sale</a>
         <?php endif; ?>
-    <a href="loans.php"         class="qb-btn qb-loan<?= $current_page==='loans.php'         ? ' active':'' ?>">+ Loan by Client</a>
-     <a href="sale_retail.php"   class="qb-btn qb-sale-retail<?= $current_page==='sale_retail.php'   ? ' active':'' ?>">+ Retail Sale</a>
+   
+    <a href="sale_retail.php"   class="qb-btn qb-sale-retail<?= $current_page==='sale_retail.php'   ? ' active':'' ?>">+ Retail Sale</a>
 
-    <a href="sales.php"         class="qb-btn qb-sale<?= $current_page==='sales.php'         ? ' active':'' ?>">Sales</a>
    
     <?php if ($has_ord): ?>
     <a href="orders.php" class="qb-btn qb-order<?= $current_page==='orders.php' ? ' active':'' ?>">Orders</a>
@@ -285,7 +285,8 @@ if ($_nav_settings['enable_ip']) {
     <a href="expenses.php"      class="qb-btn qb-exp<?= $current_page==='expenses.php'      ? ' active':'' ?>">+ Expense</a>
     
     <a href="stock.php"         class="qb-btn qb-stock<?= $current_page==='stock.php'         ? ' active':'' ?>">Stock</a>
-    
+     <a href="loans.php"         class="qb-btn qb-loan<?= $current_page==='loans.php'         ? ' active':'' ?>">+ Loan by Client</a>
+   
     <?php if ($_nav_settings['enable_ip']): ?>
     <span class="qb-ip">
         &#128187; <span id="qb-ip-text"><?= htmlspecialchars($_nav_server_ip) ?></span>
