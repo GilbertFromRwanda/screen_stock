@@ -2,6 +2,7 @@
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('orders', 'create')) { $_SESSION['flash_error'] = "You don't have permission to create orders."; redirect('dashboard.php'); }
+if (!companyFeatureEnabled($conn, 'enable_orders')) { $_SESSION['flash_error'] = "Orders are disabled for your company."; redirect('dashboard.php'); }
 global $conn;
 
 $user_id = (int)$_SESSION['user_id'];

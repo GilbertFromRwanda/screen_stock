@@ -183,6 +183,52 @@ function retailSaleCost(mysqli $conn, int $product_id, string $date, float $piec
     ];
 }
 
+// Returns this company's feature toggles (enable_orders, enable_exchange_rate,
+// enable_notifications, enable_external_sale, enable_ip), managed from
+// settings.php. Defaults all to true when no row exists yet (new company, or
+// nobody has visited Settings) and when unscoped ($company_id null —
+// superadmin viewing "All Companies").
+function getCompanySettings(mysqli $conn, ?int $company_id = null): array {
+    static $cache = [];
+    $company_id = $company_id ?? cid();
+    $key        = $company_id ?? 0;
+    if (isset($cache[$key])) return $cache[$key];
+
+    $defaults = [
+        'enable_orders'        => true,
+        'enable_exchange_rate' => true,
+        'enable_notifications' => true,
+        'enable_external_sale' => true,
+        'enable_ip'            => true,
+    ];
+    if ($company_id === null) return $cache[$key] = $defaults;
+
+    // Every page pulls this in via sidebar.php, including run_update.php itself —
+    // so if company_settings hasn't been created yet (migration not run), this
+    // must degrade to defaults instead of throwing (mysqli's default error mode
+    // is exceptions), or nobody could reach Run Updates to create the table.
+    try {
+        $r = mysqli_fetch_assoc(mysqli_query($conn,
+            "SELECT enable_orders, enable_exchange_rate, enable_notifications, enable_external_sale, enable_ip FROM company_settings WHERE company_id=$company_id"));
+    } catch (\Throwable $e) {
+        return $cache[$key] = $defaults;
+    }
+    if (!$r) return $cache[$key] = $defaults;
+
+    return $cache[$key] = [
+        'enable_orders'        => (bool)$r['enable_orders'],
+        'enable_exchange_rate' => (bool)$r['enable_exchange_rate'],
+        'enable_notifications' => (bool)$r['enable_notifications'],
+        'enable_external_sale' => (bool)$r['enable_external_sale'],
+        'enable_ip'            => (bool)$r['enable_ip'],
+    ];
+}
+
+// Convenience: is a specific toggle on for the current (or given) company?
+function companyFeatureEnabled(mysqli $conn, string $feature, ?int $company_id = null): bool {
+    return getCompanySettings($conn, $company_id)[$feature] ?? true;
+}
+
 // Function to redirect
 function redirect($url) {
     header("Location: $url");
@@ -469,6 +515,9 @@ function notifyOrderSubmitted(mysqli $conn, int $order_id): void {
     $order = mysqli_fetch_assoc(mysqli_query($conn,
         "SELECT company_id, order_number, order_owner FROM orders WHERE id=$order_id"));
     if (!$order) return;
+
+    $order_cid = $order['company_id'] !== null ? (int)$order['company_id'] : null;
+    if (!companyFeatureEnabled($conn, 'enable_notifications', $order_cid)) return;
 
     $company_filter = $order['company_id'] !== null
         ? "(u.company_id = " . (int)$order['company_id'] . " OR u.role = 'superadmin')"

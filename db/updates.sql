@@ -31,4 +31,25 @@ ALTER TABLE `refunds`         MODIFY COLUMN `quantity`        decimal(10,1) NOT 
 ALTER TABLE `stock_movements` MODIFY COLUMN `pieces_moved`    decimal(10,1) NOT NULL;
 
 
+-- ── company_settings: per-company feature toggles (Orders module, exchange
+-- rate box on new-purchase.php, order notifications, external sale, server IP
+-- display) — one row per company, created on first save from settings.php.
+-- Missing row == all features on (see getCompanySettings() defaults in
+-- functions.php).
+CREATE TABLE IF NOT EXISTS `company_settings` (
+  `company_id` int(11) NOT NULL,
+  `enable_orders` tinyint(1) NOT NULL DEFAULT 1,
+  `enable_exchange_rate` tinyint(1) NOT NULL DEFAULT 1,
+  `enable_notifications` tinyint(1) NOT NULL DEFAULT 1,
+  `enable_external_sale` tinyint(1) NOT NULL DEFAULT 1,
+  `enable_ip` tinyint(1) NOT NULL DEFAULT 1,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Installs that already had company_settings from before these columns existed.
+ALTER TABLE `company_settings` ADD COLUMN IF NOT EXISTS `enable_external_sale` tinyint(1) NOT NULL DEFAULT 1 AFTER `enable_notifications`;
+ALTER TABLE `company_settings` ADD COLUMN IF NOT EXISTS `enable_ip` tinyint(1) NOT NULL DEFAULT 1 AFTER `enable_external_sale`;
+
+
 

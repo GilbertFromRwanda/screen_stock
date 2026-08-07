@@ -2,6 +2,7 @@
 require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('sales', 'create')) { $_SESSION['flash_error'] = "You don't have permission to record external sales."; redirect('dashboard.php'); }
+if (!companyFeatureEnabled($conn, 'enable_external_sale')) { $_SESSION['flash_error'] = "External Sale is disabled for your company."; redirect('dashboard.php'); }
 
 $cid_sql = cidSql(); $cid_and = cidAnd();
 $company_name = companyName($conn);

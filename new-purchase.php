@@ -3,6 +3,13 @@ require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('purchases', 'create')) { $_SESSION['flash_error'] = "You don't have permission to create purchases."; redirect('dashboard.php'); }
 
+// Companies that don't deal in foreign currency can turn this off from Settings —
+// the rate-editor box below is just hidden (not removed), so the foreign/USD/RWF
+// cost fields it feeds keep working off whatever rate was last saved (or the
+// 1300 RWF/USD default) instead of every currency-conversion function needing a
+// null check for elements that no longer exist.
+$enable_exchange_rate = companyFeatureEnabled($conn, 'enable_exchange_rate');
+
 // Product search/categories are loaded client-side from DataCache (js/data-cache.js).
 
 // ── AJAX: last purchase cost hint ────────────────────────────────────────────
@@ -239,22 +246,32 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
         }
         .back-link:hover { background: var(--gray-100); }
 
+        /* 3 columns on wide screens (Product+Details | Cost | Packaging+Review side
+           by side) so the page fits in one view instead of stacking Packaging &
+           Review — normally the tallest section — under Product & Details while
+           the Cost Price column sits half-empty. Narrower screens fall back to 2
+           columns with Packaging & Review spanning full width, then 1 column. */
         .form-grid {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start;
+        }
+        .review-col { grid-column: 1 / -1; }
+        @media (min-width: 1200px) {
+            .form-grid { grid-template-columns: 1fr 1fr 1.3fr; }
+            .review-col { grid-column: auto; }
         }
         @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
 
         .card {
             background: var(--white); border: 1px solid var(--gray-200);
-            border-radius: 12px; padding: 18px 20px; box-shadow: var(--shadow-sm);
+            border-radius: 12px; padding: 14px 18px; box-shadow: var(--shadow-sm);
         }
         .card-title {
             font-size: 13px; font-weight: 700; text-transform: uppercase;
             letter-spacing: .5px; color: var(--secondary);
-            margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--gray-200);
+            margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--gray-200);
         }
 
-        .form-group { margin-bottom: 12px; }
+        .form-group { margin-bottom: 10px; }
         .form-group label {
             display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--dark);
         }
@@ -295,9 +312,9 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
         .levels-card { grid-column: 1 / -1; }
         .level-row {
             display: grid; grid-template-columns: 32px 1fr 1fr 1fr 36px;
-            gap: 10px; align-items: end; padding: 14px;
+            gap: 10px; align-items: end; padding: 10px 12px;
             background: var(--gray-100); border-radius: var(--radius);
-            margin-bottom: 10px; border: 1px solid var(--gray-200);
+            margin-bottom: 8px; border: 1px solid var(--gray-200);
         }
         .level-row.top-level { border-left: 3px solid var(--primary); }
         .level-row.mid-level { border-left: 3px solid var(--warning); }
@@ -326,13 +343,12 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
 
         /* Summary box */
         .summary-box {
-            grid-column: 1 / -1;
             background: linear-gradient(135deg, #e8edf5, #f0fdf4);
-            border: 1px solid #c9d6ea; border-radius: 12px; padding: 20px 24px;
+            border: 1px solid #c9d6ea; border-radius: 12px; padding: 14px 18px;
         }
         .summary-title {
             font-size: 12px; font-weight: 700; text-transform: uppercase;
-            letter-spacing: .5px; color: var(--secondary); margin-bottom: 14px;
+            letter-spacing: .5px; color: var(--secondary); margin-bottom: 10px;
         }
         .summary-chain {
             display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -360,7 +376,7 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
         /* Bottom action bar (single continuous page — no step gating) */
         .action-bar {
             display: flex; align-items: center; justify-content: space-between;
-            margin-top: 20px; gap: 12px;
+            margin-top: 14px; gap: 12px;
         }
         .action-bar-right { display: flex; gap: 10px; }
 
@@ -387,29 +403,6 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
         .cart-edit-btn:hover   { background: #e8edf5; border-color: var(--primary); color: var(--primary); }
         .cart-remove-btn:hover { background: #fee2e2; border-color: var(--danger); color: var(--danger); }
 
-        /* Preset examples */
-        .preset-label {
-            font-size: 11px; font-weight: 700; text-transform: uppercase;
-            letter-spacing: .6px; color: var(--secondary); display: block; margin-bottom: 10px;
-        }
-        .preset-cards { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-        .preset-card {
-            padding: 8px 14px; border: 1.5px solid var(--gray-200); border-radius: var(--radius);
-            background: var(--gray-100); cursor: pointer; text-align: left;
-            transition: border-color .15s, background .15s;
-            display: flex; flex-direction: column; gap: 3px;
-        }
-        .preset-card:hover { border-color: var(--primary); background: #e8edf5; }
-        .preset-card.recommended { border-color: #c9d6ea; background: #e8edf5; }
-        .pc-title { font-size: 12px; font-weight: 700; color: var(--dark); }
-        .pc-chain { font-size: 11px; color: var(--secondary); }
-        .preset-card:hover .pc-title,
-        .preset-card.recommended .pc-title { color: var(--primary); }
-        .preset-card.active {
-            border-color: var(--primary); background: #e8edf5;
-        }
-        .preset-card.active .pc-title { color: var(--primary); }
-        .preset-card.active .pc-chain { color: var(--primary-dark, #0a2148); }
 
         /* Toast */
         .toast {
@@ -580,7 +573,7 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                         </div>
 
                         <div class="form-group">
-                            <label id="qty-label">Quantity Purchased *</label>
+                            <label id="qty-label">QTY *</label>
                             <input type="text" name="quantity" id="quantity" min="1" value="1" inputmode="decimal"
                                    oninput="updateFinalCost()" onfocus="this.select()">
                         </div>
@@ -593,7 +586,7 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                 <div class="card">
                     <div class="card-title">Cost Price</div>
 
-                    <div class="rates-box">
+                    <div class="rates-box"<?= $enable_exchange_rate ? '' : ' style="display:none;"' ?>>
                         <div class="rates-box-header" onclick="toggleRates()" style="cursor:pointer;user-select:none;">
                             <span class="rates-box-title">Exchange Rates</span>
                             <span id="rates-summary" style="flex:1;font-size:11px;color:var(--secondary);margin:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
@@ -617,22 +610,29 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                     </div>
 
                     <div class="form-group">
-                        <label>Cost Price per unit *</label>
+                        <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                            <span id="cost-price-label">Total Cost Price *</span>
+                            <select id="cost_mode" onchange="onCostModeChange()"
+                                    style="width:auto;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;background:var(--white);flex-shrink:0;">
+                                <option value="unit">Per unit</option>
+                                <option value="total" selected>Total for this purchase</option>
+                            </select>
+                        </label>
                         <div class="cost-inputs">
-                            <div class="cost-input-wrap">
+                            <div class="cost-input-wrap"<?= $enable_exchange_rate ? '' : ' style="display:none;"' ?>>
                                 <div class="cost-currency-label" id="foreign_label">—</div>
                                 <input type="text" id="cost_foreign" placeholder="0" inputmode="decimal"
                                        oninput="syncFromForeign()" onfocus="rawInput(this)" onblur="fmtInput(this,4)">
                             </div>
-                            <span class="cost-arrow">→</span>
-                            <div class="cost-input-wrap">
+                            <span class="cost-arrow"<?= $enable_exchange_rate ? '' : ' style="display:none;"' ?>>→</span>
+                            <div class="cost-input-wrap"<?= $enable_exchange_rate ? '' : ' style="display:none;"' ?>>
                                 <div class="cost-currency-label">USD</div>
                                 <input type="text" id="cost_usd" placeholder="0" inputmode="decimal"
                                        oninput="syncFromUSD()" onfocus="rawInput(this)" onblur="fmtInput(this,4)">
                             </div>
-                            <span class="cost-arrow">→</span>
+                            <span class="cost-arrow"<?= $enable_exchange_rate ? '' : ' style="display:none;"' ?>>→</span>
                             <div class="cost-input-wrap">
-                                <div class="cost-currency-label">RWF</div>
+                                <div class="cost-currency-label"><?= $enable_exchange_rate ? 'RWF' : 'Cost (RWF)' ?></div>
                                 <input type="text" id="cost_rwf_converted" placeholder="0" inputmode="decimal"
                                        oninput="syncFromConverted()" onfocus="rawInput(this)" onblur="fmtInput(this,0)">
                             </div>
@@ -644,7 +644,7 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                                        style="flex:0 0 90px;"
                                        oninput="updateFinalCost()" onfocus="rawInput(this)" onblur="fmtInput(this,0)">
                                 <select id="expense_mode" onchange="updateFinalCost()"
-                                        style="padding:7px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;background:var(--white);flex-shrink:0;">
+                                        style="width:auto;padding:7px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;background:var(--white);flex-shrink:0;">
                                     <option value="whole" selected>RWF total</option>
                                     <option value="unit">RWF / unit</option>
                                 </select>
@@ -665,39 +665,25 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                     </div>
                 </div>
             </div>
-            </div><!-- /.form-grid -->
 
             <!-- ── Packaging & Review ───────────────────────────────────────── -->
-            <div>
-                <div class="card" style="margin-bottom:16px;">
+            <div class="review-col">
+                <div class="card" style="margin-bottom:12px;">
                     <div class="card-title">Packaging Levels</div>
-                    <p style="font-size:13px;color:var(--secondary);margin-bottom:16px;">
+                    <!-- <p style="font-size:13px;color:var(--secondary);margin-bottom:10px;">
                         Define each level from the biggest container down to the smallest unit.
                         Clients can buy at any level. Set the selling price for each level.
-                    </p>
+                    </p> -->
 
-                    <span class="preset-label">Load an example to get started:</span>
-                    <div class="preset-cards">
-                        <button type="button" class="preset-card" onclick="loadPreset('single',this)">
-                            <span class="pc-title">1 Level — Single item</span>
-                            <span class="pc-chain">Item &nbsp;(e.g. phone, screen)</span>
-                        </button>
-                        <button type="button" class="preset-card" onclick="loadPreset('two',this)">
-                            <span class="pc-title">2 Levels — Box &rarr; Piece</span>
-                            <span class="pc-chain">Box &rarr; Piece &times;10</span>
-                        </button>
-                        <button type="button" class="preset-card recommended" onclick="loadPreset('three',this)">
-                            <span class="pc-title">3 Levels — Big &rarr; Small &rarr; Piece</span>
-                            <span class="pc-chain">Big Container &rarr; Small &times;4 &rarr; Piece &times;24</span>
-                        </button>
-                        <button type="button" class="preset-card" onclick="loadPreset('four',this)">
-                            <span class="pc-title">4 Levels — Carton chain</span>
-                            <span class="pc-chain">Carton &rarr; Box &times;6 &rarr; Pack &times;12 &rarr; Piece &times;10</span>
-                        </button>
-                        <button type="button" class="preset-card" onclick="loadPreset('weight',this)">
-                            <span class="pc-title">Weight — Sack &rarr; Kg</span>
-                            <span class="pc-chain">Sack &rarr; Kg &times;50 &nbsp;(rice, sugar, flour…)</span>
-                        </button>
+                    <div class="form-group">
+                        <!-- <label for="preset_select">Select:</label> -->
+                        <select id="preset_select" onchange="loadPreset(this.value)">
+                            <option value="single" selected>1 Level — Single item (e.g. phone, screen)</option>
+                            <option value="two">2 Levels — Box &rarr; Piece &times;10</option>
+                            <option value="three">3 Levels — Big Container &rarr; Small &times;4 &rarr; Piece &times;24 (Recommended)</option>
+                            <option value="four">4 Levels — Carton &rarr; Box &times;6 &rarr; Pack &times;12 &rarr; Piece &times;10</option>
+                            <option value="weight">Weight — Sack &rarr; Kg &times;50 (rice, sugar, flour…)</option>
+                        </select>
                     </div>
 
                     <div id="levelsContainer"></div>
@@ -712,6 +698,7 @@ while ($r = mysqli_fetch_assoc($suppliers_r)) $suppliers[] = $r;
                     <div class="summary-total" id="summaryTotal"></div>
                 </div>
             </div>
+            </div><!-- /.form-grid -->
 
             <!-- ── Actions ─────────────────────────────────────────────────── -->
             <div class="action-bar">
@@ -892,20 +879,33 @@ function onRateChange() {
 // USD    → foreign = USD × foreignRate   → RWF = USD × usdRate
 // RWF    → USD = RWF / usdRate           → foreign = USD × foreignRate
 
+function onCostModeChange() {
+    var costMode = document.getElementById('cost_mode').value;
+    document.getElementById('cost-price-label').textContent =
+        costMode === 'total' ? 'Total Cost Price *' : 'Cost Price per unit *';
+    updateFinalCost();
+}
+
 function updateFinalCost() {
     var converted = parseNum(document.getElementById('cost_rwf_converted').value);
     var expense   = parseNum(document.getElementById('expense_rwf').value);
     var mode      = document.getElementById('expense_mode').value; // 'unit' | 'whole'
+    var costMode  = document.getElementById('cost_mode').value;    // 'unit' | 'total'
     var qty       = parseNum(document.getElementById('quantity').value) || 1;
 
     var expensePerUnit = mode === 'whole' ? (qty > 0 ? expense / qty : 0) : expense;
+    var costPerUnit     = costMode === 'total' ? (qty > 0 ? converted / qty : 0) : converted;
 
-    var hint = document.getElementById('expense-per-unit-hint');
-    hint.textContent = (mode === 'whole' && expense > 0)
-        ? ('= ' + fmtNum(expensePerUnit, 2) + ' RWF/unit (' + fmtNum(expense) + ' ÷ ' + fmtNum(qty) + ' units)')
-        : '';
+    var hintParts = [];
+    if (costMode === 'total' && converted > 0) {
+        hintParts.push('Cost: ' + fmtNum(costPerUnit, 2) + ' RWF/unit (' + fmtNum(converted) + ' ÷ ' + fmtNum(qty) + ' units)');
+    }
+    if (mode === 'whole' && expense > 0) {
+        hintParts.push('Expense: ' + fmtNum(expensePerUnit, 2) + ' RWF/unit (' + fmtNum(expense) + ' ÷ ' + fmtNum(qty) + ' units)');
+    }
+    document.getElementById('expense-per-unit-hint').textContent = hintParts.join('  •  ');
 
-    var final = converted + expensePerUnit;
+    var final = costPerUnit + expensePerUnit;
     document.getElementById('cost_price').value = final > 0 ? fmtNum(Math.round(final)) : '';
     updateSummary(); suggestPrices();
 }
@@ -1013,6 +1013,7 @@ function validateCurrentItem() {
         cost_rwf_converted: document.getElementById('cost_rwf_converted').value,
         expense_rwf: document.getElementById('expense_rwf').value,
         expense_mode: document.getElementById('expense_mode').value,
+        cost_mode: document.getElementById('cost_mode').value,
         suggest_rate: document.getElementById('suggest_rate').value,
         levels: levels
     };
@@ -1022,7 +1023,7 @@ function resetWizardFields() {
     document.getElementById('purchaseForm').reset();
     document.getElementById('levelsContainer').innerHTML = '';
     levelCount = 0;
-    loadPreset('single', null);
+    loadPreset('single');
     document.getElementById('product_search').value = '';
     document.getElementById('product_id').value = '';
     document.getElementById('product_dropdown').classList.remove('open');
@@ -1035,6 +1036,8 @@ function resetWizardFields() {
     document.getElementById('cost_rwf_converted').value = '';
     document.getElementById('expense_rwf').value = '';
     document.getElementById('expense_mode').value = 'whole';
+    document.getElementById('cost_mode').value = 'total';
+    document.getElementById('cost-price-label').textContent = 'Total Cost Price *';
     document.getElementById('expense-per-unit-hint').textContent = '';
     document.getElementById('supplier_id').dataset.prevValue = '';
 }
@@ -1199,8 +1202,9 @@ function editCartItem(idx) {
     document.getElementById('cost_rwf_converted').value = item.cost_rwf_converted;
     document.getElementById('expense_rwf').value        = item.expense_rwf;
     document.getElementById('expense_mode').value        = item.expense_mode || 'whole';
+    document.getElementById('cost_mode').value           = item.cost_mode || 'total';
     document.getElementById('suggest_rate').value        = item.suggest_rate;
-    updateFinalCost();
+    onCostModeChange();
 
     var container = document.getElementById('levelsContainer');
     container.innerHTML = '';
@@ -1509,7 +1513,7 @@ function updateLabels() {
     });
     if (rows[0]) {
         var topName = rows[0].querySelector('input[name="level_name[]"]').value.trim() || 'top-level unit';
-        document.getElementById('qty-label').textContent = 'Quantity Purchased (' + topName + 's) *';
+        document.getElementById('qty-label').textContent = 'QTY (' + topName + 's) *';
     }
 }
 
@@ -1609,13 +1613,11 @@ var PRESETS = {
     ]
 };
 
-function loadPreset(key, btn) {
+function loadPreset(key) {
     var preset = PRESETS[key];
     if (!preset) return;
 
-    // Mark clicked card as active
-    document.querySelectorAll('.preset-card').forEach(function (c) { c.classList.remove('active'); });
-    if (btn) btn.classList.add('active');
+    document.getElementById('preset_select').value = key;
 
     var container = document.getElementById('levelsContainer');
     container.innerHTML = '';
@@ -1818,7 +1820,7 @@ document.getElementById('purchaseForm').addEventListener('keydown', function (e)
 
 loadRates();
 loadCategories();
-loadPreset('single', document.querySelectorAll('.preset-card')[0]);
+loadPreset('single');
 document.getElementById('product_search').focus();
 
 <?php if ($repeat_data): ?>
@@ -1831,6 +1833,10 @@ document.getElementById('product_search').focus();
     document.getElementById('product_search').value =
         (p.category ? p.category + ' — ' : '') + p.product_name;
     document.getElementById('quantity').value = p.quantity;
+    // p.cost_price is always a historical per-unit figure, regardless of the
+    // form's default cost_mode — pin the mode here so it isn't divided by qty again.
+    document.getElementById('cost_mode').value = 'unit';
+    onCostModeChange();
     document.getElementById('cost_rwf_converted').value = p.cost_price;
     if (p.supplier_id) {
         var supSel = document.getElementById('supplier_id');

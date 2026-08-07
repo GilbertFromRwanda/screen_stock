@@ -6,6 +6,14 @@ if (!hasPermission('orders')) { http_response_code(403); exit; }
 global $conn;
 $user_id = (int)$_SESSION['user_id'];
 
+// Notifications turned off for this company — respond quietly with empty
+// results instead of erroring, in case a stale tab still has the poller running.
+if (!companyFeatureEnabled($conn, 'enable_notifications')) {
+    header('Content-Type: application/json');
+    echo json_encode((isset($_GET['action']) && $_GET['action'] === 'count') ? ['count' => 0] : []);
+    exit;
+}
+
 // ── Mark as read: the user dismissed/acted on a notification — delete it now. ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_read'])) {
     header('Content-Type: application/json');

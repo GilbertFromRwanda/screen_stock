@@ -36,13 +36,19 @@ $_nav_viewing_company_id = cid();
 // "All (My) Companies" aggregate (cidList() !== null) rather than one company.
 $_nav_viewing_all_mine = $role !== 'superadmin' && cidList() !== null;
 
-try {
-    $sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-    socket_connect($sock, '8.8.8.8', 80);
-    socket_getsockname($sock, $_nav_server_ip);
-    socket_close($sock);
-} catch (Throwable $e) {
-    $_nav_server_ip = gethostbyname(gethostname());
+// Per-company feature toggles set from settings.php — defaults to all-on when
+// no row exists yet or nothing is scoped (e.g. superadmin, "All Companies").
+$_nav_settings = isLoggedIn() ? getCompanySettings($conn) : ['enable_orders' => true, 'enable_notifications' => true, 'enable_external_sale' => true, 'enable_ip' => true];
+$_nav_server_ip='';
+if ($_nav_settings['enable_ip']) {
+    try {
+        $sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+        socket_connect($sock, '8.8.8.8', 80);
+        socket_getsockname($sock, $_nav_server_ip);
+        socket_close($sock);
+    } catch (Throwable $e) {
+        $_nav_server_ip = gethostbyname(gethostname());
+    }
 }
 //  $_nav_server_ip='';
 ?>
@@ -108,7 +114,9 @@ try {
                     <?php if (hasPermission('sales','create')): ?>
                     <a href="sale_bulk.php"     class="tn-drop-item<?= $current_page==='sale_bulk.php'     ?' active':'' ?>">Bulk Sale</a>
                     <a href="sale_retail.php"   class="tn-drop-item<?= $current_page==='sale_retail.php'   ?' active':'' ?>">Retail Sale</a>
+                    <?php if ($_nav_settings['enable_external_sale']): ?>
                     <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>">External Sale</a>
+                    <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>
@@ -127,7 +135,7 @@ try {
             <?php endif; ?>
 
             <?php $oa = in_array($current_page,['orders.php','order_new.php','order_link_new.php']);
-                  $has_ord = hasPermission('orders'); ?>
+                  $has_ord = hasPermission('orders') && $_nav_settings['enable_orders']; ?>
             <?php if ($has_ord): ?>
             <div class="tn-dropdown<?= $oa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">Orders <span class="tn-chev">&#9660;</span></button>
@@ -180,7 +188,7 @@ try {
             <?php endif; ?>
 
             <?php if (in_array($role,['admin','manager','superadmin'])): ?>
-            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php','qr_call.php','stock_adjust.php']); ?>
+            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php','qr_call.php','stock_adjust.php','settings.php']); ?>
             <div class="tn-dropdown<?= $aa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#9881; Admin <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
@@ -194,6 +202,7 @@ try {
                     <a href="audit_log.php"  class="tn-drop-item<?= $current_page==='audit_log.php' ?' active':'' ?>">Audit Log</a>
                     <?php endif; ?>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
+                    <a href="settings.php" class="tn-drop-item<?= $current_page==='settings.php'?' active':'' ?>">Settings</a>
                     <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>">Run Updates</a>
                     <a href="backup.php" class="tn-drop-item">&#11015; Backup</a>
                     <?php endif; ?>
@@ -208,7 +217,7 @@ try {
 
         <!-- User + Logout -->
         <div class="topnav-user">
-            <?php if (hasPermission('orders')): ?>
+            <?php if (hasPermission('orders') && $_nav_settings['enable_notifications']): ?>
             <div class="tn-notif-wrap" id="tnNotifWrap">
                 <button type="button" class="tn-notif" id="tnNotifBell" title="Notifications">
                     &#128276;
@@ -261,22 +270,28 @@ try {
     
     
     <a href="sale_bulk.php"     class="qb-btn qb-sale-bulk<?= $current_page==='sale_bulk.php'     ? ' active':'' ?>">+ Bulk Sale</a>
+        <?php if ($_nav_settings['enable_external_sale']): ?>
         <a href="sale_external.php" class="qb-btn qb-sale-ext<?= $current_page==='sale_external.php' ? ' active':'' ?>">+ Ext. Sale</a>
+        <?php endif; ?>
     <a href="loans.php"         class="qb-btn qb-loan<?= $current_page==='loans.php'         ? ' active':'' ?>">+ Loan by Client</a>
      <a href="sale_retail.php"   class="qb-btn qb-sale-retail<?= $current_page==='sale_retail.php'   ? ' active':'' ?>">+ Retail Sale</a>
 
     <a href="sales.php"         class="qb-btn qb-sale<?= $current_page==='sales.php'         ? ' active':'' ?>">Sales</a>
    
+    <?php if ($has_ord): ?>
     <a href="orders.php" class="qb-btn qb-order<?= $current_page==='orders.php' ? ' active':'' ?>">Orders</a>
+    <?php endif; ?>
     <a href="new-purchase.php"  class="qb-btn qb-buy<?= $current_page==='new-purchase.php'  ? ' active':'' ?>">+ New Purchase</a>
     <a href="expenses.php"      class="qb-btn qb-exp<?= $current_page==='expenses.php'      ? ' active':'' ?>">+ Expense</a>
     
     <a href="stock.php"         class="qb-btn qb-stock<?= $current_page==='stock.php'         ? ' active':'' ?>">Stock</a>
     
+    <?php if ($_nav_settings['enable_ip']): ?>
     <span class="qb-ip">
         &#128187; <span id="qb-ip-text"><?= htmlspecialchars($_nav_server_ip) ?></span>
         <button class="qb-ip-copy" onclick="qbCopyIP()" title="Copy IP">&#128203;</button>
     </span>
+    <?php endif; ?>
 
     <a href="logout.php" class="qb-btn qb-logout" title="Logout">&#9211; Logout</a>
 
@@ -590,6 +605,6 @@ window.qbCopyIP = function () {
     });
 };
 </script>
-<?php if (hasPermission('orders')): ?>
+<?php if (hasPermission('orders') && $_nav_settings['enable_notifications']): ?>
 <script src="js/order-notify.js"></script>
 <?php endif; ?>
