@@ -187,7 +187,7 @@ if ($_nav_settings['enable_ip']) {
             <?php endif; ?>
 
             <?php if (in_array($role,['admin','manager','superadmin'])): ?>
-            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php','qr_call.php','stock_adjust.php','settings.php']); ?>
+            <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php','qr_call.php','stock_adjust.php','settings.php','translations.php']); ?>
             <div class="tn-dropdown<?= $aa?' active':'' ?>">
                 <button class="tn-item tn-drop-btn" type="button">&#9881; <?= t('nav_admin') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
@@ -202,6 +202,7 @@ if ($_nav_settings['enable_ip']) {
                     <?php endif; ?>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
                     <a href="settings.php" class="tn-drop-item<?= $current_page==='settings.php'?' active':'' ?>"><?= t('nav_settings') ?></a>
+                    <a href="translations.php" class="tn-drop-item<?= $current_page==='translations.php'?' active':'' ?>">&#127760; <?= t('nav_translations') ?></a>
                     <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>"><?= t('nav_run_updates') ?></a>
                     <a href="backup.php" class="tn-drop-item">&#11015; <?= t('nav_backup') ?></a>
                     <?php endif; ?>
