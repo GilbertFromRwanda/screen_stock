@@ -31,6 +31,11 @@ function writeLangFile(string $path, array $data, string $label): void {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $is_ajax = (
+        (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+        || ($_POST['ajax'] ?? '') === '1'
+    );
+
     $keys   = $_POST['key']    ?? [];
     $en_in  = $_POST['en']     ?? [];
     $rw_in  = $_POST['rw']     ?? [];
@@ -66,9 +71,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     writeLangFile($lang_files['rw'], $rw_out, $lang_labels['rw']);
     writeLangFile($lang_files['fr'], $fr_out, $lang_labels['fr']);
 
-    logActivity($conn, (int)$_SESSION['user_id'], 'Edit Translations', 'Updated language strings', 'lang', 0, [], ['keys' => count($en_out)]);
+    // logActivity($conn, (int)$_SESSION['user_id'], 'Edit Translations', 'Updated language strings', 'lang', 0, [], ['keys' => count($en_out)]);
 
-    $_SESSION['flash_success'] = 'Translations saved (' . count($en_out) . ' keys).';
+    $message = 'Translations saved (' . count($en_out) . ' keys).';
+
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => $message, 'count' => count($en_out)]);
+        exit;
+    }
+
+    $_SESSION['flash_success'] = $message;
     redirect('translations.php');
 }
 
@@ -148,9 +161,11 @@ foreach ([$rw, $fr] as $extra) {
         <div class="tr-page-title">Translations</div>
         <div class="tr-page-sub">Every key used by <code>t()</code> across the app, with its English, Kinyarwanda and French text. Edit any cell and Save — new pages that call <code>t('some_key')</code> just need a row added here.</div>
 
+        <div id="trFlash">
         <?php if (!empty($_SESSION['flash_success'])): ?>
             <div class="alert alert-success" style="margin-bottom:16px;"><?php echo htmlspecialchars($_SESSION['flash_success']); unset($_SESSION['flash_success']); ?></div>
         <?php endif; ?>
+        </div>
 
         <form method="POST" id="trForm">
             <div class="tr-toolbar">
@@ -194,7 +209,7 @@ foreach ([$rw, $fr] as $extra) {
             <button type="button" class="tr-add-btn" onclick="trAddRow()">+ Add new key</button>
 
             <div class="tr-actions">
-                <button type="submit" class="tr-save-btn">Save All Translations</button>
+                <button type="submit" class="tr-save-btn" id="trSaveBtn">Save All Translations</button>
                 <a href="dashboard.php" class="tr-back">&larr; Back to Dashboard</a>
             </div>
         </form>
@@ -242,6 +257,79 @@ document.getElementById('trTable').addEventListener('input', function (e) {
 document.querySelectorAll('#trTable textarea').forEach(function (t) {
     t.style.height = 'auto';
     t.style.height = t.scrollHeight + 'px';
+});
+
+// ── Save via AJAX ────────────────────────────────────────────────────────────
+function trFlash(msg, ok) {
+    var box = document.getElementById('trFlash');
+    box.innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') + '" style="margin-bottom:16px;">' + msg + '</div>';
+}
+
+// Rows deleted (checked) get removed from the DOM, and any still-editable
+// "new key" rows get folded into the main table as locked-in existing rows —
+// so a second save doesn't re-submit the same new_key[] fields (which would
+// silently no-op on the backend since the key already exists by then).
+function trLockInSavedRows() {
+    document.querySelectorAll('#trTable tr.tr-row').forEach(function (row) {
+        var delCb = row.querySelector('input[type="checkbox"][name^="delete"]');
+        if (delCb && delCb.checked) { row.remove(); return; }
+
+        var keyInput = row.querySelector('input.tr-key-input');
+        if (!keyInput) return; // already a locked-in row
+        var key = keyInput.value.trim();
+        if (key === '') { row.remove(); return; }
+
+        var idx = 'saved' + (trNewIndex++);
+        var texts = row.querySelectorAll('textarea');
+        var enVal = texts[0] ? texts[0].value : '';
+        var rwVal = texts[1] ? texts[1].value : '';
+        var frVal = texts[2] ? texts[2].value : '';
+
+        row.dataset.search = (key + ' ' + enVal + ' ' + rwVal + ' ' + frVal).toLowerCase();
+        row.cells[0].innerHTML = key.replace(/&/g,'&amp;').replace(/</g,'&lt;') +
+            '<input type="hidden" name="key[' + idx + ']" value="' + key.replace(/"/g,'&quot;') + '">';
+        texts[0].name = 'en[' + idx + ']';
+        texts[1].name = 'rw[' + idx + ']';
+        texts[2].name = 'fr[' + idx + ']';
+        row.cells[4].innerHTML = '<label title="Remove this key from all languages">' +
+            '<input type="checkbox" name="delete[' + idx + ']" value="1" onchange="this.closest(\'tr\').classList.toggle(\'tr-row-deleted\', this.checked)"></label>';
+
+        document.getElementById('trTable').querySelector('tbody').appendChild(row);
+    });
+}
+
+document.getElementById('trForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = document.getElementById('trSaveBtn');
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    var data = new FormData(this);
+    data.append('ajax', '1');
+
+    fetch('translations.php', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: data
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (res.success) {
+                trLockInSavedRows();
+                trFilter();
+                trFlash(res.message, true);
+            } else {
+                trFlash(res.message || 'Save failed — please try again.', false);
+            }
+        })
+        .catch(function () {
+            trFlash('Network error — your changes were not saved. Please try again.', false);
+        })
+        .finally(function () {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        });
 });
 </script>
 </body>
