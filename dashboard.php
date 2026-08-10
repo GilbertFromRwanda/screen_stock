@@ -10,11 +10,16 @@ $user_id        = (int)$_SESSION['user_id'];
 $can_financials = hasPermission('financials');
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars(currentLang()) ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Screen Stock</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#103060">
+    <link rel="icon" type="image/png" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script src="pwa.js" defer></script>
+    <title><?= htmlspecialchars(t('dashboard_title')) ?> - GilStock</title>
     <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <link rel="stylesheet" href="css/dashboard.css?v=<?php echo filemtime(__DIR__ . '/css/dashboard.css'); ?>">
     <style>
@@ -65,31 +70,31 @@ $can_financials = hasPermission('financials');
 
         <!-- Stats Grid -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
-            <h1 style="margin:0;">Dashboard</h1>
+            <h1 style="margin:0;"><?= t('dashboard_title') ?></h1>
             <button id="moneyToggleBtn" onclick="toggleMoneyFormat()"
                 style="padding:5px 14px;border:1px solid var(--gray-300);border-radius:99px;background:#fff;font-size:12px;cursor:pointer;color:var(--secondary);white-space:nowrap;">
-                Show full
+                <?= t('show_full') ?>
             </button>
         </div>
         <div class="stats-grid">
 
             <div class="stat-card">
                 <div class="stat-icon">📦</div>
-                <div class="stat-label">Total Products</div>
+                <div class="stat-label"><?= t('total_products') ?></div>
                 <div class="stat-number" id="d-products"><span class="skel skel-num">&nbsp;</span></div>
-                <div class="stat-trend"><span>Active in inventory</span></div>
-                <div class="stat-footer"><a href="products.php" style="color:#667eea;text-decoration:none;">View all products →</a></div>
+                <div class="stat-trend"><span><?= t('active_in_inventory') ?></span></div>
+                <div class="stat-footer"><a href="products.php" style="color:#667eea;text-decoration:none;"><?= t('view_all_products') ?></a></div>
             </div>
 
             <?php if ($can_financials): ?>
             <div class="stat-card">
                 <div class="stat-icon">💰</div>
-                <div class="stat-label">Stock Value (Selling)</div>
+                <div class="stat-label"><?= t('stock_value_selling') ?></div>
                 <div class="stat-number" id="d-sell-total"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-trend">
                     <span class="stock-status">
                         <span id="d-sell-dot" class="stock-dot"></span>
-                        Warehouse + Retail selling price
+                        <?= t('warehouse_retail_selling_price') ?>
                     </span>
                 </div>
                 <div class="stat-footer" id="d-sell-footer"><span class="skel skel-sm">&nbsp;</span></div>
@@ -99,7 +104,7 @@ $can_financials = hasPermission('financials');
             <?php if ($can_financials): ?>
             <div class="stat-card">
                 <div class="stat-icon">🏷️</div>
-                <div class="stat-label">Stock Value (Purchase)</div>
+                <div class="stat-label"><?= t('stock_value_purchase') ?></div>
                 <div class="stat-number" id="d-cost-total"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-footer" id="d-cost-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
@@ -107,7 +112,7 @@ $can_financials = hasPermission('financials');
 
             <div class="stat-card">
                 <div class="stat-icon">🛒</div>
-                <div class="stat-label">Today's Sales</div>
+                <div class="stat-label"><?= t('todays_sales') ?></div>
                 <div class="stat-number" id="d-today-total"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-trend" id="d-trend"><span class="skel skel-sm">&nbsp;</span></div>
                 <div class="stat-footer" id="d-today-footer"><span class="skel skel-sm">&nbsp;</span></div>
@@ -116,7 +121,7 @@ $can_financials = hasPermission('financials');
             <?php if ($can_financials): ?>
             <div class="stat-card">
                 <div class="stat-icon">💵</div>
-                <div class="stat-label">Today's Profit</div>
+                <div class="stat-label"><?= t('todays_profit') ?></div>
                 <div class="stat-number" id="d-today-profit"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-footer" id="d-profit-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
@@ -124,14 +129,14 @@ $can_financials = hasPermission('financials');
 
             <div class="stat-card">
                 <div class="stat-icon">📊</div>
-                <div class="stat-label">This Week</div>
+                <div class="stat-label"><?= t('this_week') ?></div>
                 <div class="stat-number" id="d-week-sales"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-footer" id="d-week-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
 
             <div class="stat-card">
                 <div class="stat-icon">📈</div>
-                <div class="stat-label">This Month</div>
+                <div class="stat-label"><?= t('this_month') ?></div>
                 <div class="stat-number" id="d-month-sales"><span class="skel skel-num">&nbsp;</span></div>
                 <div class="stat-trend" id="d-month-trend"><span class="skel skel-sm">&nbsp;</span></div>
                 <div class="stat-footer" id="d-month-footer"><span class="skel skel-sm">&nbsp;</span></div>
@@ -139,9 +144,9 @@ $can_financials = hasPermission('financials');
 
             <div class="stat-card">
                 <div class="stat-icon">🏪</div>
-                <div class="stat-label">Retail Shop</div>
+                <div class="stat-label"><?= t('retail_shop') ?></div>
                 <div class="stat-number" id="d-retail-pcs"><span class="skel skel-num">&nbsp;</span></div>
-                <div class="stat-trend"><span>Pieces available for retail</span></div>
+                <div class="stat-trend"><span><?= t('pieces_available_for_retail') ?></span></div>
                 <div class="stat-footer" id="d-retail-footer"><span class="skel skel-sm">&nbsp;</span></div>
             </div>
 
@@ -149,9 +154,9 @@ $can_financials = hasPermission('financials');
 
         <!-- Tab Navigation -->
         <div class="dash-tabs">
-            <button class="dash-tab active" onclick="switchTab('collections',this)">Collections</button>
-            <button class="dash-tab" onclick="switchTab('analytics',this)">Analytics</button>
-            <button class="dash-tab" onclick="switchTab('stock',this)">Stock Health</button>
+            <button class="dash-tab active" onclick="switchTab('collections',this)"><?= t('tab_collections') ?></button>
+            <button class="dash-tab" onclick="switchTab('analytics',this)"><?= t('tab_analytics') ?></button>
+            <button class="dash-tab" onclick="switchTab('stock',this)"><?= t('tab_stock_health') ?></button>
         </div>
 
         <!-- TAB: Collections -->
@@ -162,8 +167,8 @@ $can_financials = hasPermission('financials');
             <div class="chart-container" style="padding:20px 24px;">
                 <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
                     <div>
-                        <h3 style="margin:0 0 2px;">Collection Breakdown</h3>
-                        <p id="coll-subtitle" style="font-size:12px;color:var(--secondary);margin:0;">Today</p>
+                        <h3 style="margin:0 0 2px;"><?= t('collection_breakdown') ?></h3>
+                        <p id="coll-subtitle" style="font-size:12px;color:var(--secondary);margin:0;"><?= t('today') ?></p>
                     </div>
                     <form id="coll-form" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                         <input type="date" id="coll-from" value="<?= $today; ?>"
@@ -173,15 +178,15 @@ $can_financials = hasPermission('financials');
                             style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;">
                         <?php if ($user_role === 'admin' || $user_role === 'superadmin'): ?>
                         <select id="coll-user" style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;background:var(--white);">
-                            <option value="0">— All users —</option>
+                            <option value="0"><?= t('all_users') ?></option>
                         </select>
                         <?php else: ?>
                         <input type="hidden" id="coll-user" value="<?= $user_id; ?>">
                         <?php endif; ?>
-                        <button type="button" onclick="fetchCollection()" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;">Filter</button>
+                        <button type="button" onclick="fetchCollection()" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;"><?= t('filter') ?></button>
                         <button type="button" id="coll-today-btn" onclick="fetchCollection('<?= $today; ?>','<?= $today; ?>',0)"
-                            style="display:none;padding:6px 10px;background:var(--gray-200);color:var(--dark);border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;">Today</button>
-                        <span id="coll-loader" style="display:none;font-size:12px;color:var(--secondary);">Loading…</span>
+                            style="display:none;padding:6px 10px;background:var(--gray-200);color:var(--dark);border:none;border-radius:var(--radius);font-size:13px;cursor:pointer;"><?= t('today') ?></button>
+                        <span id="coll-loader" style="display:none;font-size:12px;color:var(--secondary);"><?= t('loading') ?></span>
                     </form>
                 </div>
 
@@ -190,59 +195,59 @@ $can_financials = hasPermission('financials');
                         <div style="background:#f0fdf4;border-radius:12px;padding:16px;border-left:4px solid #22c55e;">
                             <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
                                 <span style="font-size:18px;">💵</span>
-                                <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.5px;">Cash</span>
+                                <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.5px;"><?= t('cash') ?></span>
                             </div>
                             <div id="coll-cash-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">RWF 0</div>
                             <div style="background:#dcfce7;border-radius:99px;height:6px;margin-bottom:5px;">
                                 <div id="coll-cash-bar" style="background:#22c55e;height:6px;border-radius:99px;width:0%;transition:width .4s;"></div>
                             </div>
-                            <div id="coll-cash-pct" style="font-size:11px;color:#15803d;font-weight:600;">0% of total</div>
+                            <div id="coll-cash-pct" style="font-size:11px;color:#15803d;font-weight:600;">0<?= t('pct_of_total') ?></div>
                         </div>
                         <div style="background:#e8edf5;border-radius:12px;padding:16px;border-left:4px solid #1a4280;">
                             <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
                                 <span style="font-size:18px;">📱</span>
-                                <span style="font-size:12px;font-weight:700;color:#0a2148;text-transform:uppercase;letter-spacing:.5px;">Momo</span>
+                                <span style="font-size:12px;font-weight:700;color:#0a2148;text-transform:uppercase;letter-spacing:.5px;"><?= t('momo') ?></span>
                             </div>
                             <div id="coll-momo-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">RWF 0</div>
                             <div style="background:#e8edf5;border-radius:99px;height:6px;margin-bottom:5px;">
                                 <div id="coll-momo-bar" style="background:#1a4280;height:6px;border-radius:99px;width:0%;transition:width .4s;"></div>
                             </div>
-                            <div id="coll-momo-pct" style="font-size:11px;color:#0a2148;font-weight:600;">0% of total</div>
+                            <div id="coll-momo-pct" style="font-size:11px;color:#0a2148;font-weight:600;">0<?= t('pct_of_total') ?></div>
                         </div>
                         <div style="background:#fffbeb;border-radius:12px;padding:16px;border-left:4px solid #f59e0b;">
                             <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
                                 <span style="font-size:18px;">🔖</span>
-                                <span style="font-size:12px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.5px;">Loan</span>
+                                <span style="font-size:12px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.5px;"><?= t('loan') ?></span>
                             </div>
                             <div id="coll-loan-amount" style="font-size:18px;font-weight:800;color:#111;margin-bottom:10px;">RWF 0</div>
                             <div style="background:#fef3c7;border-radius:99px;height:6px;margin-bottom:5px;">
                                 <div id="coll-loan-bar" style="background:#f59e0b;height:6px;border-radius:99px;width:0%;transition:width .4s;"></div>
                             </div>
-                            <div id="coll-loan-pct" style="font-size:11px;color:#b45309;font-weight:600;">0% deferred</div>
+                            <div id="coll-loan-pct" style="font-size:11px;color:#b45309;font-weight:600;">0<?= t('pct_deferred') ?></div>
                         </div>
                     </div>
                     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fafafa;border-radius:10px;border:1px solid #f3f4f6;">
                         <div style="display:flex;align-items:center;gap:8px;">
                             <span style="font-size:16px;">⚠️</span>
                             <div>
-                                <div style="font-size:13px;font-weight:600;color:#374151;">Total Outstanding Loans</div>
-                                <div style="font-size:11px;color:var(--secondary);">All unpaid client balances</div>
+                                <div style="font-size:13px;font-weight:600;color:#374151;"><?= t('total_outstanding_loans') ?></div>
+                                <div style="font-size:11px;color:var(--secondary);"><?= t('all_unpaid_client_balances') ?></div>
                             </div>
                         </div>
                         <div style="text-align:right;">
                             <div id="coll-outstanding-amount" style="font-size:18px;font-weight:800;color:#f59e0b;">RWF 0</div>
-                            <a href="loans.php" style="font-size:11px;color:var(--primary);text-decoration:none;">View details →</a>
+                            <a href="loans.php" style="font-size:11px;color:var(--primary);text-decoration:none;"><?= t('view_details') ?></a>
                         </div>
                     </div>
                 </div>
 
                 <div id="coll-empty" style="text-align:center;padding:32px 0;color:var(--secondary);">
                     <div style="font-size:32px;margin-bottom:8px;">💳</div>
-                    <div style="font-size:13px;">Loading collection data…</div>
+                    <div style="font-size:13px;"><?= t('loading') ?></div>
                     <div id="coll-empty-loans" style="display:none;margin-top:16px;padding:12px 16px;background:#fffbeb;border-radius:10px;border:1px solid #fde68a;gap:12px;align-items:center;">
-                        <span style="font-size:13px;color:#92400e;">⚠️ Outstanding Loans:</span>
+                        <span style="font-size:13px;color:#92400e;">⚠️ <?= t('total_outstanding_loans') ?>:</span>
                         <strong id="coll-empty-outstanding" style="color:#f59e0b;">RWF 0</strong>
-                        <a href="loans.php" style="font-size:11px;color:var(--primary);">View →</a>
+                        <a href="loans.php" style="font-size:11px;color:var(--primary);"><?= t('view_details') ?></a>
                     </div>
                 </div>
             </div>
@@ -258,7 +263,7 @@ $can_financials = hasPermission('financials');
 
         <!-- Revenue Chart -->
         <div class="chart-container" style="margin-bottom:24px;">
-            <h3>Daily Revenue (Sunday - Saturday)</h3>
+            <h3><?= t('daily_revenue') ?></h3>
             <div class="chart-wrapper" style="height:300px;">
                 <canvas id="salesChart"></canvas>
             </div>
@@ -267,15 +272,15 @@ $can_financials = hasPermission('financials');
         <!-- Top Products -->
         <div style="margin-bottom:24px;">
             <div class="chart-container">
-                <h3>Top Selling Products</h3>
+                <h3><?= t('top_selling_products') ?></h3>
                 <div style="overflow-x:auto;">
                     <table class="top-table">
                         <thead>
                             <tr>
-                                <th>Product</th><th>Category</th>
-                                <th style="text-align:center;">Bulk</th>
-                                <th style="text-align:center;">Retail</th>
-                                <th style="text-align:right;">Revenue</th>
+                                <th><?= t('product') ?></th><th><?= t('category') ?></th>
+                                <th style="text-align:center;"><?= t('bulk') ?></th>
+                                <th style="text-align:center;"><?= t('retail') ?></th>
+                                <th style="text-align:right;"><?= t('revenue') ?></th>
                             </tr>
                         </thead>
                         <tbody id="d-top-tbody">
@@ -295,7 +300,7 @@ $can_financials = hasPermission('financials');
 
         <div class="dashboard-row">
             <div class="chart-container">
-                <h3>Stock Health</h3>
+                <h3><?= t('stock_health') ?></h3>
                 <div id="d-low-stock">
                     <div style="text-align:center;padding:24px 0;">
                         <span class="skel" style="width:80%;display:block;margin:8px auto;height:16px;"></span>
@@ -305,21 +310,21 @@ $can_financials = hasPermission('financials');
                 <div class="mini-stats">
                     <div class="mini-stat">
                         <div class="mini-stat-value" id="d-mov-count"><span class="skel skel-sm">&nbsp;</span></div>
-                        <div class="mini-stat-label">Movements this week</div>
+                        <div class="mini-stat-label"><?= t('movements_this_week') ?></div>
                     </div>
                     <div class="mini-stat">
                         <div class="mini-stat-value" style="color:var(--success);" id="d-suppliers"><span class="skel skel-sm">&nbsp;</span></div>
-                        <div class="mini-stat-label">Active Suppliers</div>
+                        <div class="mini-stat-label"><?= t('active_suppliers') ?></div>
                     </div>
                 </div>
             </div>
             <div class="chart-container">
-                <h3>Quick Actions</h3>
+                <h3><?= t('quick_actions') ?></h3>
                 <div class="quick-actions">
-                    <a href="sales.php"     class="quick-action-btn"><span>💰</span>New Sale</a>
-                    <a href="purchases.php" class="quick-action-btn"><span>📦</span>Purchase</a>
-                    <a href="stock.php"     class="quick-action-btn"><span>🔄</span>Move Stock</a>
-                    <a href="products.php"  class="quick-action-btn"><span>🏷️</span>Add Product</a>
+                    <a href="sales.php"     class="quick-action-btn"><span>💰</span><?= t('new_sale') ?></a>
+                    <a href="purchases.php" class="quick-action-btn"><span>📦</span><?= t('purchase') ?></a>
+                    <a href="stock.php"     class="quick-action-btn"><span>🔄</span><?= t('move_stock') ?></a>
+                    <a href="products.php"  class="quick-action-btn"><span>🏷️</span><?= t('add_product') ?></a>
                 </div>
             </div>
         </div>
@@ -340,6 +345,50 @@ var moneyFull = localStorage.getItem('moneyFull') === '1';
 var chartInstance = null;
 var canSeeFinancials = <?= $can_financials ? 'true' : 'false'; ?>;
 
+var I18N = {
+    showFull: <?= json_encode(t('show_full')) ?>,
+    showAbbr: <?= json_encode(t('show_abbr')) ?>,
+    warehouse: <?= json_encode(t('warehouse')) ?>,
+    retail: <?= json_encode(t('retail')) ?>,
+    bulk: <?= json_encode(t('bulk')) ?>,
+    updated: <?= json_encode(t('updated')) ?>,
+    recalculate: <?= json_encode(t('recalculate')) ?>,
+    calculating: <?= json_encode(t('calculating')) ?>,
+    vsYesterday: <?= json_encode(t('vs_yesterday')) ?>,
+    sameAsYesterday: <?= json_encode(t('same_as_yesterday')) ?>,
+    cash: <?= json_encode(t('cash')) ?>,
+    momo: <?= json_encode(t('momo')) ?>,
+    loan: <?= json_encode(t('loan')) ?>,
+    sales: <?= json_encode(t('sales')) ?>,
+    cost: <?= json_encode(t('cost')) ?>,
+    profit: <?= json_encode(t('profit')) ?>,
+    revenue: <?= json_encode(t('revenue')) ?>,
+    monthlyTarget: <?= json_encode(t('monthly_target')) ?>,
+    monthProgress: <?= json_encode(t('month_progress')) ?>,
+    value: <?= json_encode(t('value')) ?>,
+    pcs: <?= json_encode(t('pcs')) ?>,
+    pkg: <?= json_encode(t('pkg')) ?>,
+    na: <?= json_encode(t('na')) ?>,
+    reorderAt: <?= json_encode(t('reorder_at')) ?>,
+    left: <?= json_encode(t('left')) ?>,
+    allProductsWellStocked: <?= json_encode(t('all_products_well_stocked')) ?>,
+    noSalesDataYet: <?= json_encode(t('no_sales_data_yet')) ?>,
+    lowStockAlert: <?= json_encode(t('low_stock_alert')) ?>,
+    lowStockMessage: <?= json_encode(t('low_stock_message')) ?>,
+    retailStockEmpty: <?= json_encode(t('retail_stock_empty')) ?>,
+    retailStockEmptyMessage: <?= json_encode(t('retail_stock_empty_message')) ?>,
+    noSalesToday: <?= json_encode(t('no_sales_today')) ?>,
+    noSalesTodayMessage: <?= json_encode(t('no_sales_today_message')) ?>,
+    takeAction: <?= json_encode(t('take_action')) ?>,
+    notificationsAlerts: <?= json_encode(t('notifications_alerts')) ?>,
+    newBadge: <?= json_encode(t('new_badge')) ?>,
+    today: <?= json_encode(t('today')) ?>,
+    pctOfTotal: <?= json_encode(t('pct_of_total')) ?>,
+    pctDeferred: <?= json_encode(t('pct_deferred')) ?>,
+    noSalesRecordedForPeriod: <?= json_encode(t('no_sales_recorded_for_period')) ?>,
+    allUsers: <?= json_encode(t('all_users')) ?>
+};
+
 // ── Money formatting ─────────────────────────────────────────────────────────
 function numAbbr(n) {
     n = Math.round(n); var abs = Math.abs(n), sign = n < 0 ? '-' : '';
@@ -358,7 +407,7 @@ function applyMoneyFormat(full) {
         el.textContent = full ? el.dataset.full : el.dataset.abbr;
     });
     var btn = document.getElementById('moneyToggleBtn');
-    if (btn) btn.textContent = full ? 'Show abbr' : 'Show full';
+    if (btn) btn.textContent = full ? I18N.showAbbr : I18N.showFull;
 }
 window.toggleMoneyFormat = function() {
     var next = !moneyFull;
@@ -381,17 +430,17 @@ function populate(d) {
         set('d-sell-total', 'RWF ' + moneySpan(sellTotal));
         var dot = document.getElementById('d-sell-dot');
         if (dot) dot.className = 'stock-dot ' + (sellTotal > 1e6 ? 'green' : sellTotal > 5e5 ? 'yellow' : 'red');
-        set('d-sell-footer', 'Warehouse: RWF ' + moneySpan(d.sell_wh) + ' | Retail: RWF ' + moneySpan(d.sell_rt));
+        set('d-sell-footer', I18N.warehouse+': RWF ' + moneySpan(d.sell_wh) + ' | ' + I18N.retail + ': RWF ' + moneySpan(d.sell_rt));
     }
 
     if (canSeeFinancials && d.cost_total !== null) {
         set('d-cost-total', 'RWF ' + moneySpan(d.cost_total));
-        var updatedLabel = d.cache_updated ? 'Updated ' + new Date(d.cache_updated).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+        var updatedLabel = d.cache_updated ? I18N.updated + ' ' + new Date(d.cache_updated).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
         set('d-cost-footer',
-            'Warehouse: RWF ' + moneySpan(d.cost_wh) + ' | Retail: RWF ' + moneySpan(d.cost_rt) +
+            I18N.warehouse+': RWF ' + moneySpan(d.cost_wh) + ' | ' + I18N.retail + ': RWF ' + moneySpan(d.cost_rt) +
             '<div style="margin-top:4px;display:flex;align-items:center;gap:8px;">' +
             '<span style="font-size:10px;color:#9ca3af;">' + updatedLabel + '</span>' +
-            '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">Recalculate</a>' +
+            '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">' + I18N.recalculate + '</a>' +
             '</div>');
     }
 
@@ -399,13 +448,13 @@ function populate(d) {
     var trend = d.today_t - d.yesterday_t;
     var trendPct = d.yesterday_t > 0 ? Math.abs(trend / d.yesterday_t * 100).toFixed(1) : 0;
     var trendHtml = trend > 0
-        ? '<span class="trend-up">↑ '+trendPct+'% vs yesterday</span>'
+        ? '<span class="trend-up">↑ '+trendPct+'% '+I18N.vsYesterday+'</span>'
         : trend < 0
-            ? '<span class="trend-down">↓ '+trendPct+'% vs yesterday</span>'
-            : '<span>→ Same as yesterday</span>';
+            ? '<span class="trend-down">↓ '+trendPct+'% '+I18N.vsYesterday+'</span>'
+            : '<span>→ '+I18N.sameAsYesterday+'</span>';
     set('d-trend', trendHtml);
     set('d-today-footer',
-        'Bulk: RWF '+moneySpan(d.today_bulk)+' | Retail: RWF '+moneySpan(d.today_rt)+
+        I18N.bulk+': RWF '+moneySpan(d.today_bulk)+' | ' + I18N.retail + ': RWF '+moneySpan(d.today_rt)+
         '<div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">'+
         '<span style="color:#16a34a;">💵 '+moneySpan(d.today_cash)+'</span>'+
         '<span style="color:#103060;">📱 '+moneySpan(d.today_momo)+'</span>'+
@@ -414,20 +463,20 @@ function populate(d) {
 
     if (canSeeFinancials && d.today_profit !== null) {
         set('d-today-profit', 'RWF ' + moneySpan(d.today_profit));
-        set('d-profit-footer', 'Sales: RWF '+moneySpan(d.today_t)+' | Cost: RWF '+moneySpan(d.today_t - d.today_profit));
+        set('d-profit-footer', I18N.sales+': RWF '+moneySpan(d.today_t)+' | ' + I18N.cost + ': RWF '+moneySpan(d.today_t - d.today_profit));
     }
 
     set('d-week-sales', 'RWF ' + moneySpan(d.week_sales));
-    set('d-week-footer', canSeeFinancials && d.week_profit !== null ? 'Profit: RWF ' + moneySpan(d.week_profit) : '');
+    set('d-week-footer', canSeeFinancials && d.week_profit !== null ? I18N.profit + ': RWF ' + moneySpan(d.week_profit) : '');
 
     set('d-month-sales', 'RWF ' + moneySpan(d.month_sales));
-    set('d-month-trend', '<span>Monthly target: RWF ' + moneySpan(d.month_sales * 1.2) + '</span>');
+    set('d-month-trend', '<span>' + I18N.monthlyTarget + ': RWF ' + moneySpan(d.month_sales * 1.2) + '</span>');
     var dayProgress = Math.round((new Date().getDate() / new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate()) * 100);
-    set('d-month-footer', 'Month progress: ' + dayProgress + '%');
+    set('d-month-footer', I18N.monthProgress + ': ' + dayProgress + '%');
 
-    set('d-retail-pcs', d.rt_pcs.toLocaleString() + ' pcs');
+    set('d-retail-pcs', d.rt_pcs.toLocaleString() + ' ' + I18N.pcs);
     if (canSeeFinancials && d.sell_rt !== null) {
-        set('d-retail-footer', 'Value: RWF ' + moneySpan(d.sell_rt));
+        set('d-retail-footer', I18N.value + ': RWF ' + moneySpan(d.sell_rt));
     }
 
     // Mini stats
@@ -450,7 +499,7 @@ function populate(d) {
     // Users dropdown for collection
     var sel = document.getElementById('coll-user');
     if (sel && sel.tagName === 'SELECT') {
-        var html = '<option value="0">— All users —</option>';
+        var html = '<option value="0">'+I18N.allUsers+'</option>';
         d.users.forEach(function(u) {
             html += '<option value="'+u.id+'">'+escHtml(u.name)+'</option>';
         });
@@ -467,13 +516,13 @@ function buildLowStock(items, emptyCount) {
         items.forEach(function(item) {
             html += '<div class="low-stock-item"><div>'+
                 '<div class="low-stock-name">'+escHtml(item.name)+'</div>'+
-                '<div class="low-stock-sub">Reorder at '+item.reorder_level+'</div>'+
-                '</div><span class="low-stock-badge">'+item.quantity+' left</span></div>';
+                '<div class="low-stock-sub">'+I18N.reorderAt.replace('{level}', item.reorder_level)+'</div>'+
+                '</div><span class="low-stock-badge">'+item.quantity+' '+I18N.left+'</span></div>';
         });
     } else {
         html = '<div style="text-align:center;padding:24px 0;color:var(--success);">'+
             '<div style="font-size:36px;">✓</div>'+
-            '<div style="font-size:13px;color:var(--secondary);margin-top:6px;">All products well stocked</div></div>';
+            '<div style="font-size:13px;color:var(--secondary);margin-top:6px;">'+I18N.allProductsWellStocked+'</div></div>';
     }
     set('d-low-stock', html);
 }
@@ -484,33 +533,33 @@ function buildTopProducts(products) {
         products.forEach(function(p) {
             html += '<tr>'+
                 '<td style="font-weight:600;">'+escHtml(p.name)+'</td>'+
-                '<td><span class="cat-badge">'+escHtml(p.category || 'N/A')+'</span></td>'+
-                '<td style="text-align:center;color:var(--secondary);">'+p.bulk_qty+' pkg</td>'+
-                '<td style="text-align:center;color:var(--secondary);">'+p.retail_qty+' pcs</td>'+
+                '<td><span class="cat-badge">'+escHtml(p.category || I18N.na)+'</span></td>'+
+                '<td style="text-align:center;color:var(--secondary);">'+p.bulk_qty+' '+I18N.pkg+'</td>'+
+                '<td style="text-align:center;color:var(--secondary);">'+p.retail_qty+' '+I18N.pcs+'</td>'+
                 '<td style="text-align:right;font-weight:700;color:var(--success);">RWF '+moneySpan(p.revenue)+'</td>'+
                 '</tr>';
         });
     } else {
-        html = '<tr><td colspan="5" style="padding:30px;text-align:center;color:var(--secondary);">No sales data yet</td></tr>';
+        html = '<tr><td colspan="5" style="padding:30px;text-align:center;color:var(--secondary);">'+I18N.noSalesDataYet+'</td></tr>';
     }
     set('d-top-tbody', html);
 }
 
 function buildAlerts(d) {
     var alerts = [];
-    if (d.low_stock.length > 0) alerts.push({type:'warning', icon:'⚠️', title:'Low Stock Alert',
-        message:'You have '+d.low_stock.length+' product(s) below reorder level. Check stock management.', link:'stock.php'});
-    if (d.retail_empty > 0) alerts.push({type:'info', icon:'🛒', title:'Retail Stock Empty',
-        message:d.retail_empty+' product(s) have no pieces in retail shop. Move stock from warehouse.', link:'stock.php'});
-    if (d.today_t === 0) alerts.push({type:'info', icon:'📉', title:'No Sales Today',
-        message:"You haven't recorded any sales today. Start selling!", link:'sales.php'});
+    if (d.low_stock.length > 0) alerts.push({type:'warning', icon:'⚠️', title:I18N.lowStockAlert,
+        message:I18N.lowStockMessage.replace('{count}', d.low_stock.length), link:'stock.php'});
+    if (d.retail_empty > 0) alerts.push({type:'info', icon:'🛒', title:I18N.retailStockEmpty,
+        message:I18N.retailStockEmptyMessage.replace('{count}', d.retail_empty), link:'stock.php'});
+    if (d.today_t === 0) alerts.push({type:'info', icon:'📉', title:I18N.noSalesToday,
+        message:I18N.noSalesTodayMessage, link:'sales.php'});
 
     if (alerts.length === 0) { set('d-alerts', ''); return; }
 
     var html = '<div class="alerts-container">'+
         '<h3 onclick="toggleAlerts()" style="cursor:pointer;user-select:none;">'+
-        '<span style="display:flex;align-items:center;gap:10px;">Notifications &amp; Alerts '+
-        '<span class="badge-count">'+alerts.length+' new</span></span>'+
+        '<span style="display:flex;align-items:center;gap:10px;">'+I18N.notificationsAlerts+' '+
+        '<span class="badge-count">'+alerts.length+' '+I18N.newBadge+'</span></span>'+
         '<span id="alertsChevron" style="font-size:12px;color:var(--secondary);transition:transform .2s;">&#9654;</span></h3>'+
         '<div id="alertsBody" style="display:none;">';
     alerts.forEach(function(a) {
@@ -519,7 +568,7 @@ function buildAlerts(d) {
             '<div class="alert-content">'+
             '<div class="alert-title">'+escHtml(a.title)+'</div>'+
             '<div class="alert-message">'+escHtml(a.message)+'</div>'+
-            '<a href="'+a.link+'" class="alert-link">Take action →</a>'+
+            '<a href="'+a.link+'" class="alert-link">'+I18N.takeAction+'</a>'+
             '</div></div>';
     });
     html += '</div></div>';
@@ -532,7 +581,7 @@ function buildChart(labels, revenue, cost, profit) {
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     try {
         var datasets = [{
-            label: 'Revenue',
+            label: I18N.revenue,
             data: revenue,
             backgroundColor: 'rgba(40,167,69,0.7)',
             borderColor: 'rgba(40,167,69,1)',
@@ -540,14 +589,14 @@ function buildChart(labels, revenue, cost, profit) {
         }];
         if (canSeeFinancials && cost !== null) {
             datasets.push({
-                label: 'Cost',
+                label: I18N.cost,
                 data: cost,
                 backgroundColor: 'rgba(220,53,69,0.7)',
                 borderColor: 'rgba(220,53,69,1)',
                 borderWidth: 1
             });
             datasets.push({
-                label: 'Profit',
+                label: I18N.profit,
                 data: profit,
                 type: 'line',
                 borderColor: 'rgba(102,126,234,1)',
@@ -592,7 +641,7 @@ function escHtml(s) {
 // ── Collection widget ────────────────────────────────────────────────────────
 function dateLabel(from, to) {
     if (from === to) {
-        if (from === collToday) return 'Today';
+        if (from === collToday) return I18N.today;
         return new Date(from+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     }
     return new Date(from+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
@@ -609,19 +658,19 @@ function renderCollection(d) {
         var cPct = Math.round(d.cash/total*100), mPct = Math.round(d.momo/total*100), lPct = 100-cPct-mPct;
         document.getElementById('coll-cash-amount').textContent = 'RWF '+numAbbr(d.cash);
         document.getElementById('coll-cash-bar').style.width    = cPct+'%';
-        document.getElementById('coll-cash-pct').textContent    = cPct+'% of total';
+        document.getElementById('coll-cash-pct').textContent    = cPct+I18N.pctOfTotal;
         document.getElementById('coll-momo-amount').textContent = 'RWF '+numAbbr(d.momo);
         document.getElementById('coll-momo-bar').style.width    = mPct+'%';
-        document.getElementById('coll-momo-pct').textContent    = mPct+'% of total';
+        document.getElementById('coll-momo-pct').textContent    = mPct+I18N.pctOfTotal;
         document.getElementById('coll-loan-amount').textContent = 'RWF '+numAbbr(d.loan);
         document.getElementById('coll-loan-bar').style.width    = lPct+'%';
-        document.getElementById('coll-loan-pct').textContent    = lPct+'% deferred';
+        document.getElementById('coll-loan-pct').textContent    = lPct+I18N.pctDeferred;
         document.getElementById('coll-data').style.display  = 'block';
         document.getElementById('coll-empty').style.display = 'none';
     } else {
         document.getElementById('coll-data').style.display  = 'none';
         document.getElementById('coll-empty').style.display = 'block';
-        document.getElementById('coll-empty').querySelector('div:nth-child(2)').textContent = 'No sales recorded for this period';
+        document.getElementById('coll-empty').querySelector('div:nth-child(2)').textContent = I18N.noSalesRecordedForPeriod;
     }
 }
 window.fetchCollection = function(from, to, userId) {
@@ -654,22 +703,22 @@ window.toggleAlerts = function() {
 window.recalcStockValues = function(e) {
     if (e) e.preventDefault();
     var link = document.getElementById('d-cost-recalc');
-    if (link) link.textContent = 'Calculating…';
+    if (link) link.textContent = I18N.calculating;
     fetch('ajax_recalc_stock.php')
         .then(function(r) { return r.json(); })
         .then(function(d) {
             set('d-cost-total', 'RWF ' + moneySpan(d.cost_total));
             set('d-sell-total', 'RWF ' + moneySpan(d.sell_total));
-            var updatedLabel = d.updated_at ? 'Updated ' + new Date(d.updated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+            var updatedLabel = d.updated_at ? I18N.updated + ' ' + new Date(d.updated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
             set('d-cost-footer',
-                'Warehouse: RWF ' + moneySpan(d.cost_wh) + ' | Retail: RWF ' + moneySpan(d.cost_rt) +
+                I18N.warehouse+': RWF ' + moneySpan(d.cost_wh) + ' | ' + I18N.retail + ': RWF ' + moneySpan(d.cost_rt) +
                 '<div style="margin-top:4px;display:flex;align-items:center;gap:8px;">' +
                 '<span style="font-size:10px;color:#9ca3af;">' + updatedLabel + '</span>' +
-                '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">Recalculate</a>' +
+                '<a href="#" id="d-cost-recalc" style="font-size:10px;color:#667eea;text-decoration:none;" onclick="recalcStockValues(event)">' + I18N.recalculate + '</a>' +
                 '</div>');
-            set('d-sell-footer', 'Warehouse: RWF ' + moneySpan(d.sell_wh) + ' | Retail: RWF ' + moneySpan(d.sell_rt));
+            set('d-sell-footer', I18N.warehouse+': RWF ' + moneySpan(d.sell_wh) + ' | ' + I18N.retail + ': RWF ' + moneySpan(d.sell_rt));
         })
-        .catch(function() { if (link) link.textContent = 'Recalculate'; });
+        .catch(function() { if (link) link.textContent = I18N.recalculate; });
 };
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────

@@ -731,6 +731,11 @@ $stats_outstanding = $stats['total_amount'] - $stats['total_paid'];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#103060">
+    <link rel="icon" type="image/png" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script src="pwa.js" defer></script>
     <title>Loans</title>
     <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <link rel="stylesheet" href="css/loans.css?v=<?php echo filemtime(__DIR__ . '/css/loans.css'); ?>">
@@ -1299,12 +1304,18 @@ function exportClientLoans() {
         var status  = balance <= 0 ? 'Paid' : (parseFloat(l.total_paid) > 0 ? 'Partial' : 'Unpaid');
         totalLoaned += parseFloat(l.amount);
         totalPaid   += parseFloat(l.total_paid);
+        var cartItems = null;
+        try { cartItems = l.cart ? JSON.parse(l.cart) : null; } catch (e) { cartItems = null; }
+        var qty = (cartItems && cartItems.length > 1)
+            ? cartItems.reduce(function(sum, ci) { return sum + (parseFloat(ci.quantity) || 0); }, 0)
+            : (l.qty || 0);
         waLines.push((i+1) + '. ' + l.loan_date + ' | ' + (l.product_category||'') + '-' + (l.product_name||'?') +
-            '\n   Loaned: RWF ' + parseFloat(l.amount).toLocaleString() +
+            '\n   Qty: ' + qty +
+            '  Loaned: RWF ' + parseFloat(l.amount).toLocaleString() +
             '  Paid: RWF ' + parseFloat(l.total_paid).toLocaleString() +
             '  Balance: RWF ' + Math.abs(balance).toLocaleString() + ' (' + status + ')');
         var createdAt = l.created_at ? l.created_at.replace('T',' ').substring(0,16) : '—';
-        pdfRows.push([(i+1), l.loan_date, (l.product_category||'')+'-'+(l.product_name||'?'),
+        pdfRows.push([(i+1), l.loan_date, (l.product_category||'')+'-'+(l.product_name||'?'), qty,
             parseFloat(l.amount).toLocaleString(), parseFloat(l.total_paid).toLocaleString(),
             Math.abs(balance).toLocaleString(), status, createdAt, l.given_by_name||'—']);
     });
@@ -1315,9 +1326,9 @@ function exportClientLoans() {
     openShareModal({
         title: 'Loans — ' + _clName,
         subtitle: new Date().toLocaleDateString(),
-        headers: ['#', 'Date', 'Product', 'Loaned (RWF)', 'Paid (RWF)', 'Balance (RWF)', 'Status', 'Created At', 'Given By'],
+        headers: ['#', 'Date', 'Product', 'Qty', 'Loaned (RWF)', 'Paid (RWF)', 'Balance (RWF)', 'Status', 'Created At', 'Given By'],
         rows: pdfRows,
-        footer: ['', '', 'Total (' + filtered.length + ')', totalLoaned.toLocaleString(), totalPaid.toLocaleString(), Math.abs(outstanding).toLocaleString(), '', '', '']
+        footer: ['', '', 'Total (' + filtered.length + ')', '', totalLoaned.toLocaleString(), totalPaid.toLocaleString(), Math.abs(outstanding).toLocaleString(), '', '', '']
     }, waLines.join('\n'));
 }
 
@@ -1872,8 +1883,8 @@ function renderClientLoans() {
     var totalLoaned = 0, totalPaid = 0;
     filtered.forEach(function(l) { totalLoaned += parseFloat(l.amount); totalPaid += parseFloat(l.total_paid); });
 
-    var html = '<table class="table" style="font-size:13px;min-width:860px;">' +
-        '<thead><tr><th></th><th>#</th><th>Loan Date</th><th>Product</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Created At</th><th>Given By</th></tr></thead><tbody>';
+    var html = '<table class="table" style="font-size:13px;min-width:900px;">' +
+        '<thead><tr><th></th><th>#</th><th>Loan Date</th><th>Product</th><th>Qty</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Created At</th><th>Given By</th></tr></thead><tbody>';
 
     pageRows.forEach(function(l, idx) {
         var balance = parseFloat(l.amount) - parseFloat(l.total_paid);
@@ -1895,15 +1906,17 @@ function renderClientLoans() {
             : '';
         var cartItems = null;
         try { cartItems = l.cart ? JSON.parse(l.cart) : null; } catch (e) { cartItems = null; }
-        var productCell;
+        var productCell, qtyCell;
         if (cartItems && cartItems.length > 1) {
             productCell =
                 '<div style="font-size:11px;color:var(--secondary);margin-bottom:2px;">' +
                     _escHtml(l.product_category || '') + ' &middot; ' + cartItems.length + ' items' +
                 '</div>' +
                 cartItems.map(function(ci) { return _escHtml(ci.name) + ' &times;' + ci.quantity; }).join('<br>');
+            qtyCell = cartItems.reduce(function(sum, ci) { return sum + (parseFloat(ci.quantity) || 0); }, 0);
         } else {
             productCell = _escHtml(l.product_category || '') + '-' + _escHtml(l.product_name || '—');
+            qtyCell = l.qty || 0;
         }
         html += '<tr>' +
             '<td><div class="act-menu-wrap"><button class="act-btn" title="Actions" onclick="toggleActMenu(this)">&#8942;</button>' +
@@ -1914,6 +1927,7 @@ function renderClientLoans() {
             '<td style="color:var(--secondary);">' + (start + idx + 1) + '</td>' +
             '<td style="white-space:nowrap;">' + l.loan_date + '</td>' +
             '<td>' + productCell + '</td>' +
+            '<td style="text-align:center;">' + qtyCell + '</td>' +
             '<td>RWF ' + parseFloat(l.amount).toLocaleString() + '</td>' +
             '<td>RWF ' + parseFloat(l.total_paid).toLocaleString() + '</td>' +
             '<td class="' + (balance > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(balance).toLocaleString() + '</strong></td>' +
@@ -1925,7 +1939,7 @@ function renderClientLoans() {
 
     var outstanding = totalLoaned - totalPaid;
     html += '</tbody><tfoot><tr style="font-weight:600;background:var(--gray-50);">' +
-        '<td colspan="4" style="padding:10px 12px;">Total (' + filtered.length + ')</td>' +
+        '<td colspan="5" style="padding:10px 12px;">Total (' + filtered.length + ')</td>' +
         '<td>RWF ' + totalLoaned.toLocaleString() + '</td>' +
         '<td>RWF ' + totalPaid.toLocaleString() + '</td>' +
         '<td class="' + (outstanding > 0 ? 'has-balance' : 'cleared') + '"><strong>RWF ' + Math.abs(outstanding).toLocaleString() + '</strong></td>' +

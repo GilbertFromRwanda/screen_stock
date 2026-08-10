@@ -229,7 +229,12 @@ $purchases = mysqli_query($conn, "
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchases - Small Stock Management</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#103060">
+    <link rel="icon" type="image/png" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script src="pwa.js" defer></script>
+    <title>Purchases - GilStock</title>
     <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <style>
         /* ── Page header ──────────────────────────────────────────────────── */

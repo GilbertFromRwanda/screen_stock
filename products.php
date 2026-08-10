@@ -4,6 +4,32 @@ require_once 'config.php';
 if (!isLoggedIn()) redirect('login.php');
 if (!hasPermission('inventory')) { $_SESSION['flash_error'] = "You don't have permission to access Inventory."; redirect('dashboard.php'); }
 
+// ── Unit Measure <select> options: a fixed common list plus "Other…" for
+// anything not on it (custom text is captured via the paired free-text input).
+// Each option carries a data-icon so the JS can swap the Font Awesome icon
+// shown next to the select to match whichever unit is picked.
+function unit_measure_options() {
+    $common = [
+        'Box'    => 'fa-box',
+        'Piece'  => 'fa-cube',
+        'Pack'   => 'fa-box-open',
+        'Carton' => 'fa-boxes-stacked',
+        'Bag'    => 'fa-shopping-bag',
+        'Sack'   => 'fa-basket-shopping',
+        'Kg'     => 'fa-weight-hanging',
+        'Litre'  => 'fa-droplet',
+        'Bottle' => 'fa-wine-bottle',
+        'Dozen'  => 'fa-layer-group',
+        'Pair'   => 'fa-clone',
+        'Set'    => 'fa-shapes',
+        'Roll'   => 'fa-scroll',
+    ];
+    $html = '';
+    foreach ($common as $u => $icon) $html .= "<option value=\"$u\" data-icon=\"$icon\">$u</option>";
+    $html .= '<option value="__other__" data-icon="fa-ruler-combined">Other&hellip;</option>';
+    return $html;
+}
+
 // ── XLSX parser using built-in ZipArchive + SimpleXML ─────────────────────────
 function xlsx_col_index($ref) {
     preg_match('/^([A-Z]+)/', strtoupper($ref), $m);
@@ -149,24 +175,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
     exit;
 }
 
-// Handle Add Product
+// Handle Add Product (accepts a comma-separated list of names, e.g. "Rice I, Rice
+// II, Rice III" — all inserted separately under the same category/reorder
+// level/unit measure/unit price)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
-    $name          = mysqli_real_escape_string($conn, $_POST['name']);
+    $names = array_filter(array_map('trim', explode(',', $_POST['name'] ?? '')), fn($n) => $n !== '');
     [$category_id, $category_name] = resolve_category($conn, $_POST['category'] ?? '');
     $category      = mysqli_real_escape_string($conn, $category_name);
     $category_id_v = $category_id !== null ? (int)$category_id : 'NULL';
     $reorder_level = mysqli_real_escape_string($conn, $_POST['reorder_level']);
     $unit_measure  = mysqli_real_escape_string($conn, $_POST['unit_measure']);
-    $unit_price    = mysqli_real_escape_string($conn, $_POST['unit_price']);
+    $unit_price_raw = trim($_POST['unit_price'] ?? '');
+    $unit_price_v   = $unit_price_raw === '' ? 'NULL' : "'" . mysqli_real_escape_string($conn, $unit_price_raw) . "'";
 
-    if (product_exists($conn, $name, $category)) {
-        $_SESSION['flash_error'] = "A product named \"$name\" already exists in the \"$category\" category.";
-    } elseif (mysqli_query($conn, "INSERT INTO products (name, category, category_id, reorder_level, unit_measure, unit_price)
-                              VALUES ('$name','$category',$category_id_v,'$reorder_level','$unit_measure','$unit_price')")) {
-        touchCacheStore($conn, 'products');
-        $_SESSION['flash_success'] = "Product added successfully";
+    if (empty($names)) {
+        $_SESSION['flash_error'] = "Product name is required.";
     } else {
-        $_SESSION['flash_error'] = "Error adding product: " . mysqli_error($conn);
+        $added = $duplicates = [];
+        foreach ($names as $name) {
+            if (product_exists($conn, $name, $category)) { $duplicates[] = $name; continue; }
+            $n = mysqli_real_escape_string($conn, $name);
+            if (mysqli_query($conn, "INSERT INTO products (name, category, category_id, reorder_level, unit_measure, unit_price)
+                                      VALUES ('$n','$category',$category_id_v,'$reorder_level','$unit_measure',$unit_price_v)")) {
+                $added[] = $name;
+            }
+        }
+        if ($added) touchCacheStore($conn, 'products');
+
+        if (empty($added)) {
+            $_SESSION['flash_error'] = "Already exists: " . implode(', ', $duplicates) . ".";
+        } else {
+            $msg = (count($added) === 1 ? "Product \"{$added[0]}\" added successfully" : 'Added: ' . implode(', ', $added) . '.');
+            if ($duplicates) $msg .= ' Already existed: ' . implode(', ', $duplicates) . '.';
+            $_SESSION['flash_success'] = $msg;
+        }
     }
     header("Location: products.php");
     exit;
@@ -184,19 +226,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $category_id_v = $category_id !== null ? (int)$category_id : 'NULL';
     $reorder_level = mysqli_real_escape_string($conn, $_POST['edit_reorder_level']);
     $unit_measure  = mysqli_real_escape_string($conn, $_POST['edit_unit_measure']);
-    $unit_price    = mysqli_real_escape_string($conn, $_POST['edit_unit_price']);
+    $unit_price_raw = trim($_POST['edit_unit_price'] ?? '');
+    $unit_price_v   = $unit_price_raw === '' ? 'NULL' : "'" . mysqli_real_escape_string($conn, $unit_price_raw) . "'";
 
     $old_product = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id,name,category,reorder_level,unit_measure,unit_price FROM products WHERE id=$id")) ?: [];
 
     if (product_exists($conn, $name, $category, $id)) {
         $_SESSION['flash_error'] = "Another product named \"$name\" already exists in the \"$category\" category.";
     } elseif (mysqli_query($conn, "UPDATE products SET name='$name', category='$category', category_id=$category_id_v, reorder_level='$reorder_level',
-                              unit_measure='$unit_measure', unit_price='$unit_price' WHERE id=$id")) {
+                              unit_measure='$unit_measure', unit_price=$unit_price_v WHERE id=$id")) {
         touchCacheStore($conn, 'products');
         $_SESSION['flash_success'] = "Product updated successfully";
         logActivity($conn, (int)$_SESSION['user_id'], 'Edit Product', "Edited product: $name",
             'products', $id, $old_product,
-            ['name' => $name, 'category' => $category, 'reorder_level' => $reorder_level, 'unit_measure' => $unit_measure, 'unit_price' => $unit_price]
+            ['name' => $name, 'category' => $category, 'reorder_level' => $reorder_level, 'unit_measure' => $unit_measure, 'unit_price' => $unit_price_raw]
         );
     } else {
         $_SESSION['flash_error'] = "Error updating product: " . mysqli_error($conn);
@@ -242,18 +285,19 @@ function build_rows($result, $offset) {
         $um       = htmlspecialchars($row['unit_measure']);
         $js_name  = addslashes($name);
         $js_um    = addslashes($um);
+        $price_js = $row['unit_price'] === null ? 'null' : $row['unit_price'];
         $html .= "<tr>
             <td>{$i}</td>
             <td>{$name}</td>
             <td>{$cat}</td>
             <td>{$row['reorder_level']}</td>
             <td>{$um}</td>
-            <td>RWF " . number_format($row['unit_price'], 0) . "</td>
+            <td>" . ($row['unit_price'] === null ? '&mdash;' : 'RWF ' . number_format($row['unit_price'], 0)) . "</td>
             <td>
                 <div class='act-menu-wrap'>
                     <button class='act-btn' title='Actions' onclick='toggleActMenu(this)'>⋮</button>
                     <div class='act-menu'>
-                        <a class='act-item' href='#' onclick=\"editProduct({$row['id']},'$js_name'," . (int)($row['category_id'] ?? 0) . ",{$row['reorder_level']},'$js_um',{$row['unit_price']});closeActMenus()\"><i class='fas fa-pen'></i> Edit</a>
+                        <a class='act-item' href='#' onclick=\"editProduct({$row['id']},'$js_name'," . (int)($row['category_id'] ?? 0) . ",{$row['reorder_level']},'$js_um',{$price_js});closeActMenus()\"><i class='fas fa-pen'></i> Edit</a>
                         <div class='act-menu-sep'></div>
                         <a class='act-item danger' href='products.php?delete={$row['id']}' onclick=\"return confirm('Are you sure?')\"><i class='fas fa-trash'></i> Delete</a>
                     </div>
@@ -306,8 +350,14 @@ if (isset($_GET['ajax'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Products - Small Stock Management</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#103060">
+    <link rel="icon" type="image/png" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script src="pwa.js" defer></script>
+    <title>Products - GilStock</title>
     <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/all.min.css">
     <style>
         .products-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
         .search-wrap { position:relative; flex:1; min-width:200px; max-width:360px; }
@@ -328,6 +378,15 @@ if (isset($_GET['ajax'])) {
         .pagination-info { font-size:13px; color:var(--secondary); margin-top:8px; }
         #tblProducts tbody { transition: opacity .15s; }
         #tblProducts tbody.loading { opacity: .4; pointer-events:none; }
+        /* Native <select> chrome paints over anything absolutely positioned behind it,
+           so the icon sits beside the select as its own segment instead of overlapping it. */
+        .select-wrap { display:flex; align-items:stretch; border:1px solid var(--gray-200); border-radius:8px; overflow:hidden; }
+        .select-wrap .select-icon {
+            display:flex; align-items:center; justify-content:center; flex-shrink:0;
+            width:34px; background:var(--gray-100); color:var(--secondary); font-size:14px;
+        }
+        .select-wrap select { flex:1; min-width:0; border:none; border-radius:0; }
+        .select-wrap select:focus { box-shadow:none; outline:none; }
     </style>
 </head>
 <body>
@@ -383,7 +442,11 @@ if (isset($_GET['ajax'])) {
         <span class="close" onclick="closeModal('addProductModal')">&times;</span>
         <h2>Add New Product</h2>
         <form method="POST">
-            <div class="form-group"><label>Product Name*</label><input type="text" name="name" required></div>
+            <div class="form-group">
+                <label>Product Name*</label>
+                <input type="text" name="name" placeholder="e.g. Rice I, Rice II, Rice III" required>
+                <small style="color:var(--secondary);">Separate multiple names with commas to add them all under the same category/settings below.</small>
+            </div>
             <div class="form-group">
                 <label>Category</label>
                 <select id="category_select" onchange="onCategorySelect(this,'category_hidden','category_new')">
@@ -395,8 +458,19 @@ if (isset($_GET['ajax'])) {
                 <input type="hidden" name="category" id="category_hidden">
             </div>
             <div class="form-group"><label>Reorder Level*</label><input type="number" name="reorder_level" value="2" required></div>
-            <div class="form-group"><label>Unit Measure*</label><input type="text" name="unit_measure" value="Box" required></div>
-            <div class="form-group"><label>Unit Price (RWF)*</label><input type="number" name="unit_price" step="0.01" required></div>
+            <div class="form-group">
+                <label>Unit Measure*</label>
+                <div class="select-wrap">
+                    <i id="unit_measure_icon" class="fas fa-box select-icon"></i>
+                    <select id="unit_measure_select" onchange="onUnitMeasureSelect(this,'unit_measure_hidden','unit_measure_new','unit_measure_icon')">
+                        <?php echo unit_measure_options(); ?>
+                    </select>
+                </div>
+                <input type="text" id="unit_measure_new" placeholder="Custom unit measure" style="display:none;margin-top:6px;"
+                    oninput="document.getElementById('unit_measure_hidden').value=this.value">
+                <input type="hidden" name="unit_measure" id="unit_measure_hidden" value="Box">
+            </div>
+            <div class="form-group"><label>Unit Price (RWF)</label><input type="number" name="unit_price" step="0.01"></div>
             <button type="submit" name="add_product" class="btn btn-primary">Add Product</button>
         </form>
     </div>
@@ -421,8 +495,19 @@ if (isset($_GET['ajax'])) {
                 <input type="hidden" name="edit_category" id="edit_category_hidden">
             </div>
             <div class="form-group"><label>Reorder Level*</label><input type="number" id="edit_reorder_level" name="edit_reorder_level" required></div>
-            <div class="form-group"><label>Unit Measure*</label><input type="text" id="edit_unit_measure" name="edit_unit_measure" required></div>
-            <div class="form-group"><label>Unit Price (RWF)*</label><input type="number" id="edit_unit_price" name="edit_unit_price" step="0.01" required></div>
+            <div class="form-group">
+                <label>Unit Measure*</label>
+                <div class="select-wrap">
+                    <i id="edit_unit_measure_icon" class="fas fa-ruler-combined select-icon"></i>
+                    <select id="edit_unit_measure_select" onchange="onUnitMeasureSelect(this,'edit_unit_measure_hidden','edit_unit_measure_new','edit_unit_measure_icon')">
+                        <?php echo unit_measure_options(); ?>
+                    </select>
+                </div>
+                <input type="text" id="edit_unit_measure_new" placeholder="Custom unit measure" style="display:none;margin-top:6px;"
+                    oninput="document.getElementById('edit_unit_measure_hidden').value=this.value">
+                <input type="hidden" name="edit_unit_measure" id="edit_unit_measure_hidden">
+            </div>
+            <div class="form-group"><label>Unit Price (RWF)</label><input type="number" id="edit_unit_price" name="edit_unit_price" step="0.01"></div>
             <button type="submit" name="edit_product" class="btn btn-primary">Update Product</button>
         </form>
     </div>
@@ -477,6 +562,57 @@ function populateCategorySelects(cats) {
 }
 var categoriesReady = DataCache.getCategoriesList().then(populateCategorySelects);
 
+// Swaps the select-icon's Font Awesome class to match the currently selected
+// option's data-icon attribute (set per-option in unit_measure_options()).
+function updateUnitMeasureIcon(select, iconId) {
+    if (!iconId) return;
+    const icon = document.getElementById(iconId);
+    if (!icon) return;
+    const opt = select.options[select.selectedIndex];
+    icon.className = 'fas ' + (opt && opt.dataset.icon ? opt.dataset.icon : 'fa-ruler-combined') + ' select-icon';
+}
+
+// Mirrors onCategorySelect for the Unit Measure <select>: keeps the hidden
+// `unit_measure` field (what the form actually submits) in sync, revealing the
+// free-text input only when "Other…" is picked, and updates the select-icon.
+function onUnitMeasureSelect(select, hiddenId, newInputId, iconId) {
+    const hidden   = document.getElementById(hiddenId);
+    const newInput = document.getElementById(newInputId);
+    updateUnitMeasureIcon(select, iconId);
+    if (select.value === '__other__') {
+        newInput.style.display = 'block';
+        newInput.value = '';
+        hidden.value = '';
+        newInput.focus();
+    } else {
+        newInput.style.display = 'none';
+        newInput.value = '';
+        hidden.value = select.value;
+    }
+}
+
+// Sets a Unit Measure select/hidden/custom-input trio (and its icon) to an
+// existing product's value, falling back to "Other…" + the free-text input
+// when the value isn't one of the common preset options.
+function setUnitMeasureValue(selectId, hiddenId, newInputId, iconId, value) {
+    const select   = document.getElementById(selectId);
+    const newInput = document.getElementById(newInputId);
+    const hidden   = document.getElementById(hiddenId);
+    let found = false;
+    for (const opt of select.options) { if (opt.value === value) { found = true; break; } }
+    if (found) {
+        select.value = value;
+        newInput.style.display = 'none';
+        newInput.value = '';
+    } else {
+        select.value = '__other__';
+        newInput.style.display = 'block';
+        newInput.value = value;
+    }
+    hidden.value = value;
+    updateUnitMeasureIcon(select, iconId);
+}
+
 // Keeps a <select> of category ids in sync with the hidden `category` field the
 // form actually submits (its value is always the category *name*, since the
 // server resolves categories by name — see resolve_category() in products.php).
@@ -504,8 +640,8 @@ function editProduct(id, name, categoryId, reorderLevel, unitMeasure, unitPrice)
         onCategorySelect(select, 'edit_category_hidden', 'edit_category_new');
     });
     document.getElementById('edit_reorder_level').value = reorderLevel;
-    document.getElementById('edit_unit_measure').value = unitMeasure;
-    document.getElementById('edit_unit_price').value = unitPrice;
+    setUnitMeasureValue('edit_unit_measure_select', 'edit_unit_measure_hidden', 'edit_unit_measure_new', 'edit_unit_measure_icon', unitMeasure);
+    document.getElementById('edit_unit_price').value = unitPrice === null ? '' : unitPrice;
     openModal('editProductModal');
 }
 

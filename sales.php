@@ -1092,7 +1092,12 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales - Small Stock Management</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#103060">
+    <link rel="icon" type="image/png" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script src="pwa.js" defer></script>
+    <title>Sales - GilStock</title>
         <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
     <link rel="stylesheet" href="css/sales.css?v=<?php echo filemtime(__DIR__ . '/css/sales.css'); ?>">
     <link rel="stylesheet" href="css/all.min.css">
@@ -1271,11 +1276,11 @@ while ($o = mysqli_fetch_assoc($ext_owners_query)) $ext_owners_arr[] = $o;
                 <div class="alert alert-danger"><?php echo $error; ?></div>
             <?php endif; ?>
             
-            <div class="sale-action-buttons">
+            <!-- <div class="sale-action-buttons">
                 <a href="sale_bulk.php" class="btn btn-primary btn-lg">+ Kuranguza</a>
                 <a href="sale_retail.php" class="btn btn-success btn-lg">+ Gucuruza Detaye</a>
                 <a href="sale_external.php" class="btn btn-lg" style="background:var(--warning,#f59e0b);color:#fff;">+ External Sale</a>
-            </div>
+            </div> -->
 
             <!-- Summary Cards -->
             <div id="salesSummaryCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin:18px 0;">

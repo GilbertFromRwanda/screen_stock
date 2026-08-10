@@ -36,7 +36,12 @@ $page_title = $titles[$reason] ?? 'License Required';
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= htmlspecialchars($page_title) ?> — Screen System</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#103060">
+<link rel="icon" type="image/png" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script src="pwa.js" defer></script>
+<title><?= htmlspecialchars($page_title) ?> — GilStock</title>
 <link href="fonts/inter.css" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

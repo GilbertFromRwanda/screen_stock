@@ -178,17 +178,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel_file']) && isse
     exit;
 }
 
-// Handle Add Category
+// Handle Add Category (accepts a comma-separated list, e.g. "rice, oil, juice")
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_category'])) {
-    $name = trim($_POST['name'] ?? '');
-    if ($name === '') {
+    $raw   = trim($_POST['name'] ?? '');
+    $names = array_filter(array_map('trim', explode(',', $raw)), fn($n) => $n !== '');
+    if (empty($names)) {
         json_result(false, "Category name is required.");
     }
-    [$id, $resolved_name] = resolve_category($conn, $name);
-    if (strcasecmp($resolved_name, $name) !== 0) {
-        json_result(false, "A category named \"$resolved_name\" already exists.");
+
+    $existing = [];
+    foreach (get_categories($conn) as $c) $existing[strtolower($c['name'])] = true;
+
+    $added = $duplicates = [];
+    foreach ($names as $name) {
+        $key = strtolower($name);
+        if (isset($existing[$key])) { $duplicates[] = $name; continue; }
+        $existing[$key] = true;
+        [, $resolved_name] = resolve_category($conn, $name);
+        $added[] = $resolved_name;
     }
-    json_result(true, "Category \"$resolved_name\" added.");
+
+    if (empty($added)) {
+        json_result(false, "Already exists: " . implode(', ', $duplicates) . ".");
+    }
+
+    $msg = (count($added) === 1 ? "Category \"{$added[0]}\" added." : 'Added: ' . implode(', ', $added) . '.');
+    if ($duplicates) $msg .= ' Already existed: ' . implode(', ', $duplicates) . '.';
+    json_result(true, $msg);
 }
 
 // Handle Rename Category
@@ -268,8 +284,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_category'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Categories - Small Stock Management</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#103060">
+    <link rel="icon" type="image/png" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script src="pwa.js" defer></script>
+    <title>Categories - GilStock</title>
     <link rel="stylesheet" href="css/style.css?v=<?php echo filemtime(__DIR__ . '/css/style.css'); ?>">
+    <link rel="stylesheet" href="css/all.min.css">
     <style>
         .products-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
         .search-wrap { position:relative; flex:1; min-width:200px; max-width:360px; }
@@ -317,7 +339,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_category'])) {
         <span class="close" onclick="closeModal('addCategoryModal')">&times;</span>
         <h2>Add Category</h2>
         <form id="addCategoryForm">
-            <div class="form-group"><label>Name*</label><input type="text" name="name" required></div>
+            <div class="form-group">
+                <label>Name*</label>
+                <input type="text" name="name" placeholder="e.g. rice, oil, juice" required>
+                <small style="color:var(--secondary);">Separate multiple names with commas to add them all at once.</small>
+            </div>
             <button type="submit" class="btn btn-primary">Add Category</button>
         </form>
     </div>
@@ -431,7 +457,7 @@ document.getElementById('addCategoryForm').addEventListener('submit', function(e
     postAjax(fd).then(res => {
         restore();
         showFlash(res.success, res.message);
-        if (res.success) { closeModal('addCategoryModal'); form.reset(); refreshCategories(); }
+        if (res.success) { closeModal('addCategoryModal'); form.reset(); location.reload(); }
     }).catch(() => { restore(); showFlash(false, 'Network error. Please try again.'); });
 });
 

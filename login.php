@@ -37,6 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             $_SESSION['role']       = $user['role'];
             $_SESSION['company_id']      = $user['company_id'] ?? null;
             $_SESSION['viewing_all_mine'] = false;
+            // The user's saved preference wins over whatever language they had
+            // picked on the login screen before authenticating.
+            if (array_key_exists($user['language'] ?? '', SUPPORTED_LANGUAGES)) {
+                $_SESSION['language'] = $user['language'];
+            }
 
             // Default the viewing company to home if the user still has access to it
             // (home access can be revoked from users.php's Company Access modal, same
@@ -70,11 +75,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
 ?>
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= htmlspecialchars(currentLang()) ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Screen Stock Management — Sign In</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#103060">
+    <link rel="icon" type="image/png" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script src="pwa.js" defer></script>
+    <title>GilStock Management — <?= t('login_sign_in') ?></title>
     <link href="fonts/inter.css" rel="stylesheet">
     <link href="css/all.min.css" rel="stylesheet">
     <style>
@@ -236,6 +246,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             .auth-features li .feat-icon { transition: none; }
         }
         .auth-left-footer { font-size: 11.5px; color: rgba(255,255,255,0.22); }
+
+        .lang-switch { position: absolute; top: 20px; right: 24px; z-index: 2; }
+        .lang-switch select {
+            background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2);
+            color: #fff; font-size: 12px; font-weight: 600; font-family: inherit;
+            padding: 5px 10px; border-radius: 6px; cursor: pointer;
+        }
+        .lang-switch select option { background: #103060; color: #fff; }
+        .lang-switch-mobile { display: none; }
+        .lang-switch-mobile select {
+            background: #f8fafc; border: 1.5px solid #e2e8f0; color: #334155;
+            font-size: 12px; font-weight: 600; font-family: inherit;
+            padding: 5px 10px; border-radius: 6px; cursor: pointer;
+        }
 
         /* ══ RIGHT PANEL ══ */
         .auth-right {
@@ -461,6 +485,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             }
             .mobile-logo { display: flex; }
             .login-box { max-width: 100%; }
+            .lang-switch-mobile { display: flex; justify-content: flex-end; margin-bottom: 16px; }
         }
 
         @media (max-width: 400px) {
@@ -474,6 +499,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
 
     <!-- LEFT -->
     <div class="auth-left">
+        <form method="POST" action="switch_language.php" class="lang-switch">
+            <input type="hidden" name="return" value="login.php">
+            <select name="language" onchange="this.form.submit()">
+                <?php foreach (SUPPORTED_LANGUAGES as $code => $label): ?>
+                    <option value="<?= htmlspecialchars($code) ?>" <?= currentLang() === $code ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </form>
         <div class="auth-logo">
             <div class="auth-logo-icon">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -481,44 +514,53 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                     <path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2Z" opacity=".6"/>
                 </svg>
             </div>
-            <span class="auth-logo-text">Screen Stock</span>
+            <span class="auth-logo-text">GilStock</span>
         </div>
 
         <div class="auth-copy">
-            <h2>Manage your<br>stock with ease.</h2>
-            <p class="tagline">A unified platform for inventory control, sales tracking, and financial reporting — all in one place.</p>
+            <h2><?= htmlspecialchars(t('login_heading')) ?></h2>
+            <p class="tagline"><?= htmlspecialchars(t('login_tagline')) ?></p>
 
             <ul class="auth-features">
                 <li>
                     <span class="feat-icon"><i class="fas fa-boxes-stacked"></i></span>
                     <div class="feat-text">
-                        <strong>Real-Time Inventory</strong>
-                        <span>Track stock levels across every product line</span>
+                        <strong><?= htmlspecialchars(t('feat_inventory_title')) ?></strong>
+                        <span><?= htmlspecialchars(t('feat_inventory_desc')) ?></span>
                     </div>
                 </li>
                 <li>
                     <span class="feat-icon"><i class="fas fa-chart-line"></i></span>
                     <div class="feat-text">
-                        <strong>Sales &amp; Purchase Analytics</strong>
-                        <span>Revenue, profit and trends at a glance</span>
+                        <strong><?= htmlspecialchars(t('feat_analytics_title')) ?></strong>
+                        <span><?= htmlspecialchars(t('feat_analytics_desc')) ?></span>
                     </div>
                 </li>
                 <li>
                     <span class="feat-icon"><i class="fas fa-truck-fast"></i></span>
                     <div class="feat-text">
-                        <strong>Supplier &amp; Expense Management</strong>
-                        <span>Keep purchases, loans and costs in one place</span>
+                        <strong><?= htmlspecialchars(t('feat_supplier_title')) ?></strong>
+                        <span><?= htmlspecialchars(t('feat_supplier_desc')) ?></span>
                     </div>
                 </li>
             </ul>
         </div>
 
-        <p class="auth-left-footer">&copy; <?= date('Y') ?> Screen Stock Management. All rights reserved.</p>
+        <p class="auth-left-footer">&copy; <?= date('Y') ?> GilStock Management. All rights reserved.</p>
     </div>
 
     <!-- RIGHT -->
     <div class="auth-right">
         <div class="login-box">
+
+            <form method="POST" action="switch_language.php" class="lang-switch-mobile">
+                <input type="hidden" name="return" value="login.php">
+                <select name="language" onchange="this.form.submit()">
+                    <?php foreach (SUPPORTED_LANGUAGES as $code => $label): ?>
+                        <option value="<?= htmlspecialchars($code) ?>" <?= currentLang() === $code ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
 
             <div class="mobile-logo">
                 <div class="mobile-logo-icon">
@@ -527,11 +569,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                         <path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2Z" opacity=".6"/>
                     </svg>
                 </div>
-                <strong>Screen Stock</strong>
+                <strong>GilStock</strong>
             </div>
 
-            <h1>Welcome back</h1>
-            <p class="subtitle">Sign in to your account to continue</p>
+            <h1><?= htmlspecialchars(t('login_welcome')) ?></h1>
+            <p class="subtitle"><?= htmlspecialchars(t('login_subtitle')) ?></p>
 
             <div class="alert-error" id="login-error" style="display:none" aria-live="polite">
                 <i class="fas fa-circle-exclamation"></i>
@@ -541,29 +583,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
             <form id="login-form" autocomplete="on" novalidate>
 
                 <div class="field">
-                    <label for="username">Username</label>
+                    <label for="username"><?= htmlspecialchars(t('login_username')) ?></label>
                     <div class="input-wrap">
                         <i class="fas fa-user input-icon"></i>
-                        <input type="text" id="username" name="username" placeholder="Enter your username" required autocomplete="username">
+                        <input type="text" id="username" name="username" placeholder="<?= htmlspecialchars(t('login_username_ph')) ?>" required autocomplete="username">
                     </div>
                 </div>
 
                 <div class="field">
-                    <label for="password">Password</label>
+                    <label for="password"><?= htmlspecialchars(t('login_password')) ?></label>
                     <div class="input-wrap">
                         <i class="fas fa-lock input-icon"></i>
-                        <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+                        <input type="password" id="password" name="password" placeholder="<?= htmlspecialchars(t('login_password_ph')) ?>" required autocomplete="current-password">
                         <button type="button" class="toggle-pw" aria-label="Toggle password visibility" onclick="togglePassword()">
                             <i class="fas fa-eye" id="eye-icon"></i>
                         </button>
                     </div>
                 </div>
 
-                <button type="submit" id="submit-btn" class="btn-signin"><i class="fas fa-arrow-right-to-bracket"></i><span>Sign In</span></button>
+                <button type="submit" id="submit-btn" class="btn-signin"><i class="fas fa-arrow-right-to-bracket"></i><span><?= htmlspecialchars(t('login_sign_in')) ?></span></button>
             </form>
 
             <div class="powered-by">
-                &copy; <?= date('Y') ?> Powered by <span>Eng Gilbert</span><br>
+                &copy; <?= date('Y') ?> <?= htmlspecialchars(t('login_powered_by')) ?> <span>Eng Gilbert</span><br>
                 <a href="mailto:askforgilbert@gmail.com">askforgilbert@gmail.com</a>
             </div>
 
@@ -571,6 +613,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
     </div>
 
     <script>
+        var I18N = {
+            signIn: <?= json_encode(t('login_sign_in')) ?>,
+            signingIn: <?= json_encode(t('login_signing_in')) ?>,
+            redirecting: <?= json_encode(t('login_redirecting')) ?>,
+            networkError: <?= json_encode(t('login_network_error')) ?>
+        };
+
         function togglePassword() {
             const input = document.getElementById('password');
             const icon  = document.getElementById('eye-icon');
@@ -588,7 +637,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
 
             // Loading state
             btn.disabled = true;
-            btn.innerHTML = '<span class="btn-spinner"></span><span>Signing in…</span>';
+            btn.innerHTML = '<span class="btn-spinner"></span><span>' + I18N.signingIn + '</span>';
             errorBox.style.display = 'none';
 
             try {
@@ -601,21 +650,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_SERVER['HTTP_X_REQUESTED_WIT
                 const data = await res.json();
 
                 if (data.success) {
-                    btn.innerHTML = '<span>Redirecting…</span>';
+                    btn.innerHTML = '<span>' + I18N.redirecting + '</span>';
                     window.location.href = data.redirect;
                 } else {
                     errorText.textContent = data.error;
                     errorBox.style.display = 'flex';
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i><span>Sign In</span>';
+                    btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i><span>' + I18N.signIn + '</span>';
                     document.getElementById('password').value = '';
                     document.getElementById('password').focus();
                 }
             } catch {
-                errorText.textContent = 'Network error — please try again.';
+                errorText.textContent = I18N.networkError;
                 errorBox.style.display = 'flex';
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i><span>Sign In</span>';
+                btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i><span>' + I18N.signIn + '</span>';
             }
         });
     </script>

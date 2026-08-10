@@ -57,8 +57,8 @@ if ($_nav_settings['enable_ip']) {
 
         <!-- Brand -->
         <a href="dashboard.php" class="topnav-brand">
-            <div class="topnav-brand-icon">SS</div>
-            <span class="topnav-brand-text">Screen<span>Stock</span></span>
+            <div class="topnav-brand-icon">GS</div>
+            <span class="topnav-brand-text">Gil<span>Stock</span></span>
         </a>
 
         <!-- Hamburger (mobile) -->
@@ -67,22 +67,30 @@ if ($_nav_settings['enable_ip']) {
         <!-- Nav links -->
         <div class="topnav-menu" id="topnavMenu">
 
-            <a href="dashboard.php" class="tn-item<?= $current_page==='dashboard.php' ? ' active':'' ?>">&#9635; Dashboard</a>
+            <a href="dashboard.php" class="tn-item<?= $current_page==='dashboard.php' ? ' active':'' ?>">&#9635; <?= t('nav_dashboard') ?></a>
 
-            <?php $ia = in_array($current_page,['products.php','categories.php','stock.php','stock_adjust.php','zero_stock.php']);
-                  $has_inv = hasPermission('inventory'); $has_sa = hasPermission('stock_adjust'); ?>
-            <?php if ($has_inv || $has_sa): ?>
+            <?php $ia = in_array($current_page,['products.php','categories.php','pricing.php','stock.php','stock_adjust.php','zero_stock.php','losses.php','consumption.php']);
+                  $has_inv = hasPermission('inventory'); $has_sa = hasPermission('stock_adjust');
+                  $has_los = hasPermission('losses'); $has_con = hasPermission('consumption'); ?>
+            <?php if ($has_inv || $has_sa || $has_los || $has_con): ?>
             <div class="tn-dropdown<?= $ia?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">&#9643; Inventory <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button">&#9643; <?= t('nav_inventory') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <?php if ($has_inv): ?>
-                    <a href="products.php"   class="tn-drop-item<?= $current_page==='products.php'  ?' active':'' ?>">View Product List</a>
-                    <a href="categories.php" class="tn-drop-item<?= $current_page==='categories.php'?' active':'' ?>">Manage Categories</a>
-                    <a href="stock.php"      class="tn-drop-item<?= $current_page==='stock.php'     ?' active':'' ?>">View Stock</a>
+                    <a href="products.php"   class="tn-drop-item<?= $current_page==='products.php'  ?' active':'' ?>"><?= t('nav_view_products') ?></a>
+                    <a href="categories.php" class="tn-drop-item<?= $current_page==='categories.php'?' active':'' ?>"><?= t('nav_categories') ?></a>
+                    <a href="pricing.php"    class="tn-drop-item<?= $current_page==='pricing.php'   ?' active':'' ?>"><?= t('nav_price_list') ?></a>
+                    <a href="stock.php"      class="tn-drop-item<?= $current_page==='stock.php'     ?' active':'' ?>"><?= t('nav_view_stock') ?></a>
                     <?php endif; ?>
                     <?php if ($has_sa): ?>
-                    <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>">Adjust Stock</a>
-                    <a href="zero_stock.php"   class="tn-drop-item<?= $current_page==='zero_stock.php'  ?' active':'' ?>">Restock</a>
+                    <a href="stock_adjust.php" class="tn-drop-item<?= $current_page==='stock_adjust.php'?' active':'' ?>"><?= t('nav_adjust_stock') ?></a>
+                    <a href="zero_stock.php"   class="tn-drop-item<?= $current_page==='zero_stock.php'  ?' active':'' ?>"><?= t('nav_restock') ?></a>
+                    <?php endif; ?>
+                    <?php if ($has_los): ?>
+                    <a href="losses.php"      class="tn-drop-item<?= $current_page==='losses.php'     ?' active':'' ?>">&#10005; <?= t('nav_loss') ?></a>
+                    <?php endif; ?>
+                    <?php if ($has_con): ?>
+                    <a href="consumption.php" class="tn-drop-item<?= $current_page==='consumption.php'?' active':'' ?>">&#9663; <?= t('nav_consumption') ?></a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -92,14 +100,14 @@ if ($_nav_settings['enable_ip']) {
                   $has_pur = hasPermission('purchases'); ?>
             <?php if ($has_pur): ?>
             <div class="tn-dropdown<?= $pa?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">&#10549; Purchases <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button">&#10549; <?= t('nav_purchases') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
-                    <a href="purchases.php"       class="tn-drop-item<?= $current_page==='purchases.php'       ?' active':'' ?>">View All</a>
+                    <a href="purchases.php"       class="tn-drop-item<?= $current_page==='purchases.php'       ?' active':'' ?>"><?= t('nav_view_all') ?></a>
                     <?php if (hasPermission('purchases','create')): ?>
-                    <a href="new-purchase.php"    class="tn-drop-item<?= $current_page==='new-purchase.php'    ?' active':'' ?>">New Purchase</a>
+                    <a href="new-purchase.php"    class="tn-drop-item<?= $current_page==='new-purchase.php'    ?' active':'' ?>"><?= t('nav_new_purchase') ?></a>
                     <?php endif; ?>
-                    <a href="purchase_advice.php" class="tn-drop-item<?= $current_page==='purchase_advice.php' ?' active':'' ?>">Purchase Advice</a>
-                    <a href="wishlist.php"         class="tn-drop-item<?= $current_page==='wishlist.php'        ?' active':'' ?>">&#9733; Wishlist</a>
+                    <a href="purchase_advice.php" class="tn-drop-item<?= $current_page==='purchase_advice.php' ?' active':'' ?>"><?= t('nav_purchase_advice') ?></a>
+                    <a href="wishlist.php"         class="tn-drop-item<?= $current_page==='wishlist.php'        ?' active':'' ?>">&#9733; <?= t('nav_wishlist') ?></a>
                 </div>
             </div>
             <?php endif; ?>
@@ -108,15 +116,30 @@ if ($_nav_settings['enable_ip']) {
                   $has_sal = hasPermission('sales'); ?>
             <?php if ($has_sal): ?>
             <div class="tn-dropdown<?= $sa?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">&#10548; Sales <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button">&#10548; <?= t('nav_sales') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
-                    <a href="sales.php"         class="tn-drop-item<?= $current_page==='sales.php'         ?' active':'' ?>">View All</a>
+                    <a href="sales.php"         class="tn-drop-item<?= $current_page==='sales.php'         ?' active':'' ?>"><?= t('nav_view_all') ?></a>
                     <?php if (hasPermission('sales','create')): ?>
-                    <a href="sale_bulk.php"     class="tn-drop-item<?= $current_page==='sale_bulk.php'     ?' active':'' ?>">Bulk Sale</a>
-                    <a href="sale_retail.php"   class="tn-drop-item<?= $current_page==='sale_retail.php'   ?' active':'' ?>">Retail Sale</a>
+                    <a href="sale_bulk.php"     class="tn-drop-item<?= $current_page==='sale_bulk.php'     ?' active':'' ?>"><?= t('nav_bulk_sale') ?></a>
+                    <a href="sale_retail.php"   class="tn-drop-item<?= $current_page==='sale_retail.php'   ?' active':'' ?>"><?= t('nav_retail_sale') ?></a>
                     <?php if ($_nav_settings['enable_external_sale']): ?>
-                    <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>">External Sale</a>
+                    <a href="sale_external.php" class="tn-drop-item<?= $current_page==='sale_external.php' ?' active':'' ?>"><?= t('nav_external_sale') ?></a>
                     <?php endif; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php $oa = in_array($current_page,['orders.php','order_new.php','order_link_new.php']);
+                  $has_ord = hasPermission('orders') && $_nav_settings['enable_orders']; ?>
+            <?php if ($has_ord): ?>
+            <div class="tn-dropdown<?= $oa?' active':'' ?>">
+                <button class="tn-item tn-drop-btn" type="button"><?= t('nav_orders') ?> <span class="tn-chev">&#9660;</span></button>
+                <div class="tn-drop-menu">
+                    <a href="orders.php"    class="tn-drop-item<?= $current_page==='orders.php'   ?' active':'' ?>"><?= t('nav_view_orders') ?></a>
+                    <?php if (hasPermission('orders','create')): ?>
+                    <a href="order_new.php" class="tn-drop-item<?= $current_page==='order_new.php'?' active':'' ?>"><?= t('nav_new_order') ?></a>
+                    <a href="order_link_new.php" class="tn-drop-item<?= $current_page==='order_link_new.php'?' active':'' ?>"><?= t('nav_customer_order_link') ?></a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -126,62 +149,38 @@ if ($_nav_settings['enable_ip']) {
                   $has_loans = hasPermission('loans'); ?>
             <?php if ($has_loans): ?>
             <div class="tn-dropdown<?= $fa?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">Loans <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button"><?= t('nav_loans') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
-                    <a href="loans.php"     class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>">By Client</a>
-                    <a href="all_loans.php" class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>">All Loans</a>
+                    <a href="loans.php"     class="tn-drop-item<?= $current_page==='loans.php'    ?' active':'' ?>"><?= t('nav_by_client') ?></a>
+                    <a href="all_loans.php" class="tn-drop-item<?= $current_page==='all_loans.php'?' active':'' ?>"><?= t('nav_all_loans') ?></a>
                 </div>
             </div>
             <?php endif; ?>
 
-            <?php $oa = in_array($current_page,['orders.php','order_new.php','order_link_new.php']);
-                  $has_ord = hasPermission('orders') && $_nav_settings['enable_orders']; ?>
-            <?php if ($has_ord): ?>
-            <div class="tn-dropdown<?= $oa?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">Orders <span class="tn-chev">&#9660;</span></button>
-                <div class="tn-drop-menu">
-                    <a href="orders.php"    class="tn-drop-item<?= $current_page==='orders.php'   ?' active':'' ?>">View Orders</a>
-                    <?php if (hasPermission('orders','create')): ?>
-                    <a href="order_new.php" class="tn-drop-item<?= $current_page==='order_new.php'?' active':'' ?>">New Order</a>
-                    <a href="order_link_new.php" class="tn-drop-item<?= $current_page==='order_link_new.php'?' active':'' ?>">Customer Order Link</a>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <?php endif; ?>
-
-            <?php $ma = in_array($current_page,['losses.php','consumption.php','notes.php','qr_call.php']);
-                  $has_los = hasPermission('losses'); $has_con = hasPermission('consumption'); $has_not = hasPermission('notes'); ?>
-            <?php if ($has_los || $has_con || $has_not || in_array($role,['admin','superadmin'])): ?>
+            <?php $ma = in_array($current_page,['notes.php','qr_call.php']);
+                  $has_not = hasPermission('notes'); ?>
             <div class="tn-dropdown<?= $ma?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">&#8942; More <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button">&#8942; <?= t('nav_tools') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
-                    <?php if ($has_los): ?>
-                    <a href="losses.php"      class="tn-drop-item<?= $current_page==='losses.php'     ?' active':'' ?>">&#10005; Loss</a>
-                    <?php endif; ?>
-                    <?php if ($has_con): ?>
-                    <a href="consumption.php" class="tn-drop-item<?= $current_page==='consumption.php'?' active':'' ?>">&#9663; Consumption</a>
-                    <?php endif; ?>
                     <?php if ($has_not): ?>
-                    <a href="notes.php"       class="tn-drop-item<?= $current_page==='notes.php'      ?' active':'' ?>">&#10000; Notes</a>
+                    <a href="notes.php"       class="tn-drop-item<?= $current_page==='notes.php'      ?' active':'' ?>">&#10000; <?= t('nav_notes') ?></a>
                     <?php endif; ?>
-                    <a href="qr_call.php"    class="tn-drop-item<?= $current_page==='qr_call.php'   ?' active':'' ?>">&#128222; QR Code</a>
+                    <a href="qr_call.php"    class="tn-drop-item<?= $current_page==='qr_call.php'   ?' active':'' ?>">&#128222; <?= t('nav_qr_code') ?></a>
                 </div>
             </div>
-            <?php endif; ?>
-
 
             <?php $has_rep = hasPermission('reports'); $has_fin = hasPermission('financials'); ?>
             <?php if ($has_rep || $has_fin): ?>
             <?php $ra = in_array($current_page,['summary-revenue.php','revenue.php','loss_products.php']); ?>
             <div class="tn-dropdown<?= $ra?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">Reports <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button"><?= t('nav_reports') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <?php if ($has_rep): ?>
-                    <a href="summary-revenue.php" class="tn-drop-item<?= $current_page==='summary-revenue.php'?' active':'' ?>">Revenue Summary</a>
+                    <a href="summary-revenue.php" class="tn-drop-item<?= $current_page==='summary-revenue.php'?' active':'' ?>"><?= t('nav_revenue_summary') ?></a>
                     <?php endif; ?>
                     <?php if ($has_fin): ?>
-                    <a href="revenue.php" class="tn-drop-item<?= $current_page==='revenue.php'?' active':'' ?>">Profit Analysis</a>
-                    <a href="loss_products.php" class="tn-drop-item<?= $current_page==='loss_products.php'?' active':'' ?>">Sales Causing Loss</a>
+                    <a href="revenue.php" class="tn-drop-item<?= $current_page==='revenue.php'?' active':'' ?>"><?= t('nav_profit_analysis') ?></a>
+                    <a href="loss_products.php" class="tn-drop-item<?= $current_page==='loss_products.php'?' active':'' ?>"><?= t('nav_sales_causing_loss') ?></a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -190,24 +189,24 @@ if ($_nav_settings['enable_ip']) {
             <?php if (in_array($role,['admin','manager','superadmin'])): ?>
             <?php $aa = in_array($current_page,['companies.php','users.php','run_update.php','database.php','audit_log.php','qr_call.php','stock_adjust.php','settings.php']); ?>
             <div class="tn-dropdown<?= $aa?' active':'' ?>">
-                <button class="tn-item tn-drop-btn" type="button">&#9881; Admin <span class="tn-chev">&#9660;</span></button>
+                <button class="tn-item tn-drop-btn" type="button">&#9881; <?= t('nav_admin') ?> <span class="tn-chev">&#9660;</span></button>
                 <div class="tn-drop-menu">
                     <?php if ($role==='superadmin'): ?>
-                    <a href="companies.php"  class="tn-drop-item<?= $current_page==='companies.php' ?' active':'' ?>">Companies</a>
+                    <a href="companies.php"  class="tn-drop-item<?= $current_page==='companies.php' ?' active':'' ?>"><?= t('nav_companies') ?></a>
                     <?php endif; ?>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
-                    <a href="users.php"      class="tn-drop-item<?= $current_page==='users.php'     ?' active':'' ?>">Users</a>
+                    <a href="users.php"      class="tn-drop-item<?= $current_page==='users.php'     ?' active':'' ?>"><?= t('nav_users') ?></a>
                     <?php endif; ?>
                     <?php if (hasPermission('audit_log')): ?>
-                    <a href="audit_log.php"  class="tn-drop-item<?= $current_page==='audit_log.php' ?' active':'' ?>">Audit Log</a>
+                    <a href="audit_log.php"  class="tn-drop-item<?= $current_page==='audit_log.php' ?' active':'' ?>"><?= t('nav_audit_log') ?></a>
                     <?php endif; ?>
                     <?php if (in_array($role,['admin','superadmin'])): ?>
-                    <a href="settings.php" class="tn-drop-item<?= $current_page==='settings.php'?' active':'' ?>">Settings</a>
-                    <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>">Run Updates</a>
-                    <a href="backup.php" class="tn-drop-item">&#11015; Backup</a>
+                    <a href="settings.php" class="tn-drop-item<?= $current_page==='settings.php'?' active':'' ?>"><?= t('nav_settings') ?></a>
+                    <a href="run_update.php" class="tn-drop-item<?= $current_page==='run_update.php'?' active':'' ?>"><?= t('nav_run_updates') ?></a>
+                    <a href="backup.php" class="tn-drop-item">&#11015; <?= t('nav_backup') ?></a>
                     <?php endif; ?>
                     <?php if ($role === 'superadmin'): ?>
-                    <a href="database.php"   class="tn-drop-item<?= $current_page==='database.php'  ?' active':'' ?>">Database</a>
+                    <a href="database.php"   class="tn-drop-item<?= $current_page==='database.php'  ?' active':'' ?>"><?= t('nav_database') ?></a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -224,23 +223,31 @@ if ($_nav_settings['enable_ip']) {
                     <span class="tn-notif-badge" id="tnNotifBadge" style="display:none;">0</span>
                 </button>
                 <div class="tn-notif-panel" id="tnNotifPanel">
-                    <div class="tn-notif-panel-hdr">Notifications</div>
+                    <div class="tn-notif-panel-hdr"><?= t('nav_notifications') ?></div>
                     <div class="tn-notif-list" id="tnNotifList">
-                        <div class="tn-notif-empty">No notifications</div>
+                        <div class="tn-notif-empty"><?= t('nav_no_notifications') ?></div>
                     </div>
                 </div>
             </div>
             <?php endif; ?>
+            <form method="POST" action="switch_language.php" class="tn-lang-switch">
+                <input type="hidden" name="return" value="<?= htmlspecialchars($current_page) ?>">
+                <select name="language" class="tn-lang-select" onchange="this.form.submit()" title="<?= htmlspecialchars(t('nav_language')) ?>">
+                    <?php foreach (SUPPORTED_LANGUAGES as $code => $label): ?>
+                        <option value="<?= htmlspecialchars($code) ?>" <?= currentLang() === $code ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
             <?php if (count($_nav_accessible_companies) > 1 || $_nav_show_all_option): ?>
             <form method="POST" action="switch_company.php" class="tn-company-switch">
                 <input type="hidden" name="return" value="<?= htmlspecialchars($current_page) ?>">
                 <select name="company_id" class="tn-company-select" onchange="this.form.submit()"
-                        title="<?= $_nav_viewing_all_mine ? 'Viewing combined data — pick one company to create or edit records' : 'Viewing company' ?>">
+                        title="<?= $_nav_viewing_all_mine ? htmlspecialchars(t('nav_viewing_combined')) : htmlspecialchars(t('nav_viewing_company')) ?>">
                     <?php if ($_nav_show_all_option): ?>
-                        <option value="" <?= $_nav_viewing_company_id === null ? 'selected' : '' ?>>All Companies</option>
+                        <option value="" <?= $_nav_viewing_company_id === null ? 'selected' : '' ?>><?= t('nav_all_companies') ?></option>
                     <?php endif; ?>
                     <?php if ($role !== 'superadmin' && count($_nav_accessible_companies) > 1): ?>
-                        <option value="all_mine" <?= $_nav_viewing_all_mine ? 'selected' : '' ?>>All My Companies</option>
+                        <option value="all_mine" <?= $_nav_viewing_all_mine ? 'selected' : '' ?>><?= t('nav_all_my_companies') ?></option>
                     <?php endif; ?>
                     <?php foreach ($_nav_accessible_companies as $co): ?>
                         <option value="<?= (int)$co['id'] ?>" <?= (!$_nav_viewing_all_mine && $_nav_viewing_company_id == $co['id']) ? 'selected' : '' ?>>
@@ -249,16 +256,16 @@ if ($_nav_settings['enable_ip']) {
                     <?php endforeach; ?>
                 </select>
                 <?php if ($_nav_viewing_all_mine): ?>
-                    <span class="tn-company-agg-tag" title="Viewing combined data — pick one company to create or edit records">&#8942; combined</span>
+                    <span class="tn-company-agg-tag" title="<?= htmlspecialchars(t('nav_viewing_combined')) ?>">&#8942; <?= t('nav_combined') ?></span>
                 <?php endif; ?>
             </form>
             <?php endif; ?>
             <div class="topnav-avatar"><?= strtoupper(substr($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'U', 0, 1)) ?></div>
             <div class="topnav-user-info">
                 <div class="topnav-uname"><?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']) ?></div>
-                <div class="topnav-urole"><?= $role==='superadmin'?'Super Admin':ucfirst($role) ?></div>
+                <div class="topnav-urole"><?= $role==='superadmin'? t('nav_super_admin') : ucfirst($role) ?></div>
             </div>
-            <a href="logout.php" class="topnav-logout" title="Logout">&#9211;</a>
+            <a href="logout.php" class="topnav-logout" title="<?= htmlspecialchars(t('nav_logout')) ?>">&#9211;</a>
         </div>
 
     </div>
@@ -266,35 +273,36 @@ if ($_nav_settings['enable_ip']) {
 
 <!-- Quick-access bar -->
 <div class="quickbar" id="quickbar">
-    <span class="qb-label">Quick:</span>
-    
-     <a href="sales.php"         class="qb-btn qb-sale<?= $current_page==='sales.php'         ? ' active':'' ?>">Sales</a>
-   
-    <a href="sale_bulk.php"     class="qb-btn qb-sale-bulk<?= $current_page==='sale_bulk.php'     ? ' active':'' ?>">+ Bulk Sale</a>
-        <?php if ($_nav_settings['enable_external_sale']): ?>
-        <a href="sale_external.php" class="qb-btn qb-sale-ext<?= $current_page==='sale_external.php' ? ' active':'' ?>">+ Ext. Sale</a>
-        <?php endif; ?>
-   
-    <a href="sale_retail.php"   class="qb-btn qb-sale-retail<?= $current_page==='sale_retail.php'   ? ' active':'' ?>">+ Retail Sale</a>
+    <span class="qb-label"><?= t('qb_label') ?></span>
 
-   
+     <a href="sales.php"         class="qb-btn qb-sale<?= $current_page==='sales.php'         ? ' active':'' ?>"><?= t('qb_sales') ?></a>
+
+    <a href="sale_bulk.php"     class="qb-btn qb-sale-bulk<?= $current_page==='sale_bulk.php'     ? ' active':'' ?>"><?= t('qb_bulk_sale') ?></a>
+        <?php if ($_nav_settings['enable_external_sale']): ?>
+        <a href="sale_external.php" class="qb-btn qb-sale-ext<?= $current_page==='sale_external.php' ? ' active':'' ?>"><?= t('qb_ext_sale') ?></a>
+        <?php endif; ?>
+
+    <a href="sale_retail.php"   class="qb-btn qb-sale-retail<?= $current_page==='sale_retail.php'   ? ' active':'' ?>"><?= t('qb_retail_sale') ?></a>
+
+
     <?php if ($has_ord): ?>
-    <a href="orders.php" class="qb-btn qb-order<?= $current_page==='orders.php' ? ' active':'' ?>">Orders</a>
+    <a href="orders.php" class="qb-btn qb-order<?= $current_page==='orders.php' ? ' active':'' ?>"><?= t('qb_orders') ?></a>
     <?php endif; ?>
-    <a href="new-purchase.php"  class="qb-btn qb-buy<?= $current_page==='new-purchase.php'  ? ' active':'' ?>">+ New Purchase</a>
-    <a href="expenses.php"      class="qb-btn qb-exp<?= $current_page==='expenses.php'      ? ' active':'' ?>">+ Expense</a>
-    
-    <a href="stock.php"         class="qb-btn qb-stock<?= $current_page==='stock.php'         ? ' active':'' ?>">Stock</a>
-     <a href="loans.php"         class="qb-btn qb-loan<?= $current_page==='loans.php'         ? ' active':'' ?>">+ Loan by Client</a>
-   
+    <a href="new-purchase.php"  class="qb-btn qb-buy<?= $current_page==='new-purchase.php'  ? ' active':'' ?>"><?= t('qb_new_purchase') ?></a>
+    <a href="expenses.php"      class="qb-btn qb-exp<?= $current_page==='expenses.php'      ? ' active':'' ?>"><?= t('qb_expense') ?></a>
+
+    <a href="stock.php"         class="qb-btn qb-stock<?= $current_page==='stock.php'         ? ' active':'' ?>"><?= t('qb_stock') ?></a>
+    <a href="pricing.php"       class="qb-btn qb-price<?= $current_page==='pricing.php'       ? ' active':'' ?>"><?= t('qb_pricing') ?></a>
+     <a href="loans.php"         class="qb-btn qb-loan<?= $current_page==='loans.php'         ? ' active':'' ?>"><?= t('qb_loan') ?></a>
+
     <?php if ($_nav_settings['enable_ip']): ?>
     <span class="qb-ip">
         &#128187; <span id="qb-ip-text"><?= htmlspecialchars($_nav_server_ip) ?></span>
-        <button class="qb-ip-copy" onclick="qbCopyIP()" title="Copy IP">&#128203;</button>
+        <button class="qb-ip-copy" onclick="qbCopyIP()" title="<?= htmlspecialchars(t('qb_copy_ip')) ?>">&#128203;</button>
     </span>
     <?php endif; ?>
 
-    <a href="logout.php" class="qb-btn qb-logout" title="Logout">&#9211; Logout</a>
+    <a href="logout.php" class="qb-btn qb-logout" title="<?= htmlspecialchars(t('qb_logout')) ?>">&#9211; <?= t('qb_logout') ?></a>
 
 </div>
 
@@ -386,6 +394,15 @@ if ($_nav_settings['enable_ip']) {
 .tn-company-select:hover { background: rgba(255,255,255,.15); }
 .tn-company-select:focus { outline: none; border-color: rgba(255,255,255,.4); }
 .tn-company-select option { background: #fff; color: #1a1a2e; }
+.tn-lang-switch { display: flex; align-items: center; }
+.tn-lang-select {
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+    color: #fff; font-size: 11.5px; font-weight: 600; font-family: inherit;
+    padding: 4px 8px; border-radius: 4px; cursor: pointer;
+}
+.tn-lang-select:hover { background: rgba(255,255,255,.15); }
+.tn-lang-select:focus { outline: none; border-color: rgba(255,255,255,.4); }
+.tn-lang-select option { background: #fff; color: #1a1a2e; }
 .tn-company-agg-tag {
     font-size: 9.5px; font-weight: 700; color: #fbbf24;
     margin-left: 4px; white-space: nowrap; letter-spacing: .3px;
@@ -485,6 +502,7 @@ if ($_nav_settings['enable_ip']) {
 .qb-exp  { background: #fef3c7; color: #d97706; border-color: #fde68a; }
 .qb-loan { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
 .qb-stock { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+.qb-price { background: #fef9c3; color: #a16207; border-color: #fef08a; }
 .qb-order { background: #e8edf5; color: #1a4280; border-color: #c9d6ea; }
 .qb-logout { background: #fee2e2; color: #dc2626; border-color: #fecaca; margin-left: 4px; }
 
@@ -498,6 +516,7 @@ if ($_nav_settings['enable_ip']) {
 .qb-exp.active         { background: #d97706; border-color: #d97706; }
 .qb-loan.active        { background: #5b21b6; border-color: #5b21b6; }
 .qb-stock.active       { background: #0369a1; border-color: #0369a1; }
+.qb-price.active       { background: #a16207; border-color: #a16207; }
 .qb-order.active       { background: #1a4280; border-color: #1a4280; }
 .qb-ip {
     margin-left: auto; flex-shrink: 0;

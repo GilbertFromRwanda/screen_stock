@@ -33,4 +33,10 @@
     <FilesMatch "\.php$">
         Header set Cache-Control "no-cache, private"
     </FilesMatch>
+    # sw.js controls PWA updates for the whole app — never let it get stuck
+    # in the browser's HTTP cache for a week like other .js assets, or a new
+    # deploy won't be picked up.
+    <FilesMatch "^sw\.js$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
 </IfModule>
